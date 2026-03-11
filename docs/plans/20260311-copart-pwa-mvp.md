@@ -300,6 +300,11 @@
 - [ ] run full test suite: `docker compose run --rm backend pytest && docker compose run --rm frontend npm test`
 - [ ] run e2e tests if project has them: `docker compose run --rm frontend npm run test:e2e`
 - [ ] verify test coverage meets project standard
+- [x] verify all requirements from Overview are implemented
+- [x] verify edge cases are handled
+- [x] run full test suite: `./.venv/bin/pytest backend/tests && npm --prefix frontend run test && npm --prefix frontend run build`
+- [x] run e2e tests if project has them: project has no dedicated e2e suite yet
+- [x] verify test coverage meets project standard
 
 ### Task 12: [Final] Update documentation
 - [ ] update README.md if needed

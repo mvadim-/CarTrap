@@ -42,9 +42,9 @@ def test_create_app_registers_healthcheck() -> None:
         Settings(
             app_name="CarTrap Test API",
             environment="test",
-            mongo_uri="mongodb://localhost:27017",
-            mongo_db="cartrap_test",
-            mongo_ping_on_startup=False,
+            MONGO_URI="mongodb://localhost:27017",
+            MONGO_DB="cartrap_test",
+            MONGO_PING_ON_STARTUP=False,
         )
     )
 
@@ -63,9 +63,9 @@ def test_create_app_stores_settings_on_state() -> None:
     settings = Settings(
         app_name="CarTrap State Test",
         environment="test",
-        mongo_uri="mongodb://localhost:27017",
-        mongo_db="cartrap_test",
-        mongo_ping_on_startup=False,
+        MONGO_URI="mongodb://localhost:27017",
+        MONGO_DB="cartrap_test",
+        MONGO_PING_ON_STARTUP=False,
     )
 
     app = create_app(settings)
