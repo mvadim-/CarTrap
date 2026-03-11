@@ -260,6 +260,14 @@
 - [ ] write tests for frontend success scenarios including route guards and core user flows
 - [ ] write tests for auth errors, empty states, and push permission denial cases
 - [ ] run tests - must pass before next task
+- [x] реалізувати PWA shell, routing і auth state management
+- [x] створити UI для invite acceptance, login і role-aware navigation
+- [x] створити admin UI для генерації та відкликання інвайтів
+- [x] створити manual search UI, список результатів і додавання лота у watchlist
+- [x] реалізувати watchlist UI і client-side flow підписки на push
+- [x] write tests for frontend success scenarios including route guards and core user flows
+- [x] write tests for auth errors, empty states, and push permission denial cases
+- [x] run tests - must pass before next task
 
 ### Task 10: Harden Docker workflow, docs, and delivery checks
 

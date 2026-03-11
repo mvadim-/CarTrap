@@ -1,0 +1,9 @@
+{
+  "name": "CarTrap",
+  "short_name": "CarTrap",
+  "start_url": "/#/login",
+  "display": "standalone",
+  "background_color": "#efe7db",
+  "theme_color": "#13262f",
+  "description": "Copart watchlist and alerts for invite-only teams."
+}
