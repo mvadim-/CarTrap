@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -26,12 +27,24 @@ class SearchRequest(BaseModel):
         if self.search_url:
             return str(self.search_url)
 
-        params: dict[str, str] = {}
-        if self.query:
-            params["query"] = self.query
-        if self.location:
-            params["location"] = self.location
-        return f"https://www.copart.com/search?{urlencode(params)}"
+        query_text = (self.query or "").strip()
+        location_text = (self.location or "").strip()
+        search_criteria = {
+            "query": [query_text] if query_text else ["*"],
+            "filter": {},
+            "searchName": "",
+            "watchListOnly": False,
+            "freeFormSearch": True,
+        }
+        display_parts = [part for part in [query_text, location_text] if part]
+        params = {
+            "free": "true",
+            "searchCriteria": json.dumps(search_criteria, separators=(",", ":")),
+            "displayStr": ",".join(display_parts) if display_parts else "*",
+            "from": "/vehicleFinder",
+            "fromSource": "widget",
+        }
+        return f"https://www.copart.com/lotSearchResults?{urlencode(params)}"
 
 
 class SearchResultResponse(CopartSearchResult):

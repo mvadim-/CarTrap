@@ -89,3 +89,9 @@
 - Додано backend CORS-конфіг через `BACKEND_CORS_ORIGINS` у `backend/src/cartrap/config.py` і підключено `CORSMiddleware` в `backend/src/cartrap/app.py`.
 - Додано regression tests для env parsing і `OPTIONS /api/auth/login` preflight у `backend/tests/test_config.py` та `backend/tests/test_app_boot.py`.
 - Оновлено `.env.example` і `README.md`, щоб локальні frontend origins для `5173`/`4173` були дозволені за замовчуванням і явно документовані.
+
+## [2026-03-11 17:08] Fix Copart manual search URL builder
+- Оновлено `backend/src/cartrap/modules/search/schemas.py`: manual search тепер будує Copart `lotSearchResults` URL замість застарілого `/search` endpoint.
+- Додано логування search failures у `backend/src/cartrap/modules/search/service.py`, щоб у backend logs було видно проблемний `source_url`.
+- Оновлено `backend/tests/search/test_search_api.py` під новий URL contract і додано перевірку `SearchRequest.to_url()`.
+- Додано завершений hotfix-план `docs/plans/completed/20260311-copart-search-hotfix.md`.

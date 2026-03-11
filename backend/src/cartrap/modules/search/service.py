@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Callable, Optional
 
 from fastapi import HTTPException, status
@@ -11,6 +12,9 @@ from cartrap.modules.copart_provider.models import CopartSearchResult
 from cartrap.modules.copart_provider.service import CopartProvider
 from cartrap.modules.search.schemas import SearchRequest
 from cartrap.modules.watchlist.service import WatchlistService
+
+
+logger = logging.getLogger(__name__)
 
 
 class SearchService:
@@ -29,7 +33,11 @@ class SearchService:
         try:
             results = provider.search_lots(source_url)
         except Exception as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch search results.") from exc
+            logger.exception("Copart search failed for source_url=%s", source_url)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to fetch search results from Copart.",
+            ) from exc
         finally:
             provider.close()
         return {"results": [self.serialize_result(item) for item in results], "source_url": source_url}

@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 import cartrap.app as app_module
 from cartrap.config import Settings
 from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSearchResult
+from cartrap.modules.search.schemas import SearchRequest
 
 
 class FakeMongoManager:
@@ -136,7 +137,8 @@ def test_search_endpoint_returns_results(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert len(response.json()["results"]) == 2
-    assert response.json()["source_url"].startswith("https://www.copart.com/search?")
+    assert response.json()["source_url"].startswith("https://www.copart.com/lotSearchResults?")
+    assert "searchCriteria=" in response.json()["source_url"]
 
 
 def test_add_from_search_reuses_watchlist_logic(client: TestClient) -> None:
@@ -189,3 +191,15 @@ def test_search_handles_provider_failure(client: TestClient) -> None:
         )
 
     assert response.status_code == 502
+    assert response.json()["detail"] == "Failed to fetch search results from Copart."
+
+
+def test_search_request_builds_lot_search_results_url() -> None:
+    request = SearchRequest(query="Ford mustang mach-e", location="NJ")
+
+    source_url = request.to_url()
+
+    assert source_url.startswith("https://www.copart.com/lotSearchResults?")
+    assert "free=true" in source_url
+    assert "from=%2FvehicleFinder" in source_url
+    assert "Ford+mustang+mach-e" in source_url
