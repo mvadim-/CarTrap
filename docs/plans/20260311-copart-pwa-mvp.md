@@ -73,12 +73,12 @@
 - Create: `frontend/package.json`
 - Create: `frontend/vite.config.ts`
 
-- [ ] створити базову структуру директорій для `backend`, `frontend`, `docs`, `tests` і локальної конфігурації
-- [ ] описати в `README.md` цілі MVP, сервіси Docker і базові команди запуску
-- [ ] додати `docker-compose.yml` для `frontend`, `backend`, `worker`, `mongodb`
-- [ ] налаштувати базові backend/frontend маніфести та змінні середовища в `.env.example`
-- [ ] write tests for backend bootstrap/import smoke case and frontend config validation where practical
-- [ ] run tests - must pass before next task
+- [x] створити базову структуру директорій для `backend`, `frontend`, `docs`, `tests` і локальної конфігурації
+- [x] описати в `README.md` цілі MVP, сервіси Docker і базові команди запуску
+- [x] додати `docker-compose.yml` для `frontend`, `backend`, `worker`, `mongodb`
+- [x] налаштувати базові backend/frontend маніфести та змінні середовища в `.env.example`
+- [x] write tests for backend bootstrap/import smoke case and frontend config validation where practical
+- [x] run tests - must pass before next task
 
 ### Task 2: Create backend app skeleton and shared infrastructure
 
@@ -91,13 +91,13 @@
 - Create: `backend/tests/test_app_boot.py`
 - Create: `backend/tests/test_config.py`
 
-- [ ] створити FastAPI application factory і кореневий router
-- [ ] додати typed config layer для env variables і підключення до MongoDB
-- [ ] винести спільні логування, healthcheck і базову обробку помилок
-- [ ] підготувати спільну інфраструктуру для використання і `backend`, і `worker`
-- [ ] write tests for app bootstrap and config parsing success cases
-- [ ] write tests for config validation and startup edge cases
-- [ ] run tests - must pass before next task
+- [x] створити FastAPI application factory і кореневий router
+- [x] додати typed config layer для env variables і підключення до MongoDB
+- [x] винести спільні логування, healthcheck і базову обробку помилок
+- [x] підготувати спільну інфраструктуру для використання і `backend`, і `worker`
+- [x] write tests for app bootstrap and config parsing success cases
+- [x] write tests for config validation and startup edge cases
+- [x] run tests - must pass before next task
 
 ### Task 3: Implement auth, roles, and invite-based onboarding
 
@@ -112,13 +112,13 @@
 - Create: `backend/tests/auth/test_login.py`
 - Create: `backend/tests/auth/test_rbac.py`
 
-- [ ] реалізувати моделі `users` і `invites` з ролями `admin` та `user`
-- [ ] додати invite creation/revoke endpoints, доступні лише адміністратору
-- [ ] реалізувати accept invite flow, password hashing і login/refresh flow
-- [ ] додати role guards для admin-only API
-- [ ] write tests for invite lifecycle and login success scenarios
-- [ ] write tests for invalid/expired invite, bad credentials, and RBAC denial cases
-- [ ] run tests - must pass before next task
+- [x] реалізувати моделі `users` і `invites` з ролями `admin` та `user`
+- [x] додати invite creation/revoke endpoints, доступні лише адміністратору
+- [x] реалізувати accept invite flow, password hashing і login/refresh flow
+- [x] додати role guards для admin-only API
+- [x] write tests for invite lifecycle and login success scenarios
+- [x] write tests for invalid/expired invite, bad credentials, and RBAC denial cases
+- [x] run tests - must pass before next task
 
 ### Task 4: Build Copart provider and normalization layer
 
