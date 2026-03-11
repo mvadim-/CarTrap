@@ -84,3 +84,8 @@
 - Оновлено `README.md` блоками `Current Status` і `Latest Verification`, щоб поточний стан MVP і перевірки були видимі без читання плану.
 - `AGENTS.md` не змінювався: нових repo-specific workflow patterns понад уже зафіксовані не з’явилося.
 - План реалізації перенесено до `docs/plans/completed/20260311-copart-pwa-mvp.md`.
+
+## [2026-03-11 16:54] Fix CORS preflight for login flow
+- Додано backend CORS-конфіг через `BACKEND_CORS_ORIGINS` у `backend/src/cartrap/config.py` і підключено `CORSMiddleware` в `backend/src/cartrap/app.py`.
+- Додано regression tests для env parsing і `OPTIONS /api/auth/login` preflight у `backend/tests/test_config.py` та `backend/tests/test_app_boot.py`.
+- Оновлено `.env.example` і `README.md`, щоб локальні frontend origins для `5173`/`4173` були дозволені за замовчуванням і явно документовані.

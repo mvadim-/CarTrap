@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from cartrap.api.router import api_router
 from cartrap.api.dependencies import set_service_factory
@@ -44,6 +45,13 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     app = FastAPI(title=app_settings.app_name, lifespan=lifespan)
     app.state.settings = app_settings
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=app_settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.include_router(api_router, prefix=app_settings.api_prefix)
     return app
 

@@ -19,6 +19,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("APP_NAME", "CarTrap Local")
     monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_PREFIX", "/internal")
+    monkeypatch.setenv("BACKEND_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     monkeypatch.setenv("MONGO_URI", "mongodb://example:27017")
     monkeypatch.setenv("MONGO_DB", "cartrap_local")
     monkeypatch.setenv("MONGO_PING_ON_STARTUP", "true")
@@ -28,6 +29,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.app_name == "CarTrap Local"
     assert settings.environment == "test"
     assert settings.api_prefix == "/internal"
+    assert settings.cors_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
     assert settings.mongo_uri == "mongodb://example:27017"
     assert settings.mongo_db == "cartrap_local"
     assert settings.mongo_ping_on_startup is True

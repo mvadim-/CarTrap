@@ -72,3 +72,28 @@ def test_create_app_stores_settings_on_state() -> None:
 
     assert app.state.settings.app_name == "CarTrap State Test"
     assert app.state.settings.mongo_db == "cartrap_test"
+
+
+def test_create_app_handles_cors_preflight() -> None:
+    app = create_app(
+        Settings(
+            app_name="CarTrap CORS Test",
+            environment="test",
+            MONGO_URI="mongodb://localhost:27017",
+            MONGO_DB="cartrap_test",
+            MONGO_PING_ON_STARTUP=False,
+            BACKEND_CORS_ORIGINS="http://localhost:5173",
+        )
+    )
+
+    with TestClient(app) as client:
+        response = client.options(
+            "/api/auth/login",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"

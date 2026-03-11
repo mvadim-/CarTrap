@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", min_length=1)
     api_prefix: str = Field(default="/api", min_length=1)
     log_level: str = Field(default="INFO", min_length=1)
+    backend_cors_origins: str = Field(
+        default="http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173",
+        alias="BACKEND_CORS_ORIGINS",
+        min_length=1,
+    )
     mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI", min_length=1)
     mongo_db: str = Field(default="cartrap", alias="MONGO_DB", min_length=1)
     mongo_ping_on_startup: bool = Field(default=False, alias="MONGO_PING_ON_STARTUP")
@@ -34,6 +39,10 @@ class Settings(BaseSettings):
     invite_ttl_hours: int = Field(default=72, alias="INVITE_TTL_HOURS", ge=1)
     bootstrap_admin_email: Optional[str] = Field(default=None, alias="BOOTSTRAP_ADMIN_EMAIL")
     bootstrap_admin_password: Optional[str] = Field(default=None, alias="BOOTSTRAP_ADMIN_PASSWORD")
+
+    @property
+    def cors_origins(self) -> List[str]:
+        return [origin.strip() for origin in self.backend_cors_origins.split(",") if origin.strip()]
 
 
 @lru_cache(maxsize=1)
