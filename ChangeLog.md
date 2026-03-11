@@ -112,3 +112,8 @@
 - Розширено `backend/src/cartrap/modules/copart_provider/parser.py`: lot parser тепер підтримує вкладені JSON payload-и з `__NEXT_DATA__`, `__NUXT_DATA__`, `__PRELOADED_STATE__`, `__INITIAL_STATE__`.
 - Додано окреме розпізнавання anti-bot/challenge HTML для lot pages і warning-лог із title/script ids, якщо payload у відповіді не знайдено.
 - Додано `backend/tests/fixtures/copart/lot_page_next_data.html` і розширено `backend/tests/copart/test_parser_lot_page.py` сценаріями nested JSON та challenge page.
+
+## [2026-03-11 17:55] Expose watchlist lot-fetch failure reason
+- Додано `logger.exception(...)` у `backend/src/cartrap/modules/watchlist/service.py`, щоб `POST /api/watchlist` не ховав першопричину lot fetch/parse збою.
+- `502` від watchlist тепер містить detail із повідомленням винятку Copart provider/parser.
+- Оновлено `backend/tests/watchlist/test_watchlist_api.py` під новий error contract.

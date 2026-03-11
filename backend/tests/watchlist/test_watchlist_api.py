@@ -199,6 +199,7 @@ def test_watchlist_returns_upstream_error_on_invalid_lot_source(client: TestClie
         )
 
     assert response.status_code == 502
+    assert response.json()["detail"] == "Failed to fetch lot details from Copart: upstream failed"
 
 
 def test_watchlist_delete_is_scoped_to_owner(client: TestClient) -> None:

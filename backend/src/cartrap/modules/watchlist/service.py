@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import Callable, Optional
 
 from fastapi import HTTPException, status
@@ -11,6 +12,9 @@ from pymongo.database import Database
 from cartrap.modules.copart_provider.models import CopartLotSnapshot
 from cartrap.modules.copart_provider.service import CopartProvider
 from cartrap.modules.watchlist.repository import WatchlistRepository
+
+
+logger = logging.getLogger(__name__)
 
 
 class WatchlistService:
@@ -86,7 +90,11 @@ class WatchlistService:
         except HTTPException:
             raise
         except Exception as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch lot details.") from exc
+            logger.exception("Copart lot fetch failed for lot_url=%s", lot_url)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to fetch lot details from Copart: {exc}",
+            ) from exc
         finally:
             provider.close()
 
