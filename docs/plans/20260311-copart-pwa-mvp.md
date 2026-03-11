@@ -157,6 +157,13 @@
 - [ ] write tests for watchlist CRUD and initial snapshot success scenarios
 - [ ] write tests for duplicate lot, invalid lot source, and ownership edge cases
 - [ ] run tests - must pass before next task
+- [x] реалізувати колекції `tracked_lots` і `lot_snapshots`
+- [x] додати API для додавання, видалення і перегляду watchlist користувача
+- [x] зберігати початковий snapshot при першому додаванні валідного лота
+- [x] оновлювати `tracked_lot` останнім відомим станом без втрати історії в `lot_snapshots`
+- [x] write tests for watchlist CRUD and initial snapshot success scenarios
+- [x] write tests for duplicate lot, invalid lot source, and ownership edge cases
+- [x] run tests - must pass before next task
 
 ### Task 6: Add manual search API and watchlist integration from results
 
@@ -174,6 +181,13 @@
 - [ ] write tests for search endpoint success cases and add-from-search flow
 - [ ] write tests for invalid filters, empty results, and downstream scraper failure cases
 - [ ] run tests - must pass before next task
+- [x] реалізувати search endpoint, який приймає фільтри і повертає нормалізовані результати Copart
+- [x] забезпечити єдиний формат lot summary для search results і watchlist
+- [x] додати сценарій “add to watchlist” з результатів пошуку без дублювання доменної логіки
+- [x] підготувати контракти API так, щоб пізніше додати `saved_searches` без ломування клієнта
+- [x] write tests for search endpoint success cases and add-from-search flow
+- [x] write tests for invalid filters, empty results, and downstream scraper failure cases
+- [x] run tests - must pass before next task
 
 ### Task 7: Implement monitoring worker and adaptive polling
 
