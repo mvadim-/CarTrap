@@ -29,6 +29,24 @@ def test_parse_search_results_extracts_lots() -> None:
     assert results[1].current_bid == 1800.0
 
 
+def test_parse_search_results_extracts_lots_from_next_data() -> None:
+    html = (FIXTURES_DIR / "search_results_next_data.html").read_text()
+
+    results = parse_search_results(html)
+
+    assert len(results) == 1
+    assert results[0].lot_number == "11223344"
+    assert results[0].location == "NJ - SOMERVILLE"
+    assert results[0].current_bid == 12500.0
+
+
+def test_parse_search_results_detects_challenge_page() -> None:
+    html = "<html><head><title>www.copart.com -</title></head><body>Additional security check is required. Imperva. I am human.</body></html>"
+
+    with pytest.raises(CopartParseError, match="anti-bot challenge"):
+        parse_search_results(html)
+
+
 def test_parse_search_results_raises_for_missing_payload() -> None:
     html = "<html><body><div>No script data</div></body></html>"
 

@@ -95,3 +95,8 @@
 - Додано логування search failures у `backend/src/cartrap/modules/search/service.py`, щоб у backend logs було видно проблемний `source_url`.
 - Оновлено `backend/tests/search/test_search_api.py` під новий URL contract і додано перевірку `SearchRequest.to_url()`.
 - Додано завершений hotfix-план `docs/plans/completed/20260311-copart-search-hotfix.md`.
+
+## [2026-03-11 17:18] Harden Copart search parser diagnostics
+- Розширено `backend/src/cartrap/modules/copart_provider/parser.py`: search parser тепер підтримує вкладені JSON payload-и на кшталт `__NEXT_DATA__`, `__NUXT_DATA__`, `__PRELOADED_STATE__`, `__INITIAL_STATE__`.
+- Додано окреме розпізнавання anti-bot/challenge HTML від Copart і warning-лог із title/script ids, якщо payload у відповіді не знайдено.
+- Додано parser fixtures і тести `backend/tests/fixtures/copart/search_results_next_data.html`, `backend/tests/copart/test_search_parser.py` для nested JSON і challenge-page сценарію.
