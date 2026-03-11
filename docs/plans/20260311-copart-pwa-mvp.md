@@ -131,13 +131,13 @@
 - Create: `backend/tests/copart/test_search_parser.py`
 - Create: `backend/tests/fixtures/copart/`
 
-- [ ] реалізувати HTTP client для отримання сторінок Copart і базову обробку помилок/timeout
-- [ ] реалізувати parser для сторінки лота з виділенням `lot_number`, статусу, sale date, current bid та інших ключових полів
-- [ ] реалізувати parser для manual search results і нормалізацію в доменні моделі
-- [ ] ізолювати raw scraping logic від решти системи через чіткий provider interface
-- [ ] write tests for lot-page parsing and normalization success cases using fixtures
-- [ ] write tests for malformed/missing-field fixtures and provider failure cases
-- [ ] run tests - must pass before next task
+- [x] реалізувати HTTP client для отримання сторінок Copart і базову обробку помилок/timeout
+- [x] реалізувати parser для сторінки лота з виділенням `lot_number`, статусу, sale date, current bid та інших ключових полів
+- [x] реалізувати parser для manual search results і нормалізацію в доменні моделі
+- [x] ізолювати raw scraping logic від решти системи через чіткий provider interface
+- [x] write tests for lot-page parsing and normalization success cases using fixtures
+- [x] write tests for malformed/missing-field fixtures and provider failure cases
+- [x] run tests - must pass before next task
 
 ### Task 5: Add watchlist domain and lot snapshot history
 
