@@ -79,3 +79,8 @@
 - Оновлено `backend/tests/test_app_boot.py`, щоб regression test використовував alias-based поля `Settings`, як і production config contract.
 - Повторно прогнано повний verification набір: `./.venv/bin/pytest backend/tests` -> `37 passed`, `npm run test` -> `3 passed`, `npm run build` -> успішно.
 - Зафіксовано, що виділеного e2e test suite у проєкті ще немає; поточна acceptance verification спирається на backend unit/integration coverage, frontend app tests і Docker smoke checks з Task 10.
+
+## [2026-03-11 16:42] Task 12: фінальна документація
+- Оновлено `README.md` блоками `Current Status` і `Latest Verification`, щоб поточний стан MVP і перевірки були видимі без читання плану.
+- `AGENTS.md` не змінювався: нових repo-specific workflow patterns понад уже зафіксовані не з’явилося.
+- План реалізації перенесено до `docs/plans/completed/20260311-copart-pwa-mvp.md`.

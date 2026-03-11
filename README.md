@@ -40,3 +40,17 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 - `backend` and `worker` share the same Python image build and differ only by command.
 - `frontend` is built with Vite and served from nginx on port `4173`.
 - `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` seed the first admin user on API startup.
+
+## Current Status
+- MVP backend flows are implemented: invite auth, roles, Copart parsing, watchlist, search, monitoring, and push subscription management.
+- MVP frontend flows are implemented: login, invite acceptance, admin invite creation, manual search, watchlist, and client-side push registration UX.
+- Docker images for `backend`, `worker`, and `frontend` are buildable and the compose stack passes a basic smoke check.
+
+## Latest Verification
+- `./.venv/bin/pytest backend/tests`
+- `npm --prefix frontend run test`
+- `npm --prefix frontend run build`
+- `docker compose build backend frontend worker`
+- `docker compose up -d`
+- `curl http://localhost:8000/api/health`
+- `curl -I http://localhost:5173`
