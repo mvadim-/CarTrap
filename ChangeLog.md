@@ -117,3 +117,8 @@
 - Додано `logger.exception(...)` у `backend/src/cartrap/modules/watchlist/service.py`, щоб `POST /api/watchlist` не ховав першопричину lot fetch/parse збою.
 - `502` від watchlist тепер містить detail із повідомленням винятку Copart provider/parser.
 - Оновлено `backend/tests/watchlist/test_watchlist_api.py` під новий error contract.
+
+## [2026-03-11 18:04] Run browser-like Copart request experiment
+- Оновлено `backend/src/cartrap/modules/copart_provider/client.py`: додано browser-like headers, homepage warmup request, `Referer` на target fetch і optional HTTP/2, якщо в runtime доступний `h2`.
+- Додано ізольовані тести `backend/tests/copart/test_http_client.py` на session warmup, header profile і graceful continuation після warmup failure.
+- Додано завершений план `docs/plans/completed/20260311-copart-browser-headers-experiment.md` для цього експерименту.
