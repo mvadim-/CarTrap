@@ -107,3 +107,8 @@
 - Додано frontend flow “Add by Lot Number” у `frontend/src/features/watchlist/WatchlistPanel.tsx`, інтегровано в `frontend/src/App.tsx` і `frontend/src/lib/api.ts`.
 - Розширено `frontend/tests/app.test.tsx` перевіркою додавання в watchlist по lot number.
 - Оновлено `.gitignore`, щоб `frontend/src/lib/*.ts` не блокувалися загальним Python-правилом `lib/`.
+
+## [2026-03-11 17:47] Harden Copart lot parser diagnostics
+- Розширено `backend/src/cartrap/modules/copart_provider/parser.py`: lot parser тепер підтримує вкладені JSON payload-и з `__NEXT_DATA__`, `__NUXT_DATA__`, `__PRELOADED_STATE__`, `__INITIAL_STATE__`.
+- Додано окреме розпізнавання anti-bot/challenge HTML для lot pages і warning-лог із title/script ids, якщо payload у відповіді не знайдено.
+- Додано `backend/tests/fixtures/copart/lot_page_next_data.html` і розширено `backend/tests/copart/test_parser_lot_page.py` сценаріями nested JSON та challenge page.
