@@ -49,3 +49,12 @@
 - Оновлено `backend/src/cartrap/api/router.py` для підключення search і watchlist модулів до загального API.
 - Додано тестове покриття `backend/tests/search/test_search_api.py` для success, empty-results, invalid-filters, provider-failure і add-from-search сценаріїв.
 - Виконано повний backend suite: `./.venv/bin/pytest backend/tests` -> `27 passed`.
+
+## [2026-03-11 16:15] Task 7-8: monitoring worker і push subscriptions
+- Додано monitoring backend модуль: `backend/src/cartrap/modules/monitoring/polling_policy.py`, `change_detection.py`, `service.py`, а також worker entrypoint `backend/src/cartrap/worker/main.py`.
+- Реалізовано adaptive polling, compare logic для snapshot-ів, обробку parser/provider failure без перетирання останнього валідного стану та генерацію change events.
+- Додано notifications backend модуль: `backend/src/cartrap/modules/notifications/models.py`, `schemas.py`, `repository.py`, `service.py`, `router.py`.
+- Реалізовано API для push subscriptions: `GET/POST/DELETE /api/notifications/subscriptions`.
+- Інтегровано monitoring з notification delivery: change events тепер можуть бути доставлені через абстракцію `WebPushSender`, а невалідні subscriptions автоматично видаляються після failure.
+- Додано тести: `backend/tests/monitoring/test_polling_policy.py`, `test_change_detection.py`, `backend/tests/notifications/test_push_subscriptions.py`, `test_push_delivery.py`.
+- Виконано повний backend suite: `./.venv/bin/pytest backend/tests` -> `36 passed`.

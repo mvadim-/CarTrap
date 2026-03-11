@@ -40,6 +40,9 @@ class WatchlistRepository:
     def list_tracked_lots_for_owner(self, owner_user_id: str) -> list[dict]:
         return list(self.tracked_lots.find({"owner_user_id": owner_user_id}).sort("created_at", -1))
 
+    def list_active_tracked_lots(self) -> list[dict]:
+        return list(self.tracked_lots.find({"active": True}).sort("last_checked_at", 1))
+
     def find_tracked_lot_by_id_for_owner(self, tracked_lot_id: str, owner_user_id: str) -> Optional[dict]:
         return self.tracked_lots.find_one({"_id": ObjectId(tracked_lot_id), "owner_user_id": owner_user_id})
 
@@ -50,6 +53,9 @@ class WatchlistRepository:
 
     def list_snapshots_for_tracked_lot(self, tracked_lot_id: str) -> list[dict]:
         return list(self.lot_snapshots.find({"tracked_lot_id": tracked_lot_id}).sort("detected_at", -1))
+
+    def get_latest_snapshot_for_tracked_lot(self, tracked_lot_id: str) -> Optional[dict]:
+        return self.lot_snapshots.find_one({"tracked_lot_id": tracked_lot_id}, sort=[("detected_at", -1)])
 
     def count_snapshots_for_tracked_lot(self, tracked_lot_id: str) -> int:
         return self.lot_snapshots.count_documents({"tracked_lot_id": tracked_lot_id})

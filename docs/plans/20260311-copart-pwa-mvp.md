@@ -206,6 +206,13 @@
 - [ ] write tests for polling policy and significant-change detection success cases
 - [ ] write tests for retry/backoff, parse failure, and no-op change scenarios
 - [ ] run tests - must pass before next task
+- [x] реалізувати worker entrypoint і scheduler loop для періодичних перевірок активних лотів
+- [x] додати adaptive polling policy: повільний режим за замовчуванням і частіший polling перед аукціоном
+- [x] реалізувати compare logic між попереднім і новим snapshot для визначення значущих змін
+- [x] зберігати результати перевірок так, щоб помилки scraping не перетирали валідний останній стан
+- [x] write tests for polling policy and significant-change detection success cases
+- [x] write tests for retry/backoff, parse failure, and no-op change scenarios
+- [x] run tests - must pass before next task
 
 ### Task 8: Add Web Push subscriptions and notification delivery
 
@@ -223,6 +230,13 @@
 - [ ] write tests for subscription CRUD and delivery success cases
 - [ ] write tests for invalid subscription cleanup and push provider failure cases
 - [ ] run tests - must pass before next task
+- [x] реалізувати збереження `push_subscriptions` для браузерів користувача
+- [x] додати API для subscribe/unsubscribe на backend
+- [x] інтегрувати worker change events з доставкою Web Push через VAPID keys
+- [x] обробити невалідні або прострочені subscriptions без падіння job-процесу
+- [x] write tests for subscription CRUD and delivery success cases
+- [x] write tests for invalid subscription cleanup and push provider failure cases
+- [x] run tests - must pass before next task
 
 ### Task 9: Build PWA frontend for auth, search, watchlist, and admin invite flow
 
