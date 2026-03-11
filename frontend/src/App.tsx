@@ -12,6 +12,7 @@ import { useSession } from "./app/useSession";
 import {
   acceptInvite,
   addFromSearch,
+  addLotNumberToWatchlist,
   createInvite,
   listPushSubscriptions,
   listWatchlist,
@@ -100,6 +101,17 @@ export function App() {
     setWatchlist((current) => current.filter((item) => item.id !== id));
   }
 
+  async function handleAddByLotNumber(lotNumber: string) {
+    if (!session.accessToken) return;
+    try {
+      setError(null);
+      const trackedLot = await addLotNumberToWatchlist(lotNumber, session.accessToken);
+      setWatchlist((current) => [trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not add lot");
+    }
+  }
+
   async function handleCreateInvite(email: string): Promise<Invite> {
     if (!session.accessToken) {
       throw new Error("Missing session");
@@ -163,7 +175,7 @@ export function App() {
         <AdminInvitesPanel inviteLink={inviteLink} onCreateInvite={handleCreateInvite} />
       ) : null}
       <SearchPanel results={searchResults} onSearch={handleSearch} onAddFromSearch={handleAddFromSearch} />
-      <WatchlistPanel items={watchlist} onRemove={handleRemoveWatchlistItem} />
+      <WatchlistPanel items={watchlist} onAddByLotNumber={handleAddByLotNumber} onRemove={handleRemoveWatchlistItem} />
       <PushPanel
         subscriptions={subscriptions}
         permissionState={permissionState}

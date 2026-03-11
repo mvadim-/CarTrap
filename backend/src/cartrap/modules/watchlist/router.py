@@ -35,7 +35,7 @@ def add_to_watchlist(
     current_user: dict = Depends(get_current_user),
     watchlist_service: WatchlistService = Depends(get_watchlist_service),
 ) -> dict:
-    return watchlist_service.add_tracked_lot(current_user, str(payload.lot_url))
+    return watchlist_service.add_tracked_lot(current_user, payload.to_lot_url())
 
 
 @router.delete("/{tracked_lot_id}", status_code=status.HTTP_204_NO_CONTENT)

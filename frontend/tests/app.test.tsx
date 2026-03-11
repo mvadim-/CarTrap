@@ -22,7 +22,7 @@ describe("CarTrap app", () => {
     window.location.hash = "#/login";
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (url.includes("/auth/login")) {
           return new Response(
@@ -35,6 +35,28 @@ describe("CarTrap app", () => {
           );
         }
         if (url.includes("/watchlist") && !url.includes("/search/watchlist")) {
+          if ((init?.method ?? "GET") === "POST") {
+            const body = init?.body ? JSON.parse(String(init.body)) : {};
+            return new Response(
+              JSON.stringify({
+                tracked_lot: {
+                  id: body.lot_number === "99251295" ? "tracked-2" : "tracked-1",
+                  lot_number: body.lot_number ?? "12345678",
+                  url: `https://www.copart.com/lot/${body.lot_number ?? "12345678"}`,
+                  title: body.lot_number === "99251295" ? "2025 FORD MUSTANG MACH-E PREMIUM" : "2020 TOYOTA CAMRY SE",
+                  status: "live",
+                  raw_status: "Live",
+                  current_bid: 4200,
+                  buy_now_price: null,
+                  currency: "USD",
+                  sale_date: null,
+                  last_checked_at: "2026-03-11T12:00:00Z",
+                  created_at: "2026-03-11T12:00:00Z",
+                },
+              }),
+              { status: 201 },
+            );
+          }
           return new Response(JSON.stringify({ items: [] }), { status: 200 });
         }
         if (url.includes("/notifications/subscriptions")) {
@@ -137,5 +159,16 @@ describe("CarTrap app", () => {
     await waitFor(() => {
       expect(screen.getAllByText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);
     });
+  });
+
+  it("adds lot to watchlist by lot number", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "99251295" } });
+    fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
+
+    await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
   });
 });

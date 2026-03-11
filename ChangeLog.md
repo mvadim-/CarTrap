@@ -100,3 +100,10 @@
 - Розширено `backend/src/cartrap/modules/copart_provider/parser.py`: search parser тепер підтримує вкладені JSON payload-и на кшталт `__NEXT_DATA__`, `__NUXT_DATA__`, `__PRELOADED_STATE__`, `__INITIAL_STATE__`.
 - Додано окреме розпізнавання anti-bot/challenge HTML від Copart і warning-лог із title/script ids, якщо payload у відповіді не знайдено.
 - Додано parser fixtures і тести `backend/tests/fixtures/copart/search_results_next_data.html`, `backend/tests/copart/test_search_parser.py` для nested JSON і challenge-page сценарію.
+
+## [2026-03-11 17:34] Add watchlist flow by lot number
+- Розширено `POST /api/watchlist`: endpoint тепер приймає `lot_url` або `lot_number` через `backend/src/cartrap/modules/watchlist/schemas.py` і нормалізує номер лота в стандартний Copart URL.
+- Оновлено `backend/tests/watchlist/test_watchlist_api.py` новими сценаріями для `lot_number` input і валідації порожнього payload.
+- Додано frontend flow “Add by Lot Number” у `frontend/src/features/watchlist/WatchlistPanel.tsx`, інтегровано в `frontend/src/App.tsx` і `frontend/src/lib/api.ts`.
+- Розширено `frontend/tests/app.test.tsx` перевіркою додавання в watchlist по lot number.
+- Оновлено `.gitignore`, щоб `frontend/src/lib/*.ts` не блокувалися загальним Python-правилом `lib/`.

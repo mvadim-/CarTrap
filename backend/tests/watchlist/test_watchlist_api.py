@@ -149,6 +149,44 @@ def test_watchlist_rejects_duplicate_lot(client: TestClient) -> None:
     assert duplicate_response.status_code == 409
 
 
+def test_watchlist_accepts_lot_number_input(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "lotnumber@example.com", "LotNumberPass123")
+        response = client.post(
+            "/api/watchlist",
+            json={"lot_number": "12345678"},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["tracked_lot"]["lot_number"] == "12345678"
+    assert response.json()["tracked_lot"]["url"] == "https://www.copart.com/lot/12345678"
+
+
+def test_watchlist_rejects_empty_identifier(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "missing@example.com", "MissingPass123")
+        response = client.post(
+            "/api/watchlist",
+            json={},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert response.status_code == 422
+
+
+def test_watchlist_rejects_lot_number_without_digits(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "badnumber@example.com", "BadNumberPass123")
+        response = client.post(
+            "/api/watchlist",
+            json={"lot_number": "MUSTANG"},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert response.status_code == 422
+
+
 def test_watchlist_returns_upstream_error_on_invalid_lot_source(client: TestClient) -> None:
     with client:
         user_token = _create_user(client, "source@example.com", "SourcePass123")
