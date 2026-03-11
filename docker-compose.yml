@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   mongodb:
     image: mongo:7.0
@@ -13,41 +11,37 @@ services:
       - mongodb_data:/data/db
 
   backend:
-    image: python:3.12-slim
-    working_dir: /app
-    command: sh -c "pip install -e ./backend && uvicorn cartrap.main:app --host ${BACKEND_HOST:-0.0.0.0} --port ${BACKEND_PORT:-8000}"
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     env_file:
       - .env
     environment:
-      PYTHONPATH: /app/backend/src
-    volumes:
-      - .:/app
+      BACKEND_HOST: ${BACKEND_HOST:-0.0.0.0}
+      BACKEND_PORT: ${BACKEND_PORT:-8000}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
       - mongodb
 
   worker:
-    image: python:3.12-slim
-    working_dir: /app
-    command: sh -c "pip install -e ./backend && python -m cartrap.worker_placeholder"
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: python -m cartrap.worker.main
     env_file:
       - .env
-    environment:
-      PYTHONPATH: /app/backend/src
-    volumes:
-      - .:/app
     depends_on:
       - mongodb
 
   frontend:
-    image: node:22-alpine
-    working_dir: /app/frontend
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port ${FRONTEND_PORT:-5173}"
-    volumes:
-      - .:/app
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
     ports:
-      - "${FRONTEND_PORT:-5173}:5173"
+      - "${FRONTEND_PORT:-5173}:4173"
     depends_on:
       - backend
 

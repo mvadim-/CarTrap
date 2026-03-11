@@ -286,6 +286,13 @@
 - [ ] write tests for dockerized backend smoke flow and critical integration path
 - [ ] write tests for startup failure scenarios caused by missing config
 - [ ] run tests - must pass before next task
+- [x] додати production-like Dockerfiles для `backend`, `worker` і `frontend`
+- [x] перевірити коректний запуск усього стеку через `docker compose up`
+- [x] задокументувати змінні середовища, локальний запуск і базові operational notes
+- [x] синхронізувати план-файл з фактичним scope та знайденими відхиленнями
+- [x] write tests for dockerized backend smoke flow and critical integration path
+- [x] write tests for startup failure scenarios caused by missing config
+- [x] run tests - must pass before next task
 
 ### Task 11: Verify acceptance criteria
 - [ ] verify all requirements from Overview are implemented
