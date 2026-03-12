@@ -18,6 +18,10 @@ export function saveSession(user: User, tokens: TokenPair): void {
   localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
 }
 
+export function saveTokens(tokens: TokenPair): void {
+  localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
+}
+
 export function clearSession(): void {
   localStorage.removeItem(USER_STORAGE_KEY);
   localStorage.removeItem(TOKEN_STORAGE_KEY);

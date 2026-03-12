@@ -129,3 +129,9 @@
 - Оновлено search contract у backend/frontend: `make` / `model` / `year_from` / `year_to` замість попереднього `query` / `location`, з новим JSON request builder.
 - Додано нові тести `backend/tests/copart/test_http_client.py`, `backend/tests/copart/test_api_normalizer.py`, оновлено `backend/tests/search/test_search_api.py`, `backend/tests/watchlist/test_watchlist_api.py`, `backend/tests/test_config.py`, `frontend/tests/app.test.tsx`.
 - Оновлено `.env.example`, `README.md` і додано завершений план `docs/plans/completed/20260312-copart-json-api-provider.md`.
+
+## [2026-03-12 14:42] Add frontend token refresh on 401
+- Оновлено `frontend/src/lib/api.ts`: захищені API запити тепер один раз пробують `/api/auth/refresh` після `401`, зберігають нові токени і повторюють початковий запит.
+- Оновлено `frontend/src/lib/session.ts`, `frontend/src/app/useSession.ts`, `frontend/src/App.tsx`, щоб refreshed tokens синхронізувалися в React state, а невдалий refresh робив logout і redirect на login.
+- Розширено `frontend/tests/app.test.tsx` сценарієм із протухлим `access_token`, який refresh-иться без втрати сесії.
+- Додано завершений план `docs/plans/completed/20260312-frontend-session-refresh.md`.

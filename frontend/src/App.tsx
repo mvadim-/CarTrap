@@ -13,6 +13,7 @@ import {
   acceptInvite,
   addFromSearch,
   addLotNumberToWatchlist,
+  configureAuthLifecycle,
   createInvite,
   listPushSubscriptions,
   listWatchlist,
@@ -43,6 +44,20 @@ export function App() {
       window.location.hash = "#/login";
     }
   }, []);
+
+  useEffect(() => {
+    configureAuthLifecycle({
+      onTokensRefreshed: session.updateTokens,
+      onAuthFailed: () => {
+        session.logout();
+        setSearchResults([]);
+        setWatchlist([]);
+        setSubscriptions([]);
+        setError("Session expired. Please sign in again.");
+        navigate("/login");
+      },
+    });
+  }, [navigate, session]);
 
   useEffect(() => {
     if (!session.accessToken) {

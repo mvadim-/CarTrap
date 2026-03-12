@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import type { TokenPair, User } from "../types";
-import { clearSession, loadTokens, loadUser, saveSession } from "../lib/session";
+import { clearSession, loadTokens, loadUser, saveSession, saveTokens } from "../lib/session";
 
 export function useSession() {
   const [user, setUser] = useState<User | null>(() => loadUser());
@@ -19,12 +19,18 @@ export function useSession() {
     setTokens(null);
   }
 
+  function updateTokens(nextTokens: TokenPair) {
+    saveTokens(nextTokens);
+    setTokens(nextTokens);
+  }
+
   return {
     user,
     tokens,
     accessToken: tokens?.access_token ?? null,
     isAuthenticated: Boolean(user && tokens),
     persist,
+    updateTokens,
     logout,
   };
 }

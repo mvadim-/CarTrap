@@ -24,6 +24,10 @@ describe("CarTrap app", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        const authHeader =
+          init?.headers && !Array.isArray(init.headers) && !(init.headers instanceof Headers)
+            ? init.headers.Authorization
+            : undefined;
         if (url.includes("/auth/login")) {
           return new Response(
             JSON.stringify({
@@ -34,7 +38,20 @@ describe("CarTrap app", () => {
             { status: 200 },
           );
         }
+        if (url.includes("/auth/refresh")) {
+          return new Response(
+            JSON.stringify({
+              access_token: buildToken({ sub: "user-1", role: "admin", refreshed: true }),
+              refresh_token: "refresh-token-next",
+              token_type: "bearer",
+            }),
+            { status: 200 },
+          );
+        }
         if (url.includes("/watchlist") && !url.includes("/search/watchlist")) {
+          if ((init?.method ?? "GET") === "GET" && authHeader === "Bearer expired-token") {
+            return new Response(JSON.stringify({ detail: "Invalid access token." }), { status: 401 });
+          }
           if ((init?.method ?? "GET") === "POST") {
             const body = init?.body ? JSON.parse(String(init.body)) : {};
             return new Response(
@@ -174,5 +191,24 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
 
     await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
+  });
+
+  it("refreshes expired access token and keeps the session active", async () => {
+    localStorage.setItem(
+      "cartrap.user",
+      JSON.stringify({ id: "user-1", email: "admin@example.com", role: "admin", status: "active" }),
+    );
+    localStorage.setItem(
+      "cartrap.tokens",
+      JSON.stringify({ access_token: "expired-token", refresh_token: "refresh-token", token_type: "bearer" }),
+    );
+    window.location.hash = "#/dashboard";
+
+    render(<App />);
+
+    await screen.findByText(/cartrap dispatch board/i);
+    await waitFor(() => {
+      expect(localStorage.getItem("cartrap.tokens")).toContain("refresh-token-next");
+    });
   });
 });

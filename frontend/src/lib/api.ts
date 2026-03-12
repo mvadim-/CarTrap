@@ -1,10 +1,48 @@
 import type { Invite, PushSubscriptionItem, SearchResult, TokenPair, User, WatchlistItem } from "../types";
+import { clearSession, loadTokens, saveTokens } from "./session";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
 
 type HttpMethod = "GET" | "POST" | "DELETE";
+type AuthLifecycleHandlers = {
+  onTokensRefreshed?: (tokens: TokenPair) => void;
+  onAuthFailed?: () => void;
+};
 
-async function request<T>(path: string, options: { method?: HttpMethod; body?: unknown; token?: string } = {}): Promise<T> {
+let authLifecycleHandlers: AuthLifecycleHandlers = {};
+
+export function configureAuthLifecycle(handlers: AuthLifecycleHandlers): void {
+  authLifecycleHandlers = handlers;
+}
+
+async function refreshTokens(): Promise<TokenPair | null> {
+  const stored = loadTokens();
+  if (!stored?.refresh_token) {
+    return null;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: stored.refresh_token }),
+  });
+
+  if (!response.ok) {
+    clearSession();
+    authLifecycleHandlers.onAuthFailed?.();
+    return null;
+  }
+
+  const refreshed = (await response.json()) as TokenPair;
+  saveTokens(refreshed);
+  authLifecycleHandlers.onTokensRefreshed?.(refreshed);
+  return refreshed;
+}
+
+async function request<T>(
+  path: string,
+  options: { method?: HttpMethod; body?: unknown; token?: string; retryOnUnauthorized?: boolean } = {},
+): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: options.method ?? "GET",
     headers: {
@@ -13,6 +51,14 @@ async function request<T>(path: string, options: { method?: HttpMethod; body?: u
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
+
+  if (response.status === 401 && options.token && options.retryOnUnauthorized !== false) {
+    const refreshed = await refreshTokens();
+    if (refreshed) {
+      return request<T>(path, { ...options, token: refreshed.access_token, retryOnUnauthorized: false });
+    }
+    throw new Error("Session expired. Please sign in again.");
+  }
 
   if (!response.ok) {
     const text = await response.text();
