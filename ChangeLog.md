@@ -142,3 +142,9 @@
 - Додано `extract_lot_details()` і `normalize_lot_details_payload()` у `backend/src/cartrap/modules/copart_provider/normalizer.py`.
 - Оновлено `backend/src/cartrap/config.py`, `.env.example`, `backend/tests/test_config.py`, `backend/tests/copart/test_http_client.py`, `backend/tests/copart/test_api_normalizer.py` і `README.md`.
 - Додано завершений план `docs/plans/completed/20260312-copart-lot-details-endpoint.md`.
+
+## [2026-03-12 16:40] Generate static Copart make-model catalog
+- Додано `backend/src/cartrap/modules/search/catalog_builder.py` з helpers для парсингу Copart `keywords`, канонізації make-alias-ів і побудови статичного каталогу `make -> models`.
+- Додано генератор `scripts/generate_copart_make_model_catalog.py`, який валідує make/model відповідності через офіційний NHTSA vPIC API і пише готовий JSON-каталог.
+- Згенеровано `backend/src/cartrap/modules/search/data/copart_make_model_catalog.json` та додано `backend/src/cartrap/modules/search/data/copart_make_model_overrides.json` для ручних винятків на кшталт `MODEL 3 -> tesla`.
+- Додано тести `backend/tests/search/test_catalog_builder.py`, оновлено `README.md` і підготовлено базу для майбутнього переведення Manual Copart Search на локальний довідник make/model.

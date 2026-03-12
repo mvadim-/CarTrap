@@ -38,6 +38,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 - Frontend tests: `npm --prefix frontend run test`
 - Frontend production build: `npm --prefix frontend run build`
 - Full stack: `docker compose up --build`
+- Rebuild static Copart make/model catalog: `python3 scripts/generate_copart_make_model_catalog.py --keywords /path/to/keywords`
 
 ## Docker Notes
 - `backend` and `worker` share the same Python image build and differ only by command.
@@ -45,6 +46,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 - `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` seed the first admin user on API startup.
 - `BACKEND_CORS_ORIGINS` controls which browser origins may call the API; local defaults cover `localhost` and `127.0.0.1` on ports `5173` and `4173`.
 - Copart integration now uses the JSON API on `mmember.copart.com`; HTML scraping and page parsing are no longer used.
+- Static make/model catalog generation lives in `scripts/generate_copart_make_model_catalog.py`, with manual fixes in `backend/src/cartrap/modules/search/data/copart_make_model_overrides.json`.
 
 ## Current Status
 - MVP backend flows are implemented: invite auth, roles, Copart API integration, watchlist, search, monitoring, and push subscription management.
