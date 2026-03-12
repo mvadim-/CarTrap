@@ -31,6 +31,7 @@ def test_client_posts_json_payload_with_required_headers() -> None:
         transport=httpx.MockTransport(handler),
         base_url="https://mmember.copart.com",
         search_path="/srch/?services=bidIncrementsBySiteV2",
+        lot_details_path="/lots-api/v1/lot-details?services=bidIncrementsBySiteV2",
         device_name="iPhone 15 Pro Max",
         d_token="token-123",
         cookie="SessionID=abc",
@@ -48,14 +49,42 @@ def test_client_posts_json_payload_with_required_headers() -> None:
     assert captured_body == {"MISC": ["lot_number:12345678"], "pageNumber": 1}
 
 
+def test_client_posts_lot_details_payload_with_required_headers() -> None:
+    requested_urls: list[str] = []
+    captured_body: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        captured_body.update(json.loads(request.content.decode()))
+        return httpx.Response(200, json={"lotDetails": {"lotNumber": 76880725}})
+
+    client = CopartHttpClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://mmember.copart.com",
+        search_path="/srch/?services=bidIncrementsBySiteV2",
+        lot_details_path="/lots-api/v1/lot-details?services=bidIncrementsBySiteV2",
+        device_name="iPhone 15 Pro Max",
+        d_token="token-123",
+        cookie="SessionID=abc",
+        site_code="CPRTUS",
+    )
+
+    response = client.lot_details("76880725")
+
+    assert response["lotDetails"]["lotNumber"] == 76880725
+    assert requested_urls == ["https://mmember.copart.com/lots-api/v1/lot-details?services=bidIncrementsBySiteV2"]
+    assert captured_body == {"lotNumber": 76880725}
+
+
 def test_client_requires_api_credentials() -> None:
     client = CopartHttpClient(
         transport=httpx.MockTransport(lambda request: httpx.Response(200, json={})),
         base_url="https://mmember.copart.com",
         search_path="/srch/?services=bidIncrementsBySiteV2",
-        device_name=None,
-        d_token=None,
-        cookie=None,
+        lot_details_path="/lots-api/v1/lot-details?services=bidIncrementsBySiteV2",
+        device_name="",
+        d_token="",
+        cookie="",
         site_code="CPRTUS",
     )
 

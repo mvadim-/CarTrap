@@ -9,7 +9,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-from cartrap.modules.copart_provider.normalizer import extract_search_documents, normalize_lot_payload, normalize_search_results
+from cartrap.modules.copart_provider.normalizer import (
+    extract_lot_details,
+    extract_search_documents,
+    normalize_lot_details_payload,
+    normalize_lot_payload,
+    normalize_search_results,
+)
 
 
 SAMPLE_RESPONSE = {
@@ -42,6 +48,18 @@ SAMPLE_RESPONSE = {
     }
 }
 
+LOT_DETAILS_RESPONSE = {
+    "lotDetails": {
+        "lotNumber": 76880725,
+        "lotDescription": "2025 FORD MUSTANG MACH-E GT",
+        "saleStatus": "PURESALE",
+        "saleDate": "2026-04-06T14:00:00Z",
+        "currentBid": 275,
+        "buyTodayBid": 0,
+        "currencyCode": "USD",
+    }
+}
+
 
 def test_extract_search_documents_returns_docs() -> None:
     documents = extract_search_documents(SAMPLE_RESPONSE)
@@ -67,5 +85,22 @@ def test_normalize_lot_payload_maps_single_doc() -> None:
     assert snapshot.lot_number == "76880725"
     assert snapshot.title == "2025 FORD MUSTANG MACH-E GT"
     assert str(snapshot.url) == "https://www.copart.com/lot/76880725"
+    assert snapshot.current_bid == 275.0
+    assert snapshot.buy_now_price == 0.0
+
+
+def test_extract_lot_details_returns_details_object() -> None:
+    details = extract_lot_details(LOT_DETAILS_RESPONSE)
+
+    assert details["lotNumber"] == 76880725
+
+
+def test_normalize_lot_details_payload_maps_lot_endpoint_fields() -> None:
+    snapshot = normalize_lot_details_payload(extract_lot_details(LOT_DETAILS_RESPONSE))
+
+    assert snapshot.lot_number == "76880725"
+    assert snapshot.title == "2025 FORD MUSTANG MACH-E GT"
+    assert str(snapshot.url) == "https://www.copart.com/lot/76880725"
+    assert snapshot.status == "pure_sale"
     assert snapshot.current_bid == 275.0
     assert snapshot.buy_now_price == 0.0

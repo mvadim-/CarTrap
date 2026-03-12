@@ -25,6 +25,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 8. MongoDB will be available on `mongodb://localhost:27017`.
 9. If frontend is opened from another origin, add it to `BACKEND_CORS_ORIGINS` in `.env`.
 10. Configure Copart API headers in `.env`: `COPART_API_DEVICE_NAME`, `COPART_API_D_TOKEN`, `COPART_API_COOKIE`, and optionally override `COPART_API_BASE_URL`, `COPART_API_SEARCH_PATH`, `COPART_API_SITECODE`.
+11. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
 
 ## Services
 - `mongodb` - primary database

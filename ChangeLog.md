@@ -135,3 +135,10 @@
 - Оновлено `frontend/src/lib/session.ts`, `frontend/src/app/useSession.ts`, `frontend/src/App.tsx`, щоб refreshed tokens синхронізувалися в React state, а невдалий refresh робив logout і redirect на login.
 - Розширено `frontend/tests/app.test.tsx` сценарієм із протухлим `access_token`, який refresh-иться без втрати сесії.
 - Додано завершений план `docs/plans/completed/20260312-frontend-session-refresh.md`.
+
+## [2026-03-12 15:00] Use dedicated Copart lot details endpoint
+- Оновлено `backend/src/cartrap/modules/copart_provider/client.py`: додано окремий `lot_details()` для `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
+- `backend/src/cartrap/modules/copart_provider/service.py` більше не робить single-lot lookup через search endpoint; `fetch_lot()` працює напряму через `lotDetails`.
+- Додано `extract_lot_details()` і `normalize_lot_details_payload()` у `backend/src/cartrap/modules/copart_provider/normalizer.py`.
+- Оновлено `backend/src/cartrap/config.py`, `.env.example`, `backend/tests/test_config.py`, `backend/tests/copart/test_http_client.py`, `backend/tests/copart/test_api_normalizer.py` і `README.md`.
+- Додано завершений план `docs/plans/completed/20260312-copart-lot-details-endpoint.md`.

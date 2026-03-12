@@ -23,6 +23,7 @@ class CopartHttpClient:
         transport: Optional[httpx.BaseTransport] = None,
         base_url: Optional[str] = None,
         search_path: Optional[str] = None,
+        lot_details_path: Optional[str] = None,
         device_name: Optional[str] = None,
         d_token: Optional[str] = None,
         cookie: Optional[str] = None,
@@ -39,27 +40,38 @@ class CopartHttpClient:
             follow_redirects=True,
             transport=transport,
         )
-        self._search_path = search_path or settings.copart_api_search_path
-        self._device_name = device_name or settings.copart_api_device_name
-        self._d_token = d_token or settings.copart_api_d_token
-        self._cookie = cookie or settings.copart_api_cookie
-        self._site_code = site_code or settings.copart_api_site_code
+        self._search_path = settings.copart_api_search_path if search_path is None else search_path
+        self._lot_details_path = (
+            settings.copart_api_lot_details_path if lot_details_path is None else lot_details_path
+        )
+        self._device_name = settings.copart_api_device_name if device_name is None else device_name
+        self._d_token = settings.copart_api_d_token if d_token is None else d_token
+        self._cookie = settings.copart_api_cookie if cookie is None else cookie
+        self._site_code = settings.copart_api_site_code if site_code is None else site_code
 
     def search(self, payload: dict) -> dict:
-        if not self._device_name or not self._d_token or not self._cookie:
-            raise RuntimeError("Copart API credentials are not configured.")
+        response = self._client.post(self._search_path, json=payload, headers=self._auth_headers())
+        response.raise_for_status()
+        return response.json()
+
+    def lot_details(self, lot_number: str) -> dict:
         response = self._client.post(
-            self._search_path,
-            json=payload,
-            headers={
-                "devicename": self._device_name,
-                "x-d-token": self._d_token,
-                "Cookie": self._cookie,
-                "sitecode": self._site_code,
-            },
+            self._lot_details_path,
+            json={"lotNumber": int(lot_number)},
+            headers=self._auth_headers(),
         )
         response.raise_for_status()
         return response.json()
 
     def close(self) -> None:
         self._client.close()
+
+    def _auth_headers(self) -> dict[str, str]:
+        if not self._device_name or not self._d_token or not self._cookie:
+            raise RuntimeError("Copart API credentials are not configured.")
+        return {
+            "devicename": self._device_name,
+            "x-d-token": self._d_token,
+            "Cookie": self._cookie,
+            "sitecode": self._site_code,
+        }

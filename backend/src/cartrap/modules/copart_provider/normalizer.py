@@ -11,6 +11,7 @@ from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSear
 STATUS_MAPPING = {
     "on approval": "on_approval",
     "pure sale": "pure_sale",
+    "puresale": "pure_sale",
     "minimum bid": "minimum_bid",
     "sold": "sold",
     "live": "live",
@@ -28,6 +29,13 @@ def extract_search_documents(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in documents if isinstance(item, dict)]
 
 
+def extract_lot_details(payload: dict[str, Any]) -> dict[str, Any]:
+    details = payload.get("lotDetails")
+    if not isinstance(details, dict):
+        raise ValueError("Copart lot response is missing 'lotDetails' object.")
+    return details
+
+
 def normalize_lot_payload(payload: dict[str, Any]) -> CopartLotSnapshot:
     raw_status = derive_raw_status(payload)
     lot_number = str(payload["lot_number"])
@@ -40,6 +48,22 @@ def normalize_lot_payload(payload: dict[str, Any]) -> CopartLotSnapshot:
         current_bid=parse_money(first_present(payload, "current_high_bid", "currentBid")),
         buy_now_price=parse_money(first_present(payload, "buy_it_now_price", "buyItNowPrice")),
         currency=str(first_present(payload, "currency_code", "currency") or "USD"),
+        raw_status=raw_status,
+    )
+
+
+def normalize_lot_details_payload(payload: dict[str, Any]) -> CopartLotSnapshot:
+    raw_status = derive_raw_status(payload)
+    lot_number = str(payload["lotNumber"])
+    return CopartLotSnapshot(
+        lot_number=lot_number,
+        title=str(payload.get("lotDescription") or payload.get("title") or "Unknown lot"),
+        url=build_lot_url(lot_number),
+        status=normalize_status(raw_status),
+        sale_date=parse_datetime(first_present(payload, "saleDate", "auction_date_utc")),
+        current_bid=parse_money(first_present(payload, "currentBid", "displayBidAmount")),
+        buy_now_price=parse_money(first_present(payload, "buyTodayBid", "buy_it_now_price", "buyItNowPrice")),
+        currency=str(first_present(payload, "currencyCode", "currency_code", "currency") or "USD"),
         raw_status=raw_status,
     )
 
@@ -94,7 +118,7 @@ def derive_raw_status(payload: dict[str, Any]) -> str:
     explicit_status = payload.get("status") or payload.get("saleStatus")
     if explicit_status:
         return str(explicit_status)
-    sale_date = parse_datetime(payload.get("auction_date_utc") or payload.get("saleDate"))
+    sale_date = parse_datetime(first_present(payload, "auction_date_utc", "saleDate"))
     if sale_date is None:
         return "upcoming"
     return "live" if sale_date <= datetime.now(timezone.utc) else "upcoming"
