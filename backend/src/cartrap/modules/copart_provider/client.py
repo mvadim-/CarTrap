@@ -23,6 +23,7 @@ class CopartHttpClient:
         transport: Optional[httpx.BaseTransport] = None,
         base_url: Optional[str] = None,
         search_path: Optional[str] = None,
+        search_keywords_path: Optional[str] = None,
         lot_details_path: Optional[str] = None,
         device_name: Optional[str] = None,
         d_token: Optional[str] = None,
@@ -41,6 +42,9 @@ class CopartHttpClient:
             transport=transport,
         )
         self._search_path = settings.copart_api_search_path if search_path is None else search_path
+        self._search_keywords_path = (
+            settings.copart_api_search_keywords_path if search_keywords_path is None else search_keywords_path
+        )
         self._lot_details_path = (
             settings.copart_api_lot_details_path if lot_details_path is None else lot_details_path
         )
@@ -60,6 +64,11 @@ class CopartHttpClient:
             json={"lotNumber": int(lot_number)},
             headers=self._auth_headers(),
         )
+        response.raise_for_status()
+        return response.json()
+
+    def search_keywords(self) -> dict:
+        response = self._client.get(self._search_keywords_path, headers=self._auth_headers())
         response.raise_for_status()
         return response.json()
 

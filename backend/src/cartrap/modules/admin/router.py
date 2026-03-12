@@ -1,13 +1,28 @@
 """Admin-only endpoints."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from cartrap.api.dependencies import get_auth_service, require_admin
 from cartrap.modules.auth.schemas import InviteCreateRequest, InviteResponse
 from cartrap.modules.auth.service import AuthService
+from cartrap.modules.search.schemas import SearchCatalogResponse
+from cartrap.modules.search.service import SearchService
+from cartrap.modules.watchlist.service import WatchlistService
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+def get_search_service(request: Request) -> SearchService:
+    provider_factory = getattr(request.app.state, "copart_provider_factory", None)
+    return SearchService(
+        request.app.state.mongo.database,
+        provider_factory=provider_factory,
+        watchlist_service_factory=lambda: WatchlistService(
+            request.app.state.mongo.database,
+            provider_factory=provider_factory,
+        ),
+    )
 
 
 @router.post("/invites", response_model=InviteResponse)
@@ -27,3 +42,12 @@ def revoke_invite(
 ) -> dict:
     del current_user
     return auth_service.revoke_invite(invite_id)
+
+
+@router.post("/search-catalog/refresh", response_model=SearchCatalogResponse)
+def refresh_search_catalog(
+    current_user: dict = Depends(require_admin),
+    search_service: SearchService = Depends(get_search_service),
+) -> dict:
+    del current_user
+    return search_service.refresh_catalog()

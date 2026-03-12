@@ -148,3 +148,10 @@
 - Додано генератор `scripts/generate_copart_make_model_catalog.py`, який валідує make/model відповідності через офіційний NHTSA vPIC API і пише готовий JSON-каталог.
 - Згенеровано `backend/src/cartrap/modules/search/data/copart_make_model_catalog.json` та додано `backend/src/cartrap/modules/search/data/copart_make_model_overrides.json` для ручних винятків на кшталт `MODEL 3 -> tesla`.
 - Додано тести `backend/tests/search/test_catalog_builder.py`, оновлено `README.md` і підготовлено базу для майбутнього переведення Manual Copart Search на локальний довідник make/model.
+
+## [2026-03-12 17:40] Serve search catalog from backend and wire dropdown UI
+- Додано Mongo-backed search catalog cache через `backend/src/cartrap/modules/search/repository.py` і startup seed у `backend/src/cartrap/app.py`; каталог тепер віддається через `GET /api/search/catalog`.
+- Розширено Copart client/provider для `GET /mcs/v2/public/data/search/keywords` та додано admin-only refresh endpoint `POST /api/admin/search-catalog/refresh` у `backend/src/cartrap/modules/admin/router.py`.
+- Оновлено `backend/src/cartrap/modules/search/service.py` і `backend/src/cartrap/modules/search/schemas.py`: search тепер може використовувати catalog-derived `make_filter` / `model_filter`, а catalog refresh працює через live Copart keywords + NHTSA matching.
+- Перероблено frontend search UX у `frontend/src/features/search/SearchPanel.tsx`: `Make` і `Model` стали dropdown-ами з backend catalog; додано `frontend/src/features/admin/AdminSearchCatalogPanel.tsx` з кнопкою примусового refresh.
+- Оновлено `frontend/src/App.tsx`, `frontend/src/lib/api.ts`, `frontend/src/types.ts`, `frontend/tests/app.test.tsx`, `backend/tests/search/test_search_api.py`, `backend/tests/copart/test_http_client.py`, `backend/tests/test_config.py` і `README.md`.

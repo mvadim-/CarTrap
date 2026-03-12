@@ -31,6 +31,9 @@ class CopartProvider:
         response = self._client.search(payload)
         return normalize_search_results(extract_search_documents(response))
 
+    def fetch_search_keywords(self) -> dict:
+        return self._client.search_keywords()
+
     def close(self) -> None:
         self._client.close()
 

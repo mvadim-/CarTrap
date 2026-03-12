@@ -5,6 +5,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 ## MVP Scope
 - Invite-based onboarding with `admin` and `user` roles
 - Manual Copart search from the app via Copart JSON API
+- Backend-served Copart make/model catalog with admin-triggered refresh
 - Watchlist management for tracked lots
 - Adaptive polling before auction start
 - Web Push notifications for significant lot changes
@@ -26,6 +27,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 9. If frontend is opened from another origin, add it to `BACKEND_CORS_ORIGINS` in `.env`.
 10. Configure Copart API headers in `.env`: `COPART_API_DEVICE_NAME`, `COPART_API_D_TOKEN`, `COPART_API_COOKIE`, and optionally override `COPART_API_BASE_URL`, `COPART_API_SEARCH_PATH`, `COPART_API_SITECODE`.
 11. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
+12. If you use backend-driven catalog refresh, `COPART_API_SEARCH_KEYWORDS_PATH` defaults to `/mcs/v2/public/data/search/keywords`.
 
 ## Services
 - `mongodb` - primary database
@@ -47,10 +49,11 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 - `BACKEND_CORS_ORIGINS` controls which browser origins may call the API; local defaults cover `localhost` and `127.0.0.1` on ports `5173` and `4173`.
 - Copart integration now uses the JSON API on `mmember.copart.com`; HTML scraping and page parsing are no longer used.
 - Static make/model catalog generation lives in `scripts/generate_copart_make_model_catalog.py`, with manual fixes in `backend/src/cartrap/modules/search/data/copart_make_model_overrides.json`.
+- At runtime, the current make/model catalog is served from Mongo through `/api/search/catalog`, and admins can force a refresh via `/api/admin/search-catalog/refresh`.
 
 ## Current Status
 - MVP backend flows are implemented: invite auth, roles, Copart API integration, watchlist, search, monitoring, and push subscription management.
-- MVP frontend flows are implemented: login, invite acceptance, admin invite creation, manual search, watchlist, and client-side push registration UX.
+- MVP frontend flows are implemented: login, invite acceptance, admin invite creation, backend-backed manual search catalog, watchlist, and client-side push registration UX.
 - Docker images for `backend`, `worker`, and `frontend` are buildable and the compose stack passes a basic smoke check.
 
 ## Latest Verification

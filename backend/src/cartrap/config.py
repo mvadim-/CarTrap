@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     bootstrap_admin_password: Optional[str] = Field(default=None, alias="BOOTSTRAP_ADMIN_PASSWORD")
     copart_api_base_url: str = Field(default="https://mmember.copart.com", alias="COPART_API_BASE_URL", min_length=1)
     copart_api_search_path: str = Field(default="/srch/?services=bidIncrementsBySiteV2", alias="COPART_API_SEARCH_PATH", min_length=1)
+    copart_api_search_keywords_path: str = Field(
+        default="/mcs/v2/public/data/search/keywords",
+        alias="COPART_API_SEARCH_KEYWORDS_PATH",
+        min_length=1,
+    )
     copart_api_lot_details_path: str = Field(
         default="/lots-api/v1/lot-details?services=bidIncrementsBySiteV2",
         alias="COPART_API_LOT_DETAILS_PATH",

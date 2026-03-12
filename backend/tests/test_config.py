@@ -25,6 +25,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("MONGO_PING_ON_STARTUP", "true")
     monkeypatch.setenv("COPART_API_BASE_URL", "https://mmember.copart.com")
     monkeypatch.setenv("COPART_API_SEARCH_PATH", "/srch/?services=bidIncrementsBySiteV2")
+    monkeypatch.setenv("COPART_API_SEARCH_KEYWORDS_PATH", "/mcs/v2/public/data/search/keywords")
     monkeypatch.setenv("COPART_API_LOT_DETAILS_PATH", "/lots-api/v1/lot-details?services=bidIncrementsBySiteV2")
     monkeypatch.setenv("COPART_API_DEVICE_NAME", "iPhone 15 Pro Max")
     monkeypatch.setenv("COPART_API_D_TOKEN", "token-123")
@@ -42,6 +43,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.mongo_ping_on_startup is True
     assert settings.copart_api_base_url == "https://mmember.copart.com"
     assert settings.copart_api_search_path == "/srch/?services=bidIncrementsBySiteV2"
+    assert settings.copart_api_search_keywords_path == "/mcs/v2/public/data/search/keywords"
     assert settings.copart_api_lot_details_path == "/lots-api/v1/lot-details?services=bidIncrementsBySiteV2"
     assert settings.copart_api_device_name == "iPhone 15 Pro Max"
     assert settings.copart_api_d_token == "token-123"

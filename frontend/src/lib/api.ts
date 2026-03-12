@@ -1,4 +1,12 @@
-import type { Invite, PushSubscriptionItem, SearchResult, TokenPair, User, WatchlistItem } from "../types";
+import type {
+  Invite,
+  PushSubscriptionItem,
+  SearchCatalog,
+  SearchResult,
+  TokenPair,
+  User,
+  WatchlistItem,
+} from "../types";
 import { clearSession, loadTokens, saveTokens } from "./session";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
@@ -109,11 +117,27 @@ export async function createInvite(email: string, token: string): Promise<Invite
 }
 
 export async function searchLots(
-  payload: { make?: string; model?: string; year_from?: number; year_to?: number; lot_number?: string },
+  payload: {
+    make?: string;
+    model?: string;
+    make_filter?: string;
+    model_filter?: string;
+    year_from?: number;
+    year_to?: number;
+    lot_number?: string;
+  },
   token: string,
 ): Promise<SearchResult[]> {
   const response = await request<{ results: SearchResult[] }>("/search", { method: "POST", body: payload, token });
   return response.results;
+}
+
+export async function getSearchCatalog(token: string): Promise<SearchCatalog> {
+  return request<SearchCatalog>("/search/catalog", { token });
+}
+
+export async function refreshSearchCatalog(token: string): Promise<SearchCatalog> {
+  return request<SearchCatalog>("/admin/search-catalog/refresh", { method: "POST", token });
 }
 
 export async function addToWatchlist(lotUrl: string, token: string): Promise<WatchlistItem> {

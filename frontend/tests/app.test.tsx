@@ -79,9 +79,79 @@ describe("CarTrap app", () => {
         if (url.includes("/notifications/subscriptions")) {
           return new Response(JSON.stringify({ items: [] }), { status: 200 });
         }
+        if (url.includes("/search/catalog")) {
+          return new Response(
+            JSON.stringify({
+              generated_at: "2026-03-12T16:40:00Z",
+              updated_at: "2026-03-12T16:41:00Z",
+              summary: {
+                make_count: 2,
+                model_count: 3,
+                assigned_model_count: 3,
+                exact_match_count: 2,
+                fuzzy_match_count: 1,
+                unassigned_model_count: 0,
+                year_count: 108,
+              },
+              years: [2025, 2026, 2027],
+              manual_override_count: 1,
+              makes: [
+                {
+                  slug: "ford",
+                  name: "FORD",
+                  aliases: [],
+                  search_filter: 'lot_make_desc:"FORD" OR manufacturer_make_desc:"FORD"',
+                  models: [
+                    {
+                      slug: "mustangmache",
+                      name: "MUSTANG MACH-E",
+                      search_filter:
+                        'lot_model_desc:"MUSTANG MACH-E" OR manufacturer_model_desc:"MUSTANG MACH-E"',
+                    },
+                  ],
+                },
+                {
+                  slug: "toyota",
+                  name: "TOYOTA",
+                  aliases: [],
+                  search_filter: 'lot_make_desc:"TOYOTA" OR manufacturer_make_desc:"TOYOTA"',
+                  models: [
+                    {
+                      slug: "camry",
+                      name: "CAMRY",
+                      search_filter: 'lot_model_desc:"CAMRY" OR manufacturer_model_desc:"CAMRY"',
+                    },
+                  ],
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/admin/search-catalog/refresh")) {
+          return new Response(
+            JSON.stringify({
+              generated_at: "2026-03-12T17:00:00Z",
+              updated_at: "2026-03-12T17:00:05Z",
+              summary: {
+                make_count: 2,
+                model_count: 3,
+                assigned_model_count: 3,
+                exact_match_count: 2,
+                fuzzy_match_count: 1,
+                unassigned_model_count: 0,
+                year_count: 108,
+              },
+              years: [2025, 2026, 2027],
+              manual_override_count: 1,
+              makes: [],
+            }),
+            { status: 200 },
+          );
+        }
         if (url.endsWith("/search")) {
           const body = init?.body ? JSON.parse(String(init.body)) : {};
-          if (body.make !== "ford" || body.model !== "mustang mach-e") {
+          if (body.make !== "FORD" || body.model !== "MUSTANG MACH-E") {
             return new Response(JSON.stringify({ results: [] }), { status: 200 });
           }
           return new Response(

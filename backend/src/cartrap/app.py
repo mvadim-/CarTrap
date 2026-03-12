@@ -15,6 +15,7 @@ from cartrap.core.logging import configure_logging
 from cartrap.db.mongo import MongoManager
 from cartrap.modules.auth.service import AuthService
 from cartrap.modules.notifications.service import WebPushSender
+from cartrap.modules.search.service import SearchService
 
 
 @asynccontextmanager
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI):
     app.state.mongo = mongo
     set_service_factory(app, lambda: AuthService(mongo.database, settings))
     AuthService(mongo.database, settings).ensure_bootstrap_admin()
+    SearchService(mongo.database).ensure_catalog_seeded()
     app.state.web_push_sender = WebPushSender()
 
     try:

@@ -31,6 +31,7 @@ def test_client_posts_json_payload_with_required_headers() -> None:
         transport=httpx.MockTransport(handler),
         base_url="https://mmember.copart.com",
         search_path="/srch/?services=bidIncrementsBySiteV2",
+        search_keywords_path="/mcs/v2/public/data/search/keywords",
         lot_details_path="/lots-api/v1/lot-details?services=bidIncrementsBySiteV2",
         device_name="iPhone 15 Pro Max",
         d_token="token-123",
@@ -62,6 +63,7 @@ def test_client_posts_lot_details_payload_with_required_headers() -> None:
         transport=httpx.MockTransport(handler),
         base_url="https://mmember.copart.com",
         search_path="/srch/?services=bidIncrementsBySiteV2",
+        search_keywords_path="/mcs/v2/public/data/search/keywords",
         lot_details_path="/lots-api/v1/lot-details?services=bidIncrementsBySiteV2",
         device_name="iPhone 15 Pro Max",
         d_token="token-123",
@@ -76,11 +78,37 @@ def test_client_posts_lot_details_payload_with_required_headers() -> None:
     assert captured_body == {"lotNumber": 76880725}
 
 
+def test_client_fetches_search_keywords_with_required_headers() -> None:
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={"ford": {"type": "MAKE_MODEL"}})
+
+    client = CopartHttpClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://mmember.copart.com",
+        search_path="/srch/?services=bidIncrementsBySiteV2",
+        search_keywords_path="/mcs/v2/public/data/search/keywords",
+        lot_details_path="/lots-api/v1/lot-details?services=bidIncrementsBySiteV2",
+        device_name="iPhone 15 Pro Max",
+        d_token="token-123",
+        cookie="SessionID=abc",
+        site_code="CPRTUS",
+    )
+
+    response = client.search_keywords()
+
+    assert response["ford"]["type"] == "MAKE_MODEL"
+    assert requested_urls == ["https://mmember.copart.com/mcs/v2/public/data/search/keywords"]
+
+
 def test_client_requires_api_credentials() -> None:
     client = CopartHttpClient(
         transport=httpx.MockTransport(lambda request: httpx.Response(200, json={})),
         base_url="https://mmember.copart.com",
         search_path="/srch/?services=bidIncrementsBySiteV2",
+        search_keywords_path="/mcs/v2/public/data/search/keywords",
         lot_details_path="/lots-api/v1/lot-details?services=bidIncrementsBySiteV2",
         device_name="",
         d_token="",

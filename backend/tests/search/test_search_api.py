@@ -20,6 +20,7 @@ import cartrap.app as app_module
 from cartrap.config import Settings
 from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSearchResult
 from cartrap.modules.search.schemas import SearchRequest
+from cartrap.modules.search.service import SearchService
 
 
 class FakeMongoManager:
@@ -55,6 +56,15 @@ class FakeProvider:
         if self._should_fail:
             raise RuntimeError("upstream failed")
         return self._lots[url]
+
+    def fetch_search_keywords(self) -> dict:
+        return {
+            "ford": {
+                "text": "manufacturer_make_desc",
+                "filterQuery": 'lot_make_desc:"FORD" OR manufacturer_make_desc:"FORD"',
+                "type": "MAKE_MODEL",
+            }
+        }
 
     def close(self) -> None:
         return None
@@ -150,6 +160,66 @@ def test_search_endpoint_returns_results(client: TestClient) -> None:
     ]
 
 
+def test_search_catalog_endpoint_returns_seeded_catalog(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "catalog@example.com", "CatalogPass123")
+        response = client.get(
+            "/api/search/catalog",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["make_count"] >= 300
+    assert any(make["slug"] == "ford" for make in payload["makes"])
+
+
+def test_admin_can_refresh_search_catalog(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_refresh_catalog(self: SearchService) -> dict:
+        return {
+            "generated_at": "2026-03-12T16:40:00Z",
+            "updated_at": "2026-03-12T16:41:00Z",
+            "summary": {
+                "make_count": 2,
+                "model_count": 3,
+                "assigned_model_count": 3,
+                "exact_match_count": 2,
+                "fuzzy_match_count": 1,
+                "unassigned_model_count": 0,
+                "year_count": 108,
+            },
+            "years": [2025, 2026],
+            "manual_override_count": 1,
+            "makes": [
+                {
+                    "slug": "ford",
+                    "name": "FORD",
+                    "aliases": [],
+                    "search_filter": 'lot_make_desc:"FORD"',
+                    "models": [
+                        {
+                            "slug": "mustangmache",
+                            "name": "MUSTANG MACH-E",
+                            "search_filter": 'lot_model_desc:"MUSTANG MACH-E"',
+                        }
+                    ],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(SearchService, "refresh_catalog", fake_refresh_catalog)
+
+    with client:
+        admin_token = _login(client, "admin@example.com", "AdminPass123")
+        response = client.post(
+            "/api/admin/search-catalog/refresh",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["summary"]["make_count"] == 2
+
+
 def test_add_from_search_reuses_watchlist_logic(client: TestClient) -> None:
     with client:
         user_token = _create_user(client, "search-add@example.com", "SearchAddPass123")
@@ -216,3 +286,20 @@ def test_search_request_builds_api_payload() -> None:
     ]
     assert payload["pageNumber"] == 1
     assert payload["userStartUtcDatetime"] == "2026-03-12T00:00:00Z"
+
+
+def test_search_request_prefers_catalog_filters() -> None:
+    request = SearchRequest(
+        make="TOYOTA",
+        model="CAMRY",
+        make_filter='(lot_make_desc:"TOYO" OR manufacturer_make_desc:"TOYO") OR (lot_make_desc:"TOYOTA" OR manufacturer_make_desc:"TOYOTA")',
+        model_filter='lot_model_desc:"CAMRY" OR lot_model_group:"CAMRY" OR manufacturer_model_desc:"CAMRY"',
+    )
+
+    payload = request.to_api_request(datetime(2026, 3, 12, 15, 45, tzinfo=timezone.utc)).to_payload()
+
+    assert payload["MISC"] == [
+        "vehicle_type_code:VEHTYPE_V",
+        '(lot_make_desc:"TOYO" OR manufacturer_make_desc:"TOYO") OR (lot_make_desc:"TOYOTA" OR manufacturer_make_desc:"TOYOTA")',
+        'lot_model_desc:"CAMRY" OR lot_model_group:"CAMRY" OR manufacturer_model_desc:"CAMRY"',
+    ]

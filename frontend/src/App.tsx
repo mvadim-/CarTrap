@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { DashboardShell } from "./features/dashboard/DashboardShell";
 import { AdminInvitesPanel } from "./features/admin/AdminInvitesPanel";
+import { AdminSearchCatalogPanel } from "./features/admin/AdminSearchCatalogPanel";
 import { InviteAcceptScreen } from "./features/auth/InviteAcceptScreen";
 import { LoginScreen } from "./features/auth/LoginScreen";
 import { PushPanel } from "./features/push/PushPanel";
@@ -15,15 +16,17 @@ import {
   addLotNumberToWatchlist,
   configureAuthLifecycle,
   createInvite,
+  getSearchCatalog,
   listPushSubscriptions,
   listWatchlist,
   login,
   removeWatchlistItem,
+  refreshSearchCatalog,
   searchLots,
   subscribeToPush,
   unsubscribeFromPush,
 } from "./lib/api";
-import type { Invite, PushSubscriptionItem, SearchResult, WatchlistItem } from "./types";
+import type { Invite, PushSubscriptionItem, SearchCatalog, SearchResult, WatchlistItem } from "./types";
 
 function getNotificationPermission(): string {
   return typeof Notification === "undefined" ? "unsupported" : Notification.permission;
@@ -37,6 +40,8 @@ export function App() {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [subscriptions, setSubscriptions] = useState<PushSubscriptionItem[]>([]);
+  const [searchCatalog, setSearchCatalog] = useState<SearchCatalog | null>(null);
+  const [isLoadingSearchCatalog, setIsLoadingSearchCatalog] = useState(false);
   const [permissionState, setPermissionState] = useState(getNotificationPermission());
 
   useEffect(() => {
@@ -53,6 +58,7 @@ export function App() {
         setSearchResults([]);
         setWatchlist([]);
         setSubscriptions([]);
+        setSearchCatalog(null);
         setError("Session expired. Please sign in again.");
         navigate("/login");
       },
@@ -65,6 +71,11 @@ export function App() {
     }
     void listWatchlist(session.accessToken).then(setWatchlist).catch(() => undefined);
     void listPushSubscriptions(session.accessToken).then(setSubscriptions).catch(() => undefined);
+    setIsLoadingSearchCatalog(true);
+    void getSearchCatalog(session.accessToken)
+      .then(setSearchCatalog)
+      .catch(() => undefined)
+      .finally(() => setIsLoadingSearchCatalog(false));
   }, [session.accessToken]);
 
   async function handleLogin(email: string, password: string) {
@@ -89,16 +100,25 @@ export function App() {
     }
   }
 
-  async function handleSearch(make: string, model: string, yearFrom: string, yearTo: string) {
+  async function handleSearch(payload: {
+    make?: string;
+    model?: string;
+    makeFilter?: string;
+    modelFilter?: string;
+    yearFrom?: string;
+    yearTo?: string;
+  }) {
     if (!session.accessToken) return;
     try {
       setError(null);
       const results = await searchLots(
         {
-          make,
-          model,
-          year_from: yearFrom ? Number(yearFrom) : undefined,
-          year_to: yearTo ? Number(yearTo) : undefined,
+          make: payload.make,
+          model: payload.model,
+          make_filter: payload.makeFilter,
+          model_filter: payload.modelFilter,
+          year_from: payload.yearFrom ? Number(payload.yearFrom) : undefined,
+          year_to: payload.yearTo ? Number(payload.yearTo) : undefined,
         },
         session.accessToken,
       );
@@ -144,6 +164,19 @@ export function App() {
     return invite;
   }
 
+  async function handleRefreshSearchCatalog() {
+    if (!session.accessToken) {
+      return;
+    }
+    try {
+      setError(null);
+      const refreshedCatalog = await refreshSearchCatalog(session.accessToken);
+      setSearchCatalog(refreshedCatalog);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not refresh search catalog");
+    }
+  }
+
   async function handleSubscribePush() {
     if (!session.accessToken) return;
     if (typeof Notification === "undefined") {
@@ -175,6 +208,7 @@ export function App() {
     setSearchResults([]);
     setWatchlist([]);
     setSubscriptions([]);
+    setSearchCatalog(null);
     navigate("/login");
   }
 
@@ -195,9 +229,18 @@ export function App() {
   return (
     <DashboardShell user={session.user!} onLogout={handleLogout}>
       {session.user?.role === "admin" ? (
-        <AdminInvitesPanel inviteLink={inviteLink} onCreateInvite={handleCreateInvite} />
+        <>
+          <AdminInvitesPanel inviteLink={inviteLink} onCreateInvite={handleCreateInvite} />
+          <AdminSearchCatalogPanel catalog={searchCatalog} onRefresh={handleRefreshSearchCatalog} />
+        </>
       ) : null}
-      <SearchPanel results={searchResults} onSearch={handleSearch} onAddFromSearch={handleAddFromSearch} />
+      <SearchPanel
+        catalog={searchCatalog}
+        isLoadingCatalog={isLoadingSearchCatalog}
+        results={searchResults}
+        onSearch={handleSearch}
+        onAddFromSearch={handleAddFromSearch}
+      />
       <WatchlistPanel items={watchlist} onAddByLotNumber={handleAddByLotNumber} onRemove={handleRemoveWatchlistItem} />
       <PushPanel
         subscriptions={subscriptions}

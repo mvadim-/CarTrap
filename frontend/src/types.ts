@@ -39,6 +39,39 @@ export type SearchResult = {
   status: string;
 };
 
+export type SearchCatalogModel = {
+  slug: string;
+  name: string;
+  search_filter: string;
+};
+
+export type SearchCatalogMake = {
+  slug: string;
+  name: string;
+  aliases: string[];
+  search_filter: string;
+  models: SearchCatalogModel[];
+};
+
+export type SearchCatalogSummary = {
+  make_count: number;
+  model_count: number;
+  assigned_model_count: number;
+  exact_match_count: number;
+  fuzzy_match_count: number;
+  unassigned_model_count: number;
+  year_count: number;
+};
+
+export type SearchCatalog = {
+  generated_at: string | null;
+  updated_at: string | null;
+  summary: SearchCatalogSummary;
+  years: number[];
+  makes: SearchCatalogMake[];
+  manual_override_count: number;
+};
+
 export type Invite = {
   id: string;
   email: string;

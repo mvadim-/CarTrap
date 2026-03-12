@@ -1,22 +1,70 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
-import type { SearchResult } from "../../types";
+import type { SearchCatalog, SearchCatalogMake, SearchCatalogModel, SearchResult } from "../../types";
+
+type SearchPayload = {
+  make?: string;
+  model?: string;
+  makeFilter?: string;
+  modelFilter?: string;
+  yearFrom?: string;
+  yearTo?: string;
+};
 
 type Props = {
+  catalog: SearchCatalog | null;
+  isLoadingCatalog: boolean;
   results: SearchResult[];
-  onSearch: (make: string, model: string, yearFrom: string, yearTo: string) => Promise<void>;
+  onSearch: (payload: SearchPayload) => Promise<void>;
   onAddFromSearch: (lotUrl: string) => Promise<void>;
 };
 
-export function SearchPanel({ results, onSearch, onAddFromSearch }: Props) {
-  const [make, setMake] = useState("ford");
-  const [model, setModel] = useState("mustang mach-e");
+export function SearchPanel({ catalog, isLoadingCatalog, results, onSearch, onAddFromSearch }: Props) {
+  const [selectedMakeSlug, setSelectedMakeSlug] = useState("");
+  const [selectedModelSlug, setSelectedModelSlug] = useState("");
   const [yearFrom, setYearFrom] = useState("2025");
   const [yearTo, setYearTo] = useState("2027");
 
+  const selectedMake: SearchCatalogMake | null = catalog?.makes.find((item) => item.slug === selectedMakeSlug) ?? null;
+  const selectedModel: SearchCatalogModel | null = selectedMake?.models.find((item) => item.slug === selectedModelSlug) ?? null;
+
+  useEffect(() => {
+    if (!catalog || catalog.makes.length === 0) {
+      return;
+    }
+    if (!selectedMakeSlug) {
+      const fallbackMake = catalog.makes.find((item) => item.slug === "ford") ?? catalog.makes[0];
+      setSelectedMakeSlug(fallbackMake.slug);
+      const fallbackModel =
+        fallbackMake.models.find((item) => item.slug === "mustangmache") ?? fallbackMake.models[0] ?? null;
+      setSelectedModelSlug(fallbackModel?.slug ?? "");
+    }
+  }, [catalog, selectedMakeSlug]);
+
+  useEffect(() => {
+    if (!selectedMake) {
+      setSelectedModelSlug("");
+      return;
+    }
+    if (selectedModelSlug && selectedMake.models.some((item) => item.slug === selectedModelSlug)) {
+      return;
+    }
+    setSelectedModelSlug(selectedMake.models[0]?.slug ?? "");
+  }, [selectedMake, selectedModelSlug]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSearch(make, model, yearFrom, yearTo);
+    if (!selectedMake) {
+      return;
+    }
+    await onSearch({
+      make: selectedMake.name,
+      model: selectedModel?.name,
+      makeFilter: selectedMake.search_filter,
+      modelFilter: selectedModel?.search_filter,
+      yearFrom,
+      yearTo,
+    });
   }
 
   return (
@@ -30,11 +78,39 @@ export function SearchPanel({ results, onSearch, onAddFromSearch }: Props) {
       <form className="search-grid" onSubmit={handleSubmit}>
         <label>
           Make
-          <input value={make} onChange={(event) => setMake(event.target.value)} placeholder="Ford" />
+          <select
+            aria-label="Make"
+            value={selectedMakeSlug}
+            onChange={(event) => {
+              setSelectedMakeSlug(event.target.value);
+              setSelectedModelSlug("");
+            }}
+            disabled={isLoadingCatalog || !catalog}
+          >
+            {!catalog ? <option value="">Loading catalog...</option> : null}
+            {catalog?.makes.map((make) => (
+              <option key={make.slug} value={make.slug}>
+                {make.name}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           Model
-          <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="Mustang Mach-E" />
+          <select
+            aria-label="Model"
+            value={selectedModelSlug}
+            onChange={(event) => setSelectedModelSlug(event.target.value)}
+            disabled={!selectedMake || selectedMake.models.length === 0}
+          >
+            {!selectedMake ? <option value="">Select make first</option> : null}
+            {selectedMake && selectedMake.models.length === 0 ? <option value="">No cataloged models</option> : null}
+            {selectedMake?.models.map((model) => (
+              <option key={model.slug} value={model.slug}>
+                {model.name}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           Year From
@@ -44,8 +120,11 @@ export function SearchPanel({ results, onSearch, onAddFromSearch }: Props) {
           Year To
           <input value={yearTo} onChange={(event) => setYearTo(event.target.value)} placeholder="2027" />
         </label>
-        <button type="submit">Search Lots</button>
+        <button type="submit" disabled={!selectedMake}>
+          Search Lots
+        </button>
       </form>
+      {!catalog && !isLoadingCatalog ? <p className="muted">Search catalog is unavailable.</p> : null}
       <div className="result-list">
         {results.length === 0 ? (
           <p className="muted">No results loaded yet.</p>
