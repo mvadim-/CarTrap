@@ -62,7 +62,10 @@ export async function createInvite(email: string, token: string): Promise<Invite
   return request<Invite>("/admin/invites", { method: "POST", body: { email }, token });
 }
 
-export async function searchLots(payload: { query?: string; location?: string; search_url?: string }, token: string): Promise<SearchResult[]> {
+export async function searchLots(
+  payload: { make?: string; model?: string; year_from?: number; year_to?: number; lot_number?: string },
+  token: string,
+): Promise<SearchResult[]> {
   const response = await request<{ results: SearchResult[] }>("/search", { method: "POST", body: payload, token });
   return response.results;
 }

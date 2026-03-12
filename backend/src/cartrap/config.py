@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     invite_ttl_hours: int = Field(default=72, alias="INVITE_TTL_HOURS", ge=1)
     bootstrap_admin_email: Optional[str] = Field(default=None, alias="BOOTSTRAP_ADMIN_EMAIL")
     bootstrap_admin_password: Optional[str] = Field(default=None, alias="BOOTSTRAP_ADMIN_PASSWORD")
+    copart_api_base_url: str = Field(default="https://mmember.copart.com", alias="COPART_API_BASE_URL", min_length=1)
+    copart_api_search_path: str = Field(default="/srch/?services=bidIncrementsBySiteV2", alias="COPART_API_SEARCH_PATH", min_length=1)
+    copart_api_device_name: Optional[str] = Field(default=None, alias="COPART_API_DEVICE_NAME")
+    copart_api_d_token: Optional[str] = Field(default=None, alias="COPART_API_D_TOKEN")
+    copart_api_cookie: Optional[str] = Field(default=None, alias="COPART_API_COOKIE")
+    copart_api_site_code: str = Field(default="CPRTUS", alias="COPART_API_SITECODE", min_length=1)
 
     @property
     def cors_origins(self) -> List[str]:

@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 
 from datetime import datetime, timezone
+from typing import Any
 
 import mongomock
 from fastapi.testclient import TestClient
@@ -42,10 +43,12 @@ class FakeProvider:
         self._results = results
         self._lots = lots
         self._should_fail = should_fail
+        self.search_payloads: list[dict[str, Any]] = []
 
-    def search_lots(self, url: str) -> list[CopartSearchResult]:
+    def search_lots(self, payload: dict) -> list[CopartSearchResult]:
         if self._should_fail:
             raise RuntimeError("upstream failed")
+        self.search_payloads.append(payload)
         return self._results
 
     def fetch_lot(self, url: str) -> CopartLotSnapshot:
@@ -70,7 +73,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         bootstrap_admin_password="AdminPass123",
     )
     app = app_module.create_app(settings)
-    app.state.copart_provider_factory = lambda: FakeProvider(
+    fake_provider = FakeProvider(
         results=[
             CopartSearchResult(
                 lot_number="12345678",
@@ -107,6 +110,8 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
             )
         },
     )
+    app.state.copart_provider_factory = lambda: fake_provider
+    app.state.fake_provider = fake_provider
     return TestClient(app)
 
 
@@ -131,14 +136,18 @@ def test_search_endpoint_returns_results(client: TestClient) -> None:
         user_token = _create_user(client, "searcher@example.com", "SearcherPass123")
         response = client.post(
             "/api/search",
-            json={"query": "toyota camry", "location": "CA"},
+            json={"make": "Ford", "model": "Mustang Mach-E", "year_from": 2025, "year_to": 2027},
             headers={"Authorization": f"Bearer {user_token}"},
         )
 
     assert response.status_code == 200
     assert len(response.json()["results"]) == 2
-    assert response.json()["source_url"].startswith("https://www.copart.com/lotSearchResults?")
-    assert "searchCriteria=" in response.json()["source_url"]
+    assert response.json()["source_request"]["MISC"] == [
+        "vehicle_type_code:VEHTYPE_V",
+        "lot_year:[2025 TO 2027]",
+        "lot_make_code:FORD",
+        'lot_model_group:"MUSTANG MACH-E" OR lot_model_desc:"MUSTANG MACH-E"',
+    ]
 
 
 def test_add_from_search_reuses_watchlist_logic(client: TestClient) -> None:
@@ -172,7 +181,7 @@ def test_search_returns_empty_results(client: TestClient) -> None:
         client.app.state.copart_provider_factory = lambda: FakeProvider(results=[], lots={})
         response = client.post(
             "/api/search",
-            json={"search_url": "https://www.copart.com/search?query=honda"},
+            json={"make": "Honda", "model": "Civic"},
             headers={"Authorization": f"Bearer {user_token}"},
         )
 
@@ -186,7 +195,7 @@ def test_search_handles_provider_failure(client: TestClient) -> None:
         client.app.state.copart_provider_factory = lambda: FakeProvider(results=[], lots={}, should_fail=True)
         response = client.post(
             "/api/search",
-            json={"query": "broken"},
+            json={"make": "Ford", "model": "Broken"},
             headers={"Authorization": f"Bearer {user_token}"},
         )
 
@@ -194,12 +203,16 @@ def test_search_handles_provider_failure(client: TestClient) -> None:
     assert response.json()["detail"] == "Failed to fetch search results from Copart."
 
 
-def test_search_request_builds_lot_search_results_url() -> None:
-    request = SearchRequest(query="Ford mustang mach-e", location="NJ")
+def test_search_request_builds_api_payload() -> None:
+    request = SearchRequest(make="Ford", model="Mustang Mach-E", year_from=2025, year_to=2027)
 
-    source_url = request.to_url()
+    payload = request.to_api_request(datetime(2026, 3, 12, 15, 45, tzinfo=timezone.utc)).to_payload()
 
-    assert source_url.startswith("https://www.copart.com/lotSearchResults?")
-    assert "free=true" in source_url
-    assert "from=%2FvehicleFinder" in source_url
-    assert "Ford+mustang+mach-e" in source_url
+    assert payload["MISC"] == [
+        "vehicle_type_code:VEHTYPE_V",
+        "lot_year:[2025 TO 2027]",
+        "lot_make_code:FORD",
+        'lot_model_group:"MUSTANG MACH-E" OR lot_model_desc:"MUSTANG MACH-E"',
+    ]
+    assert payload["pageNumber"] == 1
+    assert payload["userStartUtcDatetime"] == "2026-03-12T00:00:00Z"

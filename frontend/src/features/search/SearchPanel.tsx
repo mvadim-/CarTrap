@@ -4,17 +4,19 @@ import type { SearchResult } from "../../types";
 
 type Props = {
   results: SearchResult[];
-  onSearch: (query: string, location: string) => Promise<void>;
+  onSearch: (make: string, model: string, yearFrom: string, yearTo: string) => Promise<void>;
   onAddFromSearch: (lotUrl: string) => Promise<void>;
 };
 
 export function SearchPanel({ results, onSearch, onAddFromSearch }: Props) {
-  const [query, setQuery] = useState("toyota camry");
-  const [location, setLocation] = useState("CA");
+  const [make, setMake] = useState("ford");
+  const [model, setModel] = useState("mustang mach-e");
+  const [yearFrom, setYearFrom] = useState("2025");
+  const [yearTo, setYearTo] = useState("2027");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSearch(query, location);
+    await onSearch(make, model, yearFrom, yearTo);
   }
 
   return (
@@ -27,12 +29,20 @@ export function SearchPanel({ results, onSearch, onAddFromSearch }: Props) {
       </div>
       <form className="search-grid" onSubmit={handleSubmit}>
         <label>
-          Query
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="make or model" />
+          Make
+          <input value={make} onChange={(event) => setMake(event.target.value)} placeholder="Ford" />
         </label>
         <label>
-          Location
-          <input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="CA - SACRAMENTO" />
+          Model
+          <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="Mustang Mach-E" />
+        </label>
+        <label>
+          Year From
+          <input value={yearFrom} onChange={(event) => setYearFrom(event.target.value)} placeholder="2025" />
+        </label>
+        <label>
+          Year To
+          <input value={yearTo} onChange={(event) => setYearTo(event.target.value)} placeholder="2027" />
         </label>
         <button type="submit">Search Lots</button>
       </form>

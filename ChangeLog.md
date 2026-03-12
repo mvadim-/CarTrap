@@ -122,3 +122,10 @@
 - Оновлено `backend/src/cartrap/modules/copart_provider/client.py`: додано browser-like headers, homepage warmup request, `Referer` на target fetch і optional HTTP/2, якщо в runtime доступний `h2`.
 - Додано ізольовані тести `backend/tests/copart/test_http_client.py` на session warmup, header profile і graceful continuation після warmup failure.
 - Додано завершений план `docs/plans/completed/20260311-copart-browser-headers-experiment.md` для цього експерименту.
+
+## [2026-03-12 14:31] Refactor Copart integration to JSON API
+- Замінено HTML scraping в `backend/src/cartrap/modules/copart_provider/` на POST запити до Copart JSON API (`mmember.copart.com/srch/?services=bidIncrementsBySiteV2`) з env-configured headers і cookies.
+- `fetch_lot()` тепер працює через lookup по `lot_number` через той самий JSON endpoint; HTML parser layer, fixtures і `beautifulsoup4` dependency видалені.
+- Оновлено search contract у backend/frontend: `make` / `model` / `year_from` / `year_to` замість попереднього `query` / `location`, з новим JSON request builder.
+- Додано нові тести `backend/tests/copart/test_http_client.py`, `backend/tests/copart/test_api_normalizer.py`, оновлено `backend/tests/search/test_search_api.py`, `backend/tests/watchlist/test_watchlist_api.py`, `backend/tests/test_config.py`, `frontend/tests/app.test.tsx`.
+- Оновлено `.env.example`, `README.md` і додано завершений план `docs/plans/completed/20260312-copart-json-api-provider.md`.

@@ -63,6 +63,10 @@ describe("CarTrap app", () => {
           return new Response(JSON.stringify({ items: [] }), { status: 200 });
         }
         if (url.endsWith("/search")) {
+          const body = init?.body ? JSON.parse(String(init.body)) : {};
+          if (body.make !== "ford" || body.model !== "mustang mach-e") {
+            return new Response(JSON.stringify({ results: [] }), { status: 200 });
+          }
           return new Response(
             JSON.stringify({
               results: [

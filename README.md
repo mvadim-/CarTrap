@@ -4,7 +4,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 
 ## MVP Scope
 - Invite-based onboarding with `admin` and `user` roles
-- Manual Copart search from the app
+- Manual Copart search from the app via Copart JSON API
 - Watchlist management for tracked lots
 - Adaptive polling before auction start
 - Web Push notifications for significant lot changes
@@ -24,6 +24,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 7. Frontend will be available on `http://localhost:5173` from Vite during local dev, or `http://localhost:4173` from the containerized static build.
 8. MongoDB will be available on `mongodb://localhost:27017`.
 9. If frontend is opened from another origin, add it to `BACKEND_CORS_ORIGINS` in `.env`.
+10. Configure Copart API headers in `.env`: `COPART_API_DEVICE_NAME`, `COPART_API_D_TOKEN`, `COPART_API_COOKIE`, and optionally override `COPART_API_BASE_URL`, `COPART_API_SEARCH_PATH`, `COPART_API_SITECODE`.
 
 ## Services
 - `mongodb` - primary database
@@ -42,9 +43,10 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 - `frontend` is built with Vite and served from nginx on port `4173`.
 - `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` seed the first admin user on API startup.
 - `BACKEND_CORS_ORIGINS` controls which browser origins may call the API; local defaults cover `localhost` and `127.0.0.1` on ports `5173` and `4173`.
+- Copart integration now uses the JSON API on `mmember.copart.com`; HTML scraping and page parsing are no longer used.
 
 ## Current Status
-- MVP backend flows are implemented: invite auth, roles, Copart parsing, watchlist, search, monitoring, and push subscription management.
+- MVP backend flows are implemented: invite auth, roles, Copart API integration, watchlist, search, monitoring, and push subscription management.
 - MVP frontend flows are implemented: login, invite acceptance, admin invite creation, manual search, watchlist, and client-side push registration UX.
 - Docker images for `backend`, `worker`, and `frontend` are buildable and the compose stack passes a basic smoke check.
 

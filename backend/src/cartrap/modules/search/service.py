@@ -28,19 +28,19 @@ class SearchService:
         self._watchlist_service_factory = watchlist_service_factory or (lambda: WatchlistService(database, provider_factory=provider_factory))
 
     def search(self, payload: SearchRequest) -> dict:
-        source_url = payload.to_url()
+        source_request = payload.to_api_request().to_payload()
         provider = self._provider_factory()
         try:
-            results = provider.search_lots(source_url)
+            results = provider.search_lots(source_request)
         except Exception as exc:
-            logger.exception("Copart search failed for source_url=%s", source_url)
+            logger.exception("Copart search failed for source_request=%s", source_request)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Failed to fetch search results from Copart.",
             ) from exc
         finally:
             provider.close()
-        return {"results": [self.serialize_result(item) for item in results], "source_url": source_url}
+        return {"results": [self.serialize_result(item) for item in results], "source_request": source_request}
 
     def add_from_search(self, owner_user: dict, lot_url: str) -> dict:
         watchlist_service = self._watchlist_service_factory()

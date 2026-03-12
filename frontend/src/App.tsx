@@ -74,11 +74,19 @@ export function App() {
     }
   }
 
-  async function handleSearch(query: string, location: string) {
+  async function handleSearch(make: string, model: string, yearFrom: string, yearTo: string) {
     if (!session.accessToken) return;
     try {
       setError(null);
-      const results = await searchLots({ query, location }, session.accessToken);
+      const results = await searchLots(
+        {
+          make,
+          model,
+          year_from: yearFrom ? Number(yearFrom) : undefined,
+          year_to: yearTo ? Number(yearTo) : undefined,
+        },
+        session.accessToken,
+      );
       setSearchResults(results);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Search failed");
