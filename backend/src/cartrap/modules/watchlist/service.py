@@ -40,6 +40,8 @@ class WatchlistService:
                 "lot_number": snapshot.lot_number,
                 "url": str(snapshot.url),
                 "title": snapshot.title,
+                "thumbnail_url": str(snapshot.thumbnail_url) if snapshot.thumbnail_url else None,
+                "image_urls": [str(url) for url in snapshot.image_urls],
                 "status": snapshot.status,
                 "raw_status": snapshot.raw_status,
                 "sale_date": snapshot.sale_date,
@@ -74,7 +76,7 @@ class WatchlistService:
         }
 
     def list_watchlist(self, owner_user: dict) -> dict:
-        items = [self.serialize_tracked_lot(item) for item in self.repository.list_tracked_lots_for_owner(owner_user["id"])]
+        items = [self.serialize_tracked_lot(self._ensure_media_fields(item)) for item in self.repository.list_tracked_lots_for_owner(owner_user["id"])]
         return {"items": items}
 
     def remove_tracked_lot(self, owner_user: dict, tracked_lot_id: str) -> None:
@@ -98,6 +100,24 @@ class WatchlistService:
         finally:
             provider.close()
 
+    def _ensure_media_fields(self, tracked_lot: dict) -> dict:
+        image_urls = list(tracked_lot.get("image_urls", []))
+        if tracked_lot.get("thumbnail_url") or image_urls:
+            return tracked_lot
+
+        try:
+            snapshot = self._fetch_snapshot(tracked_lot["url"])
+        except HTTPException:
+            logger.warning("Skipping watchlist media backfill for tracked_lot_id=%s", tracked_lot.get("_id"))
+            return tracked_lot
+
+        payload = {
+            "thumbnail_url": str(snapshot.thumbnail_url) if snapshot.thumbnail_url else None,
+            "image_urls": [str(url) for url in snapshot.image_urls],
+        }
+        self.repository.update_tracked_lot_state(str(tracked_lot["_id"]), payload, updated_at=self._now())
+        return {**tracked_lot, **payload}
+
     @staticmethod
     def serialize_tracked_lot(document: dict) -> dict:
         return {
@@ -105,6 +125,8 @@ class WatchlistService:
             "lot_number": document["lot_number"],
             "url": document["url"],
             "title": document["title"],
+            "thumbnail_url": document.get("thumbnail_url"),
+            "image_urls": list(document.get("image_urls", [])),
             "status": document["status"],
             "raw_status": document["raw_status"],
             "current_bid": document.get("current_bid"),

@@ -155,3 +155,53 @@
 - Оновлено `backend/src/cartrap/modules/search/service.py` і `backend/src/cartrap/modules/search/schemas.py`: search тепер може використовувати catalog-derived `make_filter` / `model_filter`, а catalog refresh працює через live Copart keywords + NHTSA matching.
 - Перероблено frontend search UX у `frontend/src/features/search/SearchPanel.tsx`: `Make` і `Model` стали dropdown-ами з backend catalog; додано `frontend/src/features/admin/AdminSearchCatalogPanel.tsx` з кнопкою примусового refresh.
 - Оновлено `frontend/src/App.tsx`, `frontend/src/lib/api.ts`, `frontend/src/types.ts`, `frontend/tests/app.test.tsx`, `backend/tests/search/test_search_api.py`, `backend/tests/copart/test_http_client.py`, `backend/tests/test_config.py` і `README.md`.
+
+## [2026-03-12 17:45] Plan modal search results, saved searches, and lot thumbnails
+- Додано план `docs/plans/20260312-manual-search-modal-saved-searches.md` для трьох пов’язаних UI/API змін: modal results у `Manual Copart Search`, user-scoped saved searches і thumbnail для `Tracked Lots`.
+- Зафіксовано рекомендований напрям: `saved searches` зберігаються в backend/Mongo, modal робиться як окремий reusable UI layer, thumbnail проходить через Copart normalizer -> watchlist/search responses -> frontend cards.
+- У плані одразу розкладено backend/frontend файли, regression tests (`pytest`, `npm run test`, `npm run build`) і acceptance verification для цього циклу змін.
+
+## [2026-03-12 18:04] Implement modal search results, saved searches, and lot thumbnails
+- Розширено backend search/watchlist contract: додано persisted `saved_searches` у `backend/src/cartrap/modules/search/*`, user-scoped save/list endpoints `/api/search/saved`, per-user duplicate isolation, а також `thumbnail_url` у Copart/search/watchlist моделі та серіалізацію.
+- Оновлено frontend UX у `frontend/src/App.tsx`, `frontend/src/features/search/SearchPanel.tsx`, новому `frontend/src/features/search/SearchResultsModal.tsx`, `frontend/src/features/watchlist/WatchlistPanel.tsx`, `frontend/src/lib/api.ts`, `frontend/src/types.ts`, `frontend/src/styles.css`: search results тепер відкриваються в modal, saved searches рендеряться списком із `Run Search`, tracked lots показують thumbnail.
+- Розширено regression coverage: `backend/tests/search/test_search_api.py`, `backend/tests/watchlist/test_watchlist_api.py`, `backend/tests/watchlist/test_snapshot_storage.py`, `backend/tests/copart/test_api_normalizer.py`, `frontend/tests/app.test.tsx`.
+- Оновлено `README.md`, plan completion у `docs/plans/completed/20260312-manual-search-modal-saved-searches.md` і прогнано verification: `./.venv/bin/pytest backend/tests` -> `60 passed`, `npm run test --prefix frontend` -> `6 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-12 18:10] Fix service worker registration and thumbnail URL normalization
+- Оновлено `frontend/src/main.tsx`: service worker тепер реєструється лише в production і через `frontend/public/sw.js`, а не через Vite source path `/src/sw.ts`, що прибирає browser `SecurityError` / unsupported MIME type у dev mode.
+- Додано `frontend/src/features/shared/LotThumbnail.tsx` і fallback rendering у `frontend/src/features/search/SearchResultsModal.tsx` та `frontend/src/features/watchlist/WatchlistPanel.tsx`, щоб биті thumbnail URL не лишали поламаний `<img>`.
+- Розширено `backend/src/cartrap/modules/copart_provider/normalizer.py`, щоб relative (`/content/...`) і protocol-relative (`//img...`) thumbnail URLs нормалізувалися в абсолютні Copart/CDN адреси; додано regression test у `backend/tests/copart/test_api_normalizer.py`.
+- Прогнано verification: `./.venv/bin/pytest backend/tests/copart/test_api_normalizer.py` -> `6 passed`, `npm run test --prefix frontend` -> `6 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-12 18:12] Use Copart lot_thumbnail_image_path for search thumbnails
+- Уточнено `backend/src/cartrap/modules/copart_provider/normalizer.py`: search thumbnail тепер пріоритетно береться з реального Copart поля `lot_thumbnail_image_path`, а не лише з узагальнених image keys.
+- Оновлено regression fixtures у `backend/tests/copart/test_api_normalizer.py`, щоб вони перевіряли саме `lot_thumbnail_image_path`, включно з relative-path сценарієм.
+- Повторно прогнано релевантні перевірки: `./.venv/bin/pytest backend/tests/copart/test_api_normalizer.py backend/tests/search/test_search_api.py` -> `18 passed`, `npm run test --prefix frontend -- app.test.tsx` -> `6 passed`.
+
+## [2026-03-12 18:19] Fix scheme-less Copart CDN thumbnail URLs
+- Оновлено `backend/src/cartrap/modules/copart_provider/normalizer.py`: thumbnail path виду `cs.copart.com/...` без схеми тепер автоматично нормалізується в `https://cs.copart.com/...`, щоб `Pydantic HttpUrl` не падав з `url_parsing`.
+- Розширено `backend/tests/copart/test_api_normalizer.py` окремим regression scenario для scheme-less `lot_thumbnail_image_path` із Copart CDN.
+- Повторно прогнано релевантні перевірки: `./.venv/bin/pytest backend/tests/copart/test_api_normalizer.py backend/tests/search/test_search_api.py` -> `18 passed`.
+
+## [2026-03-12 18:31] Add tracked-lot gallery from Copart lotImages
+- Розширено `backend/src/cartrap/modules/copart_provider/models.py` і `backend/src/cartrap/modules/copart_provider/normalizer.py`: `CopartLotSnapshot` тепер містить `image_urls`, а `normalize_lot_details_payload()` збирає gallery з `lotImages` і бере thumbnail з першого фото в списку.
+- Оновлено watchlist contract у `backend/src/cartrap/modules/watchlist/service.py` та `backend/src/cartrap/modules/watchlist/schemas.py`: `tracked_lot` тепер серіалізує `image_urls` разом із `thumbnail_url`, а gallery зберігається в `tracked_lots`.
+- Додано frontend gallery modal у `frontend/src/features/watchlist/LotGalleryModal.tsx`, інтегровано clickable thumbnail через `frontend/src/features/shared/LotThumbnail.tsx` і `frontend/src/features/watchlist/WatchlistPanel.tsx`.
+- Розширено regression coverage в `backend/tests/copart/test_api_normalizer.py`, `backend/tests/watchlist/test_watchlist_api.py`, `backend/tests/watchlist/test_snapshot_storage.py`, `frontend/tests/app.test.tsx`.
+- Оновлено `README.md` і прогнано verification: `./.venv/bin/pytest backend/tests/copart/test_api_normalizer.py backend/tests/watchlist/test_watchlist_api.py backend/tests/watchlist/test_snapshot_storage.py` -> `14 passed`, `npm run test --prefix frontend` -> `7 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-12 18:40] Harden lotImages extraction for tracked-lot thumbnails
+- Оновлено `backend/src/cartrap/modules/copart_provider/normalizer.py`: `extract_lot_details()` тепер підтягує `lotImages` не лише з `lotDetails`, а й з root-level / `data` payload, якщо Copart повертає gallery окремо.
+- Додано stricter image-like path detection і support для nested keys на кшталт `highResUrl`, щоб `lotImages` краще парсилися в реальних Copart lot-details response без `thumbnail_url: null`.
+- Розширено `backend/tests/copart/test_api_normalizer.py` сценаріями для root-level `lotImages` і scheme-less gallery URLs; повторно прогнано `./.venv/bin/pytest backend/tests/copart/test_api_normalizer.py backend/tests/watchlist/test_watchlist_api.py backend/tests/watchlist/test_snapshot_storage.py` -> `16 passed`.
+
+## [2026-03-12 18:43] Backfill media for legacy tracked lots
+- Перевірено реальний payload із `Lot_Response.json`: `lotImages` приходить на top-level response і містить валідні `url`/`thumbnailUrl`, тож `thumbnail_url: null` для tracked lot був ознакою застарілого документа в Mongo, а не нового lot-details contract.
+- Оновлено `backend/src/cartrap/modules/watchlist/service.py`: `GET /api/watchlist` тепер робить lazy media backfill для legacy items без `thumbnail_url`/`image_urls`, підтягує актуальний snapshot із Copart і зберігає media поля назад у `tracked_lots`.
+- Оновлено `backend/src/cartrap/modules/monitoring/service.py`, щоб background polling також синхронізував `thumbnail_url` і `image_urls`, а не лише bid/status state.
+- Додано regression coverage в `backend/tests/watchlist/test_watchlist_api.py` і `backend/tests/monitoring/test_change_detection.py`; прогнано `./.venv/bin/pytest backend/tests/copart/test_api_normalizer.py backend/tests/watchlist/test_watchlist_api.py backend/tests/watchlist/test_snapshot_storage.py backend/tests/monitoring/test_change_detection.py` -> `20 passed`.
+
+## [2026-03-12 18:55] Polish watchlist and responsive card layout
+- Перероблено `frontend/src/features/watchlist/WatchlistPanel.tsx`: tracked-lot card тепер має окремі зони `media / body / actions`, статус винесено в pill, метадані й bid не злипаються з кнопкою `Remove`.
+- Оновлено `frontend/src/styles.css`: додано стабільний відступ між watchlist form і списком, card surface styling для `result-card`, кращий mobile stack для watchlist actions/meta та загальний cleanup заголовків/label spacing у panel forms.
+- Прогнано frontend verification: `npm run test --prefix frontend` -> `7 passed`, `npm run build --prefix frontend` -> успішно.

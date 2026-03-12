@@ -4,9 +4,10 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 
 ## MVP Scope
 - Invite-based onboarding with `admin` and `user` roles
-- Manual Copart search from the app via Copart JSON API
+- Manual Copart search from the app via Copart JSON API, with modal result review
 - Backend-served Copart make/model catalog with admin-triggered refresh
-- Watchlist management for tracked lots
+- Saved manual searches with one-click rerun from the dashboard
+- Watchlist management for tracked lots, including Copart thumbnails and lot photo gallery modal
 - Adaptive polling before auction start
 - Web Push notifications for significant lot changes
 
@@ -53,7 +54,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 
 ## Current Status
 - MVP backend flows are implemented: invite auth, roles, Copart API integration, watchlist, search, monitoring, and push subscription management.
-- MVP frontend flows are implemented: login, invite acceptance, admin invite creation, backend-backed manual search catalog, watchlist, and client-side push registration UX.
+- MVP frontend flows are implemented: login, invite acceptance, admin invite creation, backend-backed manual search catalog, modal search results, saved-search rerun, watchlist thumbnails with gallery modal, and client-side push registration UX.
 - Docker images for `backend`, `worker`, and `frontend` are buildable and the compose stack passes a basic smoke check.
 
 ## Latest Verification

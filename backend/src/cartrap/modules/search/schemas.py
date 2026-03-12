@@ -59,6 +59,34 @@ class SearchRequest(BaseModel):
             user_start_utc_datetime=start_of_day.isoformat().replace("+00:00", "Z"),
         )
 
+    def normalized_criteria(self) -> dict:
+        payload = self.model_dump(exclude_none=True)
+        if "make" in payload:
+            payload["make"] = str(payload["make"]).strip().upper()
+        if "model" in payload:
+            payload["model"] = str(payload["model"]).strip().upper()
+        if "make_filter" in payload:
+            payload["make_filter"] = str(payload["make_filter"]).strip()
+        if "model_filter" in payload:
+            payload["model_filter"] = str(payload["model_filter"]).strip()
+        if "lot_number" in payload:
+            payload["lot_number"] = "".join(char for char in str(payload["lot_number"]) if char.isdigit())
+        return payload
+
+    def display_title(self) -> str:
+        parts: list[str] = []
+        if self.make:
+            parts.append(self.make.strip().upper())
+        if self.model:
+            parts.append(self.model.strip().upper())
+        if self.lot_number:
+            parts.append(f"LOT {''.join(char for char in self.lot_number if char.isdigit())}")
+        if self.year_from or self.year_to:
+            lower = self.year_from or self.year_to
+            upper = self.year_to or self.year_from
+            parts.append(f"{lower}-{upper}")
+        return " ".join(part for part in parts if part).strip() or "Saved Search"
+
 
 class SearchResultResponse(CopartSearchResult):
     pass
@@ -100,6 +128,25 @@ class SearchCatalogResponse(BaseModel):
     years: list[int]
     makes: list[SearchCatalogMakeResponse]
     manual_override_count: int = 0
+
+
+class SavedSearchCreateRequest(SearchRequest):
+    label: Optional[str] = Field(default=None, min_length=1, max_length=120)
+
+
+class SavedSearchResponse(BaseModel):
+    id: str
+    label: str
+    criteria: SearchRequest
+    created_at: datetime
+
+
+class SavedSearchListResponse(BaseModel):
+    items: list[SavedSearchResponse] = Field(default_factory=list)
+
+
+class SavedSearchCreateResponse(BaseModel):
+    saved_search: SavedSearchResponse
 
 
 class AddFromSearchRequest(BaseModel):

@@ -65,6 +65,8 @@ def test_monitoring_service_stores_new_snapshot_when_state_changes() -> None:
         lot_number="12345678",
         title="2020 TOYOTA CAMRY SE",
         url="https://www.copart.com/lot/12345678",
+        thumbnail_url=None,
+        image_urls=[],
         status="upcoming",
         raw_status="Upcoming",
         sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
@@ -79,6 +81,11 @@ def test_monitoring_service_stores_new_snapshot_when_state_changes() -> None:
         lot_number="12345678",
         title="2020 TOYOTA CAMRY SE",
         url="https://www.copart.com/lot/12345678",
+        thumbnail_url="https://img.copart.com/12345678-detail.jpg",
+        image_urls=[
+            "https://img.copart.com/12345678-detail.jpg",
+            "https://img.copart.com/12345678-detail-2.jpg",
+        ],
         status="live",
         raw_status="Live",
         sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
@@ -95,6 +102,12 @@ def test_monitoring_service_stores_new_snapshot_when_state_changes() -> None:
     assert result["failed"] == 0
     assert result["events"][0]["tracked_lot_id"] == created["tracked_lot"]["id"]
     assert database["lot_snapshots"].count_documents({"tracked_lot_id": created["tracked_lot"]["id"]}) == 2
+    tracked_lot = database["tracked_lots"].find_one({"lot_number": "12345678"})
+    assert tracked_lot["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"
+    assert tracked_lot["image_urls"] == [
+        "https://img.copart.com/12345678-detail.jpg",
+        "https://img.copart.com/12345678-detail-2.jpg",
+    ]
 
 
 def test_monitoring_service_counts_failures_without_overwriting_state() -> None:
@@ -103,6 +116,8 @@ def test_monitoring_service_counts_failures_without_overwriting_state() -> None:
         lot_number="87654321",
         title="2018 HONDA CIVIC EX",
         url="https://www.copart.com/lot/87654321",
+        thumbnail_url=None,
+        image_urls=[],
         status="upcoming",
         raw_status="Upcoming",
         sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),

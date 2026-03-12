@@ -70,6 +70,11 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
             lot_number="12345678",
             title="2020 TOYOTA CAMRY SE",
             url="https://www.copart.com/lot/12345678",
+            thumbnail_url="https://img.copart.com/12345678-detail.jpg",
+            image_urls=[
+                "https://img.copart.com/12345678-detail.jpg",
+                "https://img.copart.com/12345678-detail-2.jpg",
+            ],
             status="on_approval",
             raw_status="On Approval",
             sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
@@ -81,6 +86,8 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
             lot_number="87654321",
             title="2018 HONDA CIVIC EX",
             url="https://www.copart.com/lot/87654321",
+            thumbnail_url=None,
+            image_urls=[],
             status="upcoming",
             raw_status="Upcoming",
             sale_date=datetime(2026, 3, 21, 18, 30, tzinfo=timezone.utc),
@@ -127,6 +134,11 @@ def test_watchlist_crud_for_user(client: TestClient) -> None:
         )
         assert list_response.status_code == 200
         assert len(list_response.json()["items"]) == 1
+        assert list_response.json()["items"][0]["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"
+        assert list_response.json()["items"][0]["image_urls"] == [
+            "https://img.copart.com/12345678-detail.jpg",
+            "https://img.copart.com/12345678-detail-2.jpg",
+        ]
 
         delete_response = client.delete(
             f"/api/watchlist/{tracked_lot_id}",
@@ -161,6 +173,11 @@ def test_watchlist_accepts_lot_number_input(client: TestClient) -> None:
     assert response.status_code == 201
     assert response.json()["tracked_lot"]["lot_number"] == "12345678"
     assert response.json()["tracked_lot"]["url"] == "https://www.copart.com/lot/12345678"
+    assert response.json()["tracked_lot"]["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"
+    assert response.json()["tracked_lot"]["image_urls"] == [
+        "https://img.copart.com/12345678-detail.jpg",
+        "https://img.copart.com/12345678-detail-2.jpg",
+    ]
 
 
 def test_watchlist_rejects_empty_identifier(client: TestClient) -> None:
@@ -218,3 +235,40 @@ def test_watchlist_delete_is_scoped_to_owner(client: TestClient) -> None:
         )
 
     assert response.status_code == 404
+
+
+def test_watchlist_list_backfills_missing_media_for_legacy_items(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "legacy@example.com", "LegacyPass123")
+        owner_id = client.app.state.mongo.database["users"].find_one({"email": "legacy@example.com"})["_id"]
+        tracked_lot_id = client.app.state.mongo.database["tracked_lots"].insert_one(
+            {
+                "owner_user_id": str(owner_id),
+                "lot_number": "12345678",
+                "url": "https://www.copart.com/lot/12345678",
+                "title": "2020 TOYOTA CAMRY SE",
+                "thumbnail_url": None,
+                "image_urls": [],
+                "status": "on_approval",
+                "raw_status": "On Approval",
+                "sale_date": datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+                "current_bid": 4200.0,
+                "buy_now_price": 6500.0,
+                "currency": "USD",
+                "last_checked_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+                "active": True,
+                "created_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+            }
+        ).inserted_id
+
+        response = client.get("/api/watchlist", headers={"Authorization": f"Bearer {user_token}"})
+        stored = client.app.state.mongo.database["tracked_lots"].find_one({"_id": tracked_lot_id})
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"
+    assert response.json()["items"][0]["image_urls"] == [
+        "https://img.copart.com/12345678-detail.jpg",
+        "https://img.copart.com/12345678-detail-2.jpg",
+    ]
+    assert stored["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"

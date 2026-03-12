@@ -16,6 +16,6 @@ createRoot(rootElement).render(
   </StrictMode>,
 );
 
-if ("serviceWorker" in navigator) {
-  void navigator.serviceWorker.register("/src/sw.ts");
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  void navigator.serviceWorker.register("/sw.js");
 }

@@ -18,6 +18,8 @@ export type WatchlistItem = {
   lot_number: string;
   url: string;
   title: string;
+  thumbnail_url: string | null;
+  image_urls: string[];
   status: string;
   raw_status: string;
   current_bid: number | null;
@@ -32,11 +34,29 @@ export type SearchResult = {
   lot_number: string;
   title: string;
   url: string;
+  thumbnail_url: string | null;
   location: string | null;
   sale_date: string | null;
   current_bid: number | null;
   currency: string;
   status: string;
+};
+
+export type SavedSearchCriteria = {
+  make?: string;
+  model?: string;
+  make_filter?: string;
+  model_filter?: string;
+  year_from?: number;
+  year_to?: number;
+  lot_number?: string;
+};
+
+export type SavedSearch = {
+  id: string;
+  label: string;
+  criteria: SavedSearchCriteria;
+  created_at: string;
 };
 
 export type SearchCatalogModel = {

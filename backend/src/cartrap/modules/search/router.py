@@ -8,6 +8,9 @@ from cartrap.api.dependencies import get_current_user
 from cartrap.modules.search.schemas import (
     AddFromSearchRequest,
     AddFromSearchResponse,
+    SavedSearchCreateRequest,
+    SavedSearchCreateResponse,
+    SavedSearchListResponse,
     SearchCatalogResponse,
     SearchRequest,
     SearchResponse,
@@ -39,6 +42,23 @@ def search_lots(
 ) -> dict:
     del current_user
     return search_service.search(payload)
+
+
+@router.get("/saved", response_model=SavedSearchListResponse)
+def list_saved_searches(
+    current_user: dict = Depends(get_current_user),
+    search_service: SearchService = Depends(get_search_service),
+) -> dict:
+    return search_service.list_saved_searches(current_user)
+
+
+@router.post("/saved", response_model=SavedSearchCreateResponse, status_code=status.HTTP_201_CREATED)
+def save_search(
+    payload: SavedSearchCreateRequest,
+    current_user: dict = Depends(get_current_user),
+    search_service: SearchService = Depends(get_search_service),
+) -> dict:
+    return search_service.save_search(current_user, payload)
 
 
 @router.get("/catalog", response_model=SearchCatalogResponse)

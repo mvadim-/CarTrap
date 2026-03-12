@@ -12,6 +12,19 @@ function buildToken(payload: Record<string, unknown>) {
 describe("CarTrap app", () => {
   beforeEach(() => {
     const storage = new Map<string, string>();
+    const savedSearches: Array<{
+      id: string;
+      label: string;
+      criteria: {
+        make?: string;
+        model?: string;
+        make_filter?: string;
+        model_filter?: string;
+        year_from?: number;
+        year_to?: number;
+      };
+      created_at: string;
+    }> = [];
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => void storage.set(key, value),
@@ -61,6 +74,20 @@ describe("CarTrap app", () => {
                   lot_number: body.lot_number ?? "12345678",
                   url: `https://www.copart.com/lot/${body.lot_number ?? "12345678"}`,
                   title: body.lot_number === "99251295" ? "2025 FORD MUSTANG MACH-E PREMIUM" : "2020 TOYOTA CAMRY SE",
+                  thumbnail_url:
+                    body.lot_number === "99251295"
+                      ? "https://img.copart.com/99251295-detail.jpg"
+                      : "https://img.copart.com/12345678-detail.jpg",
+                  image_urls:
+                    body.lot_number === "99251295"
+                      ? [
+                          "https://img.copart.com/99251295-detail.jpg",
+                          "https://img.copart.com/99251295-detail-2.jpg",
+                        ]
+                      : [
+                          "https://img.copart.com/12345678-detail.jpg",
+                          "https://img.copart.com/12345678-detail-2.jpg",
+                        ],
                   status: "live",
                   raw_status: "Live",
                   current_bid: 4200,
@@ -128,6 +155,42 @@ describe("CarTrap app", () => {
             { status: 200 },
           );
         }
+        if (url.includes("/search/saved")) {
+          if ((init?.method ?? "GET") === "POST") {
+            const body = init?.body ? JSON.parse(String(init.body)) : {};
+            const duplicate = savedSearches.find(
+              (item) =>
+                JSON.stringify(item.criteria) ===
+                JSON.stringify({
+                  make: body.make,
+                  model: body.model,
+                  make_filter: body.make_filter,
+                  model_filter: body.model_filter,
+                  year_from: body.year_from,
+                  year_to: body.year_to,
+                }),
+            );
+            if (duplicate) {
+              return new Response("Search is already saved.", { status: 409 });
+            }
+            const savedSearch = {
+              id: `saved-${savedSearches.length + 1}`,
+              label: body.label ?? `${body.make ?? ""} ${body.model ?? ""} ${body.year_from ?? ""}-${body.year_to ?? ""}`.trim(),
+              criteria: {
+                make: body.make,
+                model: body.model,
+                make_filter: body.make_filter,
+                model_filter: body.model_filter,
+                year_from: body.year_from,
+                year_to: body.year_to,
+              },
+              created_at: "2026-03-12T18:00:00Z",
+            };
+            savedSearches.unshift(savedSearch);
+            return new Response(JSON.stringify({ saved_search: savedSearch }), { status: 201 });
+          }
+          return new Response(JSON.stringify({ items: savedSearches }), { status: 200 });
+        }
         if (url.includes("/admin/search-catalog/refresh")) {
           return new Response(
             JSON.stringify({
@@ -161,6 +224,7 @@ describe("CarTrap app", () => {
                   lot_number: "12345678",
                   title: "2020 TOYOTA CAMRY SE",
                   url: "https://www.copart.com/lot/12345678",
+                  thumbnail_url: "https://img.copart.com/12345678.jpg",
                   location: "CA - SACRAMENTO",
                   sale_date: null,
                   current_bid: 4200,
@@ -180,6 +244,11 @@ describe("CarTrap app", () => {
                 lot_number: "12345678",
                 url: "https://www.copart.com/lot/12345678",
                 title: "2020 TOYOTA CAMRY SE",
+                thumbnail_url: "https://img.copart.com/12345678-detail.jpg",
+                image_urls: [
+                  "https://img.copart.com/12345678-detail.jpg",
+                  "https://img.copart.com/12345678-detail-2.jpg",
+                ],
                 status: "live",
                 raw_status: "Live",
                 current_bid: 4200,
@@ -244,12 +313,30 @@ describe("CarTrap app", () => {
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
 
-    await screen.findByText(/2020 TOYOTA CAMRY SE/i);
+    await screen.findByRole("dialog", { name: /search results/i });
     fireEvent.click(screen.getByRole("button", { name: /add to watchlist/i }));
 
     await waitFor(() => {
       expect(screen.getAllByText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);
     });
+    expect(screen.getAllByAltText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);
+  });
+
+  it("saves a search and reruns it from the saved searches list", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+
+    await screen.findByRole("dialog", { name: /search results/i });
+    fireEvent.click(screen.getByRole("button", { name: /save search/i }));
+
+    await screen.findByText(/FORD MUSTANG MACH-E 2025-2027/i);
+    fireEvent.click(screen.getByRole("button", { name: /close/i }));
+    fireEvent.click(screen.getByRole("button", { name: /run search/i }));
+
+    await screen.findByRole("dialog", { name: /search results/i });
   });
 
   it("adds lot to watchlist by lot number", async () => {
@@ -261,6 +348,22 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
 
     await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
+  });
+
+  it("opens gallery modal for tracked lot thumbnails", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "99251295" } });
+    fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
+
+    await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
+    fireEvent.click(screen.getByRole("button", { name: /open gallery for 2025 ford mustang mach-e premium/i }));
+
+    await screen.findByRole("dialog", { name: /2025 ford mustang mach-e premium photo gallery/i });
+    expect(screen.getByAltText(/2025 ford mustang mach-e premium photo 1/i)).toBeTruthy();
+    expect(screen.getByAltText(/2025 ford mustang mach-e premium thumbnail 2/i)).toBeTruthy();
   });
 
   it("refreshes expired access token and keeps the session active", async () => {

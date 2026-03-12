@@ -1,6 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 
-import type { SearchCatalog, SearchCatalogMake, SearchCatalogModel, SearchResult } from "../../types";
+import type {
+  SavedSearch,
+  SearchCatalog,
+  SearchCatalogMake,
+  SearchCatalogModel,
+  SearchResult,
+} from "../../types";
+import { SearchResultsModal } from "./SearchResultsModal";
 
 type SearchPayload = {
   make?: string;
@@ -15,15 +22,27 @@ type Props = {
   catalog: SearchCatalog | null;
   isLoadingCatalog: boolean;
   results: SearchResult[];
+  savedSearches: SavedSearch[];
   onSearch: (payload: SearchPayload) => Promise<void>;
+  onSaveSearch: (payload: SearchPayload) => Promise<void>;
   onAddFromSearch: (lotUrl: string) => Promise<void>;
 };
 
-export function SearchPanel({ catalog, isLoadingCatalog, results, onSearch, onAddFromSearch }: Props) {
+export function SearchPanel({
+  catalog,
+  isLoadingCatalog,
+  results,
+  savedSearches,
+  onSearch,
+  onSaveSearch,
+  onAddFromSearch,
+}: Props) {
   const [selectedMakeSlug, setSelectedMakeSlug] = useState("");
   const [selectedModelSlug, setSelectedModelSlug] = useState("");
   const [yearFrom, setYearFrom] = useState("2025");
   const [yearTo, setYearTo] = useState("2027");
+  const [isResultsOpen, setIsResultsOpen] = useState(false);
+  const [lastSubmittedPayload, setLastSubmittedPayload] = useState<SearchPayload | null>(null);
 
   const selectedMake: SearchCatalogMake | null = catalog?.makes.find((item) => item.slug === selectedMakeSlug) ?? null;
   const selectedModel: SearchCatalogModel | null = selectedMake?.models.find((item) => item.slug === selectedModelSlug) ?? null;
@@ -52,19 +71,72 @@ export function SearchPanel({ catalog, isLoadingCatalog, results, onSearch, onAd
     setSelectedModelSlug(selectedMake.models[0]?.slug ?? "");
   }, [selectedMake, selectedModelSlug]);
 
+  function buildPayload(makeOverride?: SearchCatalogMake | null, modelOverride?: SearchCatalogModel | null): SearchPayload {
+    const resolvedMake = makeOverride ?? selectedMake;
+    const resolvedModel = modelOverride ?? selectedModel;
+    return {
+      make: resolvedMake?.name,
+      model: resolvedModel?.name,
+      makeFilter: resolvedMake?.search_filter,
+      modelFilter: resolvedModel?.search_filter,
+      yearFrom,
+      yearTo,
+    };
+  }
+
+  async function runSearch(payload: SearchPayload) {
+    await onSearch(payload);
+    setLastSubmittedPayload(payload);
+    setIsResultsOpen(true);
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedMake) {
       return;
     }
-    await onSearch({
-      make: selectedMake.name,
-      model: selectedModel?.name,
-      makeFilter: selectedMake.search_filter,
-      modelFilter: selectedModel?.search_filter,
-      yearFrom,
-      yearTo,
-    });
+    try {
+      await runSearch(buildPayload());
+    } catch {
+      setIsResultsOpen(false);
+    }
+  }
+
+  async function handleRunSavedSearch(savedSearch: SavedSearch) {
+    const matchedMake = catalog?.makes.find((item) => item.name === savedSearch.criteria.make) ?? null;
+    const matchedModel =
+      matchedMake?.models.find((item) => item.name === savedSearch.criteria.model) ?? null;
+
+    if (matchedMake) {
+      setSelectedMakeSlug(matchedMake.slug);
+      setSelectedModelSlug(matchedModel?.slug ?? "");
+    }
+    setYearFrom(savedSearch.criteria.year_from?.toString() ?? "");
+    setYearTo(savedSearch.criteria.year_to?.toString() ?? "");
+
+    try {
+      await runSearch({
+        make: savedSearch.criteria.make,
+        model: savedSearch.criteria.model,
+        makeFilter: savedSearch.criteria.make_filter,
+        modelFilter: savedSearch.criteria.model_filter,
+        yearFrom: savedSearch.criteria.year_from?.toString(),
+        yearTo: savedSearch.criteria.year_to?.toString(),
+      });
+    } catch {
+      setIsResultsOpen(false);
+    }
+  }
+
+  async function handleSaveCurrentSearch() {
+    if (!lastSubmittedPayload) {
+      return;
+    }
+    try {
+      await onSaveSearch(lastSubmittedPayload);
+    } catch {
+      return;
+    }
   }
 
   return (
@@ -125,28 +197,49 @@ export function SearchPanel({ catalog, isLoadingCatalog, results, onSearch, onAd
         </button>
       </form>
       {!catalog && !isLoadingCatalog ? <p className="muted">Search catalog is unavailable.</p> : null}
-      <div className="result-list">
-        {results.length === 0 ? (
-          <p className="muted">No results loaded yet.</p>
-        ) : (
-          results.map((result) => (
-            <article key={result.lot_number} className="result-card">
-              <div>
-                <strong>{result.title}</strong>
-                <p className="muted">
-                  Lot {result.lot_number} · {result.location ?? "Unknown location"}
-                </p>
-              </div>
-              <div className="result-actions">
-                <span className="status-pill">{result.status}</span>
-                <button type="button" onClick={() => onAddFromSearch(result.url)}>
-                  Add to Watchlist
-                </button>
-              </div>
-            </article>
-          ))
-        )}
+
+      <div className="saved-searches">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Saved</p>
+            <h3>Saved Searches</h3>
+          </div>
+        </div>
+        <div className="result-list">
+          {savedSearches.length === 0 ? (
+            <p className="muted">No saved searches yet.</p>
+          ) : (
+            savedSearches.map((item) => (
+              <article key={item.id} className="result-card">
+                <div className="result-copy">
+                  <strong>{item.label}</strong>
+                  <p className="muted">
+                    {item.criteria.make ?? "Unknown make"}
+                    {item.criteria.model ? ` · ${item.criteria.model}` : ""}
+                    {item.criteria.year_from || item.criteria.year_to
+                      ? ` · ${item.criteria.year_from ?? item.criteria.year_to}-${item.criteria.year_to ?? item.criteria.year_from}`
+                      : ""}
+                  </p>
+                </div>
+                <div className="result-actions">
+                  <button type="button" className="ghost-button" onClick={() => void handleRunSavedSearch(item)}>
+                    Run Search
+                  </button>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
       </div>
+
+      <SearchResultsModal
+        isOpen={isResultsOpen}
+        results={results}
+        onClose={() => setIsResultsOpen(false)}
+        onAddFromSearch={onAddFromSearch}
+        onSaveSearch={handleSaveCurrentSearch}
+        canSave={lastSubmittedPayload !== null}
+      />
     </section>
   );
 }

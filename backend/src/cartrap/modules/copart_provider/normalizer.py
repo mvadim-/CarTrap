@@ -31,9 +31,20 @@ def extract_search_documents(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def extract_lot_details(payload: dict[str, Any]) -> dict[str, Any]:
     details = payload.get("lotDetails")
+    data_payload = payload.get("data")
+    if details is None and isinstance(data_payload, dict):
+        details = data_payload.get("lotDetails")
     if not isinstance(details, dict):
         raise ValueError("Copart lot response is missing 'lotDetails' object.")
-    return details
+    merged_details = dict(details)
+    if "lotImages" not in merged_details:
+        root_images = payload.get("lotImages")
+        nested_images = data_payload.get("lotImages") if isinstance(data_payload, dict) else None
+        if root_images is not None:
+            merged_details["lotImages"] = root_images
+        elif nested_images is not None:
+            merged_details["lotImages"] = nested_images
+    return merged_details
 
 
 def normalize_lot_payload(payload: dict[str, Any]) -> CopartLotSnapshot:
@@ -43,6 +54,7 @@ def normalize_lot_payload(payload: dict[str, Any]) -> CopartLotSnapshot:
         lot_number=lot_number,
         title=str(payload.get("lot_desc") or payload.get("title") or "Unknown lot"),
         url=build_lot_url(lot_number),
+        thumbnail_url=extract_thumbnail_url(payload),
         status=normalize_status(raw_status),
         sale_date=parse_datetime(first_present(payload, "auction_date_utc", "saleDate")),
         current_bid=parse_money(first_present(payload, "current_high_bid", "currentBid")),
@@ -55,10 +67,13 @@ def normalize_lot_payload(payload: dict[str, Any]) -> CopartLotSnapshot:
 def normalize_lot_details_payload(payload: dict[str, Any]) -> CopartLotSnapshot:
     raw_status = derive_raw_status(payload)
     lot_number = str(payload["lotNumber"])
+    image_urls = extract_image_urls(payload)
     return CopartLotSnapshot(
         lot_number=lot_number,
         title=str(payload.get("lotDescription") or payload.get("title") or "Unknown lot"),
         url=build_lot_url(lot_number),
+        thumbnail_url=image_urls[0] if image_urls else extract_thumbnail_url(payload),
+        image_urls=image_urls,
         status=normalize_status(raw_status),
         sale_date=parse_datetime(first_present(payload, "saleDate", "auction_date_utc")),
         current_bid=parse_money(first_present(payload, "currentBid", "displayBidAmount")),
@@ -78,6 +93,7 @@ def normalize_search_results(payload: list[dict[str, Any]]) -> list[CopartSearch
                 lot_number=lot_number,
                 title=str(item.get("lot_desc") or item.get("title") or "Unknown lot"),
                 url=build_lot_url(lot_number),
+                thumbnail_url=extract_thumbnail_url(item),
                 location=str(item.get("yard_name") or item.get("auction_host_name") or "Unknown location"),
                 sale_date=parse_datetime(first_present(item, "auction_date_utc", "saleDate")),
                 current_bid=parse_money(first_present(item, "current_high_bid", "currentBid")),
@@ -122,6 +138,138 @@ def derive_raw_status(payload: dict[str, Any]) -> str:
     if sale_date is None:
         return "upcoming"
     return "live" if sale_date <= datetime.now(timezone.utc) else "upcoming"
+
+
+def extract_thumbnail_url(payload: dict[str, Any]) -> Optional[str]:
+    direct = first_present(
+        payload,
+        "lot_thumbnail_image_path",
+        "thumbnailUrl",
+        "thumbnail_url",
+        "thumbNail",
+        "thumbUrl",
+        "imageUrl",
+        "image_url",
+        "heroImageUrl",
+    )
+    normalized_direct = normalize_thumbnail_candidate(direct)
+    if normalized_direct:
+        return normalized_direct
+
+    nested_candidates = [
+        payload.get("thumbnail"),
+        payload.get("image"),
+        payload.get("images"),
+        payload.get("imageList"),
+        payload.get("timsImages"),
+    ]
+    for candidate in nested_candidates:
+        normalized = normalize_thumbnail_candidate(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def extract_image_urls(payload: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
+    for candidate in (
+        payload.get("lotImages"),
+        payload.get("images"),
+        payload.get("imageList"),
+        payload.get("timsImages"),
+    ):
+        for url in collect_image_urls(candidate):
+            if url not in urls:
+                urls.append(url)
+    return urls
+
+
+def collect_image_urls(candidate: Any) -> list[str]:
+    if candidate is None or candidate == "":
+        return []
+    if isinstance(candidate, str):
+        normalized = normalize_thumbnail_candidate(candidate)
+        return [normalized] if normalized else []
+    if isinstance(candidate, list):
+        urls: list[str] = []
+        for item in candidate:
+            for url in collect_image_urls(item):
+                if url not in urls:
+                    urls.append(url)
+        return urls
+    if isinstance(candidate, dict):
+        direct = normalize_thumbnail_candidate(candidate)
+        if direct:
+            return [direct]
+        urls: list[str] = []
+        for value in candidate.values():
+            for url in collect_image_urls(value):
+                if url not in urls:
+                    urls.append(url)
+        return urls
+    return []
+
+
+def normalize_thumbnail_candidate(candidate: Any) -> Optional[str]:
+    if candidate is None or candidate == "":
+        return None
+    if isinstance(candidate, str):
+        text = candidate.strip()
+        if not text:
+            return None
+        if not looks_like_image_path(text):
+            return None
+        if "://" not in text and text.startswith("cs.copart.com/"):
+            return f"https://{text}"
+        if text.startswith("//"):
+            return f"https:{text}"
+        if text.startswith("/"):
+            return f"https://www.copart.com{text}"
+        return text
+    if isinstance(candidate, list):
+        for item in candidate:
+            normalized = normalize_thumbnail_candidate(item)
+            if normalized:
+                return normalized
+        return None
+    if isinstance(candidate, dict):
+        for key in (
+            "url",
+            "href",
+            "thumbnailUrl",
+            "thumbnail_url",
+            "thumbNail",
+            "thumbUrl",
+            "imgUrl",
+            "imageUrl",
+            "image_url",
+            "link",
+            "full",
+        ):
+            normalized = normalize_thumbnail_candidate(candidate.get(key))
+            if normalized:
+                return normalized
+    return None
+
+
+def looks_like_image_path(value: str) -> bool:
+    normalized = value.strip().lower()
+    return any(
+        marker in normalized
+        for marker in (
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+            "img.copart.com/",
+            "cs.copart.com/",
+            "/content/",
+            "/image/",
+            "/images/",
+            "_thb",
+            "_ful",
+        )
+    )
 
 
 def build_lot_url(lot_number: str) -> str:

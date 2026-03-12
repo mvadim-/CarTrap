@@ -71,6 +71,8 @@ class MonitoringService:
         self.repository.update_tracked_lot_state(
             str(tracked_lot["_id"]),
             {
+                "thumbnail_url": str(fresh_snapshot.thumbnail_url) if fresh_snapshot.thumbnail_url else None,
+                "image_urls": [str(url) for url in fresh_snapshot.image_urls],
                 "status": fresh_snapshot.status,
                 "raw_status": fresh_snapshot.raw_status,
                 "sale_date": fresh_snapshot.sale_date,

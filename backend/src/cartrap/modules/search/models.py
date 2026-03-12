@@ -2,3 +2,4 @@
 
 SEARCH_CATALOG_COLLECTION = "search_catalog"
 SEARCH_CATALOG_DOCUMENT_ID = "copart_make_model_catalog"
+SAVED_SEARCHES_COLLECTION = "saved_searches"

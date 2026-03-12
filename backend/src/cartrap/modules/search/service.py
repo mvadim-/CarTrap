@@ -14,8 +14,8 @@ from pymongo.database import Database
 from cartrap.modules.copart_provider.models import CopartSearchResult
 from cartrap.modules.copart_provider.service import CopartProvider
 from cartrap.modules.search.catalog_refresh import SearchCatalogRefreshJob
-from cartrap.modules.search.repository import SearchCatalogRepository
-from cartrap.modules.search.schemas import SearchRequest
+from cartrap.modules.search.repository import SavedSearchRepository, SearchCatalogRepository
+from cartrap.modules.search.schemas import SavedSearchCreateRequest, SearchRequest
 from cartrap.modules.watchlist.service import WatchlistService
 
 
@@ -39,6 +39,8 @@ class SearchService:
         self._watchlist_service_factory = watchlist_service_factory or (lambda: WatchlistService(database, provider_factory=provider_factory))
         self._catalog_seed_path = catalog_seed_path or CATALOG_JSON_PATH
         self._catalog_repository = SearchCatalogRepository(database)
+        self._saved_search_repository = SavedSearchRepository(database)
+        self._saved_search_repository.ensure_indexes()
         self._catalog_refresh_factory = catalog_refresh_factory or (
             lambda: SearchCatalogRefreshJob(provider_factory=self._provider_factory, overrides_path=CATALOG_OVERRIDES_PATH)
         )
@@ -61,6 +63,30 @@ class SearchService:
     def add_from_search(self, owner_user: dict, lot_url: str) -> dict:
         watchlist_service = self._watchlist_service_factory()
         return watchlist_service.add_tracked_lot(owner_user, lot_url)
+
+    def save_search(self, owner_user: dict, payload: SavedSearchCreateRequest) -> dict:
+        criteria = payload.normalized_criteria()
+        criteria_key = json.dumps(criteria, sort_keys=True)
+        existing = self._saved_search_repository.find_saved_search_by_owner_and_key(owner_user["id"], criteria_key)
+        if existing is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Search is already saved.")
+
+        now = datetime.now(timezone.utc)
+        document = self._saved_search_repository.create_saved_search(
+            {
+                "owner_user_id": owner_user["id"],
+                "label": payload.label.strip() if payload.label else payload.display_title(),
+                "criteria": criteria,
+                "criteria_key": criteria_key,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        return {"saved_search": self.serialize_saved_search(document)}
+
+    def list_saved_searches(self, owner_user: dict) -> dict:
+        items = [self.serialize_saved_search(item) for item in self._saved_search_repository.list_saved_searches_for_owner(owner_user["id"])]
+        return {"items": items}
 
     def ensure_catalog_seeded(self) -> None:
         self._catalog_repository.ensure_indexes()
@@ -98,6 +124,24 @@ class SearchService:
     @staticmethod
     def serialize_result(item: CopartSearchResult) -> dict:
         return item.model_dump(mode="json")
+
+    @staticmethod
+    def serialize_saved_search(document: dict) -> dict:
+        criteria = document.get("criteria", {})
+        return {
+            "id": str(document["_id"]),
+            "label": document["label"],
+            "criteria": {
+                "make": criteria.get("make"),
+                "model": criteria.get("model"),
+                "make_filter": criteria.get("make_filter"),
+                "model_filter": criteria.get("model_filter"),
+                "year_from": criteria.get("year_from"),
+                "year_to": criteria.get("year_to"),
+                "lot_number": criteria.get("lot_number"),
+            },
+            "created_at": document["created_at"],
+        }
 
     @staticmethod
     def serialize_catalog(catalog: dict) -> dict:

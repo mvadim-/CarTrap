@@ -89,6 +89,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
                 lot_number="12345678",
                 title="2020 TOYOTA CAMRY SE",
                 url="https://www.copart.com/lot/12345678",
+                thumbnail_url="https://img.copart.com/12345678.jpg",
                 location="CA - SACRAMENTO",
                 sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
                 current_bid=4200.0,
@@ -99,6 +100,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
                 lot_number="87654321",
                 title="2018 HONDA CIVIC EX",
                 url="https://www.copart.com/lot/87654321",
+                thumbnail_url=None,
                 location="TX - DALLAS",
                 sale_date=datetime(2026, 3, 21, 18, 30, tzinfo=timezone.utc),
                 current_bid=1800.0,
@@ -111,6 +113,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
                 lot_number="12345678",
                 title="2020 TOYOTA CAMRY SE",
                 url="https://www.copart.com/lot/12345678",
+                thumbnail_url="https://img.copart.com/12345678-detail.jpg",
                 status="on_approval",
                 raw_status="On Approval",
                 sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
@@ -152,6 +155,7 @@ def test_search_endpoint_returns_results(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert len(response.json()["results"]) == 2
+    assert response.json()["results"][0]["thumbnail_url"] == "https://img.copart.com/12345678.jpg"
     assert response.json()["source_request"]["MISC"] == [
         "vehicle_type_code:VEHTYPE_V",
         "lot_year:[2025 TO 2027]",
@@ -231,6 +235,70 @@ def test_add_from_search_reuses_watchlist_logic(client: TestClient) -> None:
 
     assert response.status_code == 201
     assert response.json()["tracked_lot"]["lot_number"] == "12345678"
+    assert response.json()["tracked_lot"]["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"
+
+
+def test_user_can_save_and_list_saved_searches(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "saved@example.com", "SavedPass123")
+        create_response = client.post(
+            "/api/search/saved",
+            json={"make": "Ford", "model": "Mustang Mach-E", "year_from": 2025, "year_to": 2027},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        list_response = client.get(
+            "/api/search/saved",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["saved_search"]["label"] == "FORD MUSTANG MACH-E 2025-2027"
+    assert create_response.json()["saved_search"]["criteria"]["make"] == "FORD"
+    assert list_response.status_code == 200
+    assert len(list_response.json()["items"]) == 1
+    assert list_response.json()["items"][0]["criteria"]["model"] == "MUSTANG MACH-E"
+
+
+def test_saved_search_duplicate_is_scoped_per_user(client: TestClient) -> None:
+    with client:
+        owner_token = _create_user(client, "owner-search@example.com", "OwnerSearchPass123")
+        other_token = _create_user(client, "other-search@example.com", "OtherSearchPass123")
+        payload = {"make": "Ford", "model": "Mustang Mach-E", "year_from": 2025, "year_to": 2027}
+        headers = {"Authorization": f"Bearer {owner_token}"}
+
+        first_response = client.post("/api/search/saved", json=payload, headers=headers)
+        duplicate_response = client.post("/api/search/saved", json=payload, headers=headers)
+        other_user_response = client.post(
+            "/api/search/saved",
+            json=payload,
+            headers={"Authorization": f"Bearer {other_token}"},
+        )
+
+    assert first_response.status_code == 201
+    assert duplicate_response.status_code == 409
+    assert duplicate_response.json()["detail"] == "Search is already saved."
+    assert other_user_response.status_code == 201
+
+
+def test_saved_search_list_is_user_scoped(client: TestClient) -> None:
+    with client:
+        owner_token = _create_user(client, "scope-owner@example.com", "ScopeOwnerPass123")
+        other_token = _create_user(client, "scope-other@example.com", "ScopeOtherPass123")
+        client.post(
+            "/api/search/saved",
+            json={"make": "Ford", "model": "Mustang Mach-E"},
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        client.post(
+            "/api/search/saved",
+            json={"make": "Honda", "model": "Civic"},
+            headers={"Authorization": f"Bearer {other_token}"},
+        )
+        owner_list = client.get("/api/search/saved", headers={"Authorization": f"Bearer {owner_token}"})
+
+    assert owner_list.status_code == 200
+    assert len(owner_list.json()["items"]) == 1
+    assert owner_list.json()["items"][0]["criteria"]["make"] == "FORD"
 
 
 def test_search_rejects_invalid_filters(client: TestClient) -> None:

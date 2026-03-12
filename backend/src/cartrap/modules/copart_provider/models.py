@@ -33,6 +33,8 @@ class CopartLotSnapshot(BaseModel):
     lot_number: str
     title: str
     url: HttpUrl
+    thumbnail_url: Optional[HttpUrl] = None
+    image_urls: list[HttpUrl] = []
     status: str
     sale_date: Optional[datetime] = None
     current_bid: Optional[float] = None
@@ -45,6 +47,7 @@ class CopartSearchResult(BaseModel):
     lot_number: str
     title: str
     url: HttpUrl
+    thumbnail_url: Optional[HttpUrl] = None
     location: Optional[str] = None
     sale_date: Optional[datetime] = None
     current_bid: Optional[float] = None

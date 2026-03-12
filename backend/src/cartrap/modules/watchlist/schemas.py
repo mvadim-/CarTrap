@@ -32,6 +32,8 @@ class WatchlistItemResponse(BaseModel):
     lot_number: str
     url: HttpUrl
     title: str
+    thumbnail_url: Optional[HttpUrl] = None
+    image_urls: list[HttpUrl] = []
     status: str
     raw_status: str
     current_bid: Optional[float] = None

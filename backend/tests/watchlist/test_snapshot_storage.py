@@ -36,6 +36,11 @@ def test_initial_snapshot_is_stored_with_tracked_lot_state() -> None:
         lot_number="12345678",
         title="2020 TOYOTA CAMRY SE",
         url="https://www.copart.com/lot/12345678",
+        thumbnail_url="https://img.copart.com/12345678-detail.jpg",
+        image_urls=[
+            "https://img.copart.com/12345678-detail.jpg",
+            "https://img.copart.com/12345678-detail-2.jpg",
+        ],
         status="on_approval",
         raw_status="On Approval",
         sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
@@ -52,6 +57,11 @@ def test_initial_snapshot_is_stored_with_tracked_lot_state() -> None:
 
     assert tracked_lot is not None
     assert tracked_lot["lot_number"] == "12345678"
+    assert tracked_lot["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"
+    assert tracked_lot["image_urls"] == [
+        "https://img.copart.com/12345678-detail.jpg",
+        "https://img.copart.com/12345678-detail-2.jpg",
+    ]
     assert tracked_lot["status"] == "on_approval"
     assert len(snapshots) == 1
     assert snapshots[0]["current_bid"] == 4200.0

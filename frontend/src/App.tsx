@@ -18,15 +18,17 @@ import {
   createInvite,
   getSearchCatalog,
   listPushSubscriptions,
+  listSavedSearches,
   listWatchlist,
   login,
   removeWatchlistItem,
   refreshSearchCatalog,
+  saveSearch,
   searchLots,
   subscribeToPush,
   unsubscribeFromPush,
 } from "./lib/api";
-import type { Invite, PushSubscriptionItem, SearchCatalog, SearchResult, WatchlistItem } from "./types";
+import type { Invite, PushSubscriptionItem, SavedSearch, SearchCatalog, SearchResult, WatchlistItem } from "./types";
 
 function getNotificationPermission(): string {
   return typeof Notification === "undefined" ? "unsupported" : Notification.permission;
@@ -37,6 +39,7 @@ export function App() {
   const session = useSession();
   const [error, setError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [subscriptions, setSubscriptions] = useState<PushSubscriptionItem[]>([]);
@@ -56,6 +59,7 @@ export function App() {
       onAuthFailed: () => {
         session.logout();
         setSearchResults([]);
+        setSavedSearches([]);
         setWatchlist([]);
         setSubscriptions([]);
         setSearchCatalog(null);
@@ -70,6 +74,7 @@ export function App() {
       return;
     }
     void listWatchlist(session.accessToken).then(setWatchlist).catch(() => undefined);
+    void listSavedSearches(session.accessToken).then(setSavedSearches).catch(() => undefined);
     void listPushSubscriptions(session.accessToken).then(setSubscriptions).catch(() => undefined);
     setIsLoadingSearchCatalog(true);
     void getSearchCatalog(session.accessToken)
@@ -108,7 +113,9 @@ export function App() {
     yearFrom?: string;
     yearTo?: string;
   }) {
-    if (!session.accessToken) return;
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
     try {
       setError(null);
       const results = await searchLots(
@@ -123,8 +130,44 @@ export function App() {
         session.accessToken,
       );
       setSearchResults(results);
+      return;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Search failed");
+      const message = caught instanceof Error ? caught.message : "Search failed";
+      setError(message);
+      throw new Error(message);
+    }
+  }
+
+  async function handleSaveSearch(payload: {
+    make?: string;
+    model?: string;
+    makeFilter?: string;
+    modelFilter?: string;
+    yearFrom?: string;
+    yearTo?: string;
+  }) {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    try {
+      setError(null);
+      const saved = await saveSearch(
+        {
+          make: payload.make,
+          model: payload.model,
+          make_filter: payload.makeFilter,
+          model_filter: payload.modelFilter,
+          year_from: payload.yearFrom ? Number(payload.yearFrom) : undefined,
+          year_to: payload.yearTo ? Number(payload.yearTo) : undefined,
+        },
+        session.accessToken,
+      );
+      setSavedSearches((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      return;
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Could not save search";
+      setError(message);
+      throw new Error(message);
     }
   }
 
@@ -206,6 +249,7 @@ export function App() {
   function handleLogout() {
     session.logout();
     setSearchResults([]);
+    setSavedSearches([]);
     setWatchlist([]);
     setSubscriptions([]);
     setSearchCatalog(null);
@@ -228,6 +272,7 @@ export function App() {
 
   return (
     <DashboardShell user={session.user!} onLogout={handleLogout}>
+      {error ? <p className="error">{error}</p> : null}
       {session.user?.role === "admin" ? (
         <>
           <AdminInvitesPanel inviteLink={inviteLink} onCreateInvite={handleCreateInvite} />
@@ -238,7 +283,9 @@ export function App() {
         catalog={searchCatalog}
         isLoadingCatalog={isLoadingSearchCatalog}
         results={searchResults}
+        savedSearches={savedSearches}
         onSearch={handleSearch}
+        onSaveSearch={handleSaveSearch}
         onAddFromSearch={handleAddFromSearch}
       />
       <WatchlistPanel items={watchlist} onAddByLotNumber={handleAddByLotNumber} onRemove={handleRemoveWatchlistItem} />

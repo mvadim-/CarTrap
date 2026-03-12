@@ -1,6 +1,7 @@
 import type {
   Invite,
   PushSubscriptionItem,
+  SavedSearch,
   SearchCatalog,
   SearchResult,
   TokenPair,
@@ -134,6 +135,32 @@ export async function searchLots(
 
 export async function getSearchCatalog(token: string): Promise<SearchCatalog> {
   return request<SearchCatalog>("/search/catalog", { token });
+}
+
+export async function listSavedSearches(token: string): Promise<SavedSearch[]> {
+  const response = await request<{ items: SavedSearch[] }>("/search/saved", { token });
+  return response.items;
+}
+
+export async function saveSearch(
+  payload: {
+    make?: string;
+    model?: string;
+    make_filter?: string;
+    model_filter?: string;
+    year_from?: number;
+    year_to?: number;
+    lot_number?: string;
+    label?: string;
+  },
+  token: string,
+): Promise<SavedSearch> {
+  const response = await request<{ saved_search: SavedSearch }>("/search/saved", {
+    method: "POST",
+    body: payload,
+    token,
+  });
+  return response.saved_search;
 }
 
 export async function refreshSearchCatalog(token: string): Promise<SearchCatalog> {

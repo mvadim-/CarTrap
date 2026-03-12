@@ -19,7 +19,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -32,7 +33,8 @@ button {
   padding: 0.8rem 1.2rem;
 }
 
-input {
+input,
+select {
   width: 100%;
   border: 1px solid rgba(19, 38, 47, 0.2);
   border-radius: 1rem;
@@ -107,12 +109,32 @@ input {
   gap: 1rem;
 }
 
+.saved-searches {
+  margin-top: 1.25rem;
+}
+
+.watchlist-form,
+.watchlist-list {
+  margin-top: 1rem;
+}
+
 .search-grid,
 .inline-form {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
   gap: 0.75rem;
   align-items: end;
+}
+
+.panel h2,
+.panel h3,
+.auth-panel h1 {
+  margin: 0;
+}
+
+.panel label,
+.auth-panel label {
+  display: block;
 }
 
 .eyebrow {
@@ -137,6 +159,169 @@ input {
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.result-card--media {
+  align-items: stretch;
+}
+
+.result-card {
+  padding: 1rem;
+  border-radius: 1.2rem;
+  border: 1px solid rgba(19, 38, 47, 0.08);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.result-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.watchlist-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.watchlist-card__body,
+.watchlist-card__meta,
+.watchlist-card__actions {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.watchlist-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.watchlist-card__meta {
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  gap: 0.4rem 1rem;
+}
+
+.watchlist-card__actions {
+  align-self: center;
+}
+
+.lot-thumb {
+  width: 6rem;
+  height: 6rem;
+  object-fit: cover;
+  border-radius: 1rem;
+  background: rgba(19, 38, 47, 0.08);
+  flex-shrink: 0;
+}
+
+.lot-thumb-button,
+.gallery-thumb-button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  border-radius: 1rem;
+}
+
+.lot-thumb-button {
+  display: block;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.lot-thumb--placeholder {
+  display: grid;
+  place-items: center;
+  color: rgba(19, 38, 47, 0.58);
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 0.5rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(19, 38, 47, 0.44);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 1000;
+}
+
+.modal-card {
+  width: min(72rem, 100%);
+  max-height: min(88vh, 56rem);
+  overflow: hidden;
+  border-radius: 1.5rem;
+  background: rgba(255, 251, 245, 0.98);
+  border: 1px solid rgba(19, 38, 47, 0.12);
+  box-shadow: 0 28px 80px rgba(19, 38, 47, 0.18);
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+}
+
+.modal-header,
+.modal-toolbar,
+.modal-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.modal-header,
+.modal-filter-bar,
+.modal-body {
+  padding: 1rem 1.25rem;
+}
+
+.modal-filter-bar {
+  border-top: 1px solid rgba(19, 38, 47, 0.08);
+  border-bottom: 1px solid rgba(19, 38, 47, 0.08);
+  background: rgba(19, 38, 47, 0.03);
+}
+
+.modal-body {
+  overflow: auto;
+}
+
+.gallery-modal {
+  width: min(62rem, 100%);
+}
+
+.gallery-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.gallery-hero {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: 1rem;
+  background: rgba(19, 38, 47, 0.08);
+}
+
+.gallery-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr));
+  gap: 0.75rem;
+}
+
+.gallery-thumb-button {
+  border: 2px solid transparent;
+}
+
+.gallery-thumb-button.is-active {
+  border-color: #9b3d12;
+}
+
+.gallery-thumb {
+  width: 100%;
+  height: 5rem;
+  object-fit: cover;
+  border-radius: 0.8rem;
+  display: block;
 }
 
 .callout,
@@ -177,5 +362,36 @@ input {
 
   .app-shell {
     padding: 1rem;
+  }
+
+  .result-card,
+  .result-actions,
+  .modal-header,
+  .modal-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .watchlist-card {
+    grid-template-columns: 1fr;
+  }
+
+  .watchlist-card__header,
+  .watchlist-card__meta {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .watchlist-card__actions {
+    width: 100%;
+  }
+
+  .watchlist-card__actions .ghost-button {
+    width: 100%;
+  }
+
+  .lot-thumb {
+    width: 100%;
+    height: 11rem;
   }
 }
