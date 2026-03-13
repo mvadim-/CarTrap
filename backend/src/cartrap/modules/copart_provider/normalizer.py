@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSearchResult
+from cartrap.modules.copart_provider.vin import try_decode_encrypted_vin
 
 
 STATUS_MAPPING = {
@@ -85,6 +86,55 @@ def normalize_lot_details_payload(payload: dict[str, Any]) -> CopartLotSnapshot:
         url=build_lot_url(lot_number),
         thumbnail_url=image_urls[0] if image_urls else extract_thumbnail_url(payload),
         image_urls=image_urls,
+        odometer=extract_odometer(payload),
+        primary_damage=normalize_text(
+            first_present(
+                payload,
+                "primaryDamage",
+                "primaryDamageDescription",
+                "damageDescription",
+                "damage_description",
+                "primary_damage",
+            )
+        ),
+        estimated_retail_value=parse_money(
+            first_present(
+                payload,
+                "estRetailValue",
+                "estimatedRetailValue",
+                "retailValue",
+                "estimated_retail_value",
+            )
+        ),
+        has_key=parse_boolish(
+            first_present(
+                payload,
+                "keys",
+                "hasKey",
+                "keysAvailable",
+                "hasKeys",
+                "key",
+            )
+        ),
+        drivetrain=normalize_text(
+            first_present(
+                payload,
+                "drivetrain",
+                "driveTrain",
+                "drive",
+                "drive_type",
+            )
+        ),
+        highlights=extract_highlights(payload),
+        vin=try_decode_encrypted_vin(
+            normalize_text(
+                first_present(
+                    payload,
+                    "encryptedVIN",
+                    "encryptedVin",
+                )
+            )
+        ),
         status=normalize_status(raw_status),
         sale_date=parse_datetime(first_present(payload, "saleDate", "auction_date_utc")),
         current_bid=parse_money(first_present(payload, "currentBid", "displayBidAmount")),
@@ -139,6 +189,21 @@ def parse_datetime(value: Any) -> Optional[datetime]:
         text = text.replace("Z", "+00:00")
     parsed = datetime.fromisoformat(text)
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def parse_boolish(value: Any) -> Optional[bool]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes", "y", "has key", "available"}:
+        return True
+    if normalized in {"false", "0", "no", "n", "no key", "not available"}:
+        return False
+    return None
 
 
 def derive_raw_status(payload: dict[str, Any]) -> str:
@@ -292,3 +357,77 @@ def first_present(payload: dict[str, Any], *keys: str) -> Any:
         if key in payload and payload[key] is not None:
             return payload[key]
     return None
+
+
+def normalize_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        for key in ("formattedValue", "displayValue", "label", "name", "value", "text"):
+            normalized = normalize_text(value.get(key))
+            if normalized:
+                return normalized
+        return None
+    if isinstance(value, list):
+        for item in value:
+            normalized = normalize_text(item)
+            if normalized:
+                return normalized
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def extract_odometer(payload: dict[str, Any]) -> Optional[str]:
+    value = first_present(
+        payload,
+        "odometer",
+        "odometerReading",
+        "odometerReadingReceived",
+        "odometerValue",
+    )
+    return normalize_text(value)
+
+
+def extract_highlights(payload: dict[str, Any]) -> list[str]:
+    highlights = first_present(
+        payload,
+        "highlights",
+        "saleHighlights",
+        "lotHighlights",
+    )
+    values = collect_text_values(highlights)
+    deduped: list[str] = []
+    for value in values:
+        if value not in deduped:
+            deduped.append(value)
+    return deduped
+
+
+def collect_text_values(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, (int, float, bool)):
+        return [str(value)]
+    if isinstance(value, list):
+        results: list[str] = []
+        for item in value:
+            results.extend(collect_text_values(item))
+        return results
+    if isinstance(value, dict):
+        results: list[str] = []
+        for key in ("label", "name", "value", "text", "displayValue", "formattedValue"):
+            candidate = value.get(key)
+            if candidate not in (None, ""):
+                results.extend(collect_text_values(candidate))
+                if results:
+                    return results
+        for candidate in value.values():
+            results.extend(collect_text_values(candidate))
+            if results:
+                return results
+        return results
+    return []

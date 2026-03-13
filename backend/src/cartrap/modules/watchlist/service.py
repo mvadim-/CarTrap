@@ -16,6 +16,16 @@ from cartrap.modules.watchlist.repository import WatchlistRepository
 
 logger = logging.getLogger(__name__)
 
+DETAIL_FIELD_NAMES = (
+    "odometer",
+    "primary_damage",
+    "estimated_retail_value",
+    "has_key",
+    "drivetrain",
+    "highlights",
+    "vin",
+)
+
 
 class WatchlistService:
     def __init__(
@@ -40,14 +50,7 @@ class WatchlistService:
                 "lot_number": snapshot.lot_number,
                 "url": str(snapshot.url),
                 "title": snapshot.title,
-                "thumbnail_url": str(snapshot.thumbnail_url) if snapshot.thumbnail_url else None,
-                "image_urls": [str(url) for url in snapshot.image_urls],
-                "status": snapshot.status,
-                "raw_status": snapshot.raw_status,
-                "sale_date": snapshot.sale_date,
-                "current_bid": snapshot.current_bid,
-                "buy_now_price": snapshot.buy_now_price,
-                "currency": snapshot.currency,
+                **self._tracked_lot_state_from_snapshot(snapshot),
                 "last_checked_at": now,
                 "active": True,
                 "created_at": now,
@@ -76,7 +79,10 @@ class WatchlistService:
         }
 
     def list_watchlist(self, owner_user: dict) -> dict:
-        items = [self.serialize_tracked_lot(self._ensure_media_fields(item)) for item in self.repository.list_tracked_lots_for_owner(owner_user["id"])]
+        items = [
+            self.serialize_tracked_lot(self._ensure_tracked_lot_fields(item))
+            for item in self.repository.list_tracked_lots_for_owner(owner_user["id"])
+        ]
         return {"items": items}
 
     def remove_tracked_lot(self, owner_user: dict, tracked_lot_id: str) -> None:
@@ -100,23 +106,51 @@ class WatchlistService:
         finally:
             provider.close()
 
-    def _ensure_media_fields(self, tracked_lot: dict) -> dict:
+    def _ensure_tracked_lot_fields(self, tracked_lot: dict) -> dict:
         image_urls = list(tracked_lot.get("image_urls", []))
-        if tracked_lot.get("thumbnail_url") or image_urls:
+        needs_media_backfill = not tracked_lot.get("thumbnail_url") and not image_urls
+        needs_detail_backfill = any(field_name not in tracked_lot for field_name in DETAIL_FIELD_NAMES)
+        if not needs_media_backfill and not needs_detail_backfill:
             return tracked_lot
 
         try:
             snapshot = self._fetch_snapshot(tracked_lot["url"])
         except HTTPException:
-            logger.warning("Skipping watchlist media backfill for tracked_lot_id=%s", tracked_lot.get("_id"))
+            logger.warning("Skipping watchlist state backfill for tracked_lot_id=%s", tracked_lot.get("_id"))
             return tracked_lot
 
-        payload = {
-            "thumbnail_url": str(snapshot.thumbnail_url) if snapshot.thumbnail_url else None,
-            "image_urls": [str(url) for url in snapshot.image_urls],
-        }
+        payload = self._tracked_lot_state_from_snapshot(snapshot)
+        if not needs_media_backfill:
+            payload.pop("thumbnail_url", None)
+            payload.pop("image_urls", None)
+        if not needs_detail_backfill:
+            for field_name in DETAIL_FIELD_NAMES:
+                payload.pop(field_name, None)
+
+        if not payload:
+            return tracked_lot
         self.repository.update_tracked_lot_state(str(tracked_lot["_id"]), payload, updated_at=self._now())
         return {**tracked_lot, **payload}
+
+    @staticmethod
+    def _tracked_lot_state_from_snapshot(snapshot: CopartLotSnapshot) -> dict:
+        return {
+            "thumbnail_url": str(snapshot.thumbnail_url) if snapshot.thumbnail_url else None,
+            "image_urls": [str(url) for url in snapshot.image_urls],
+            "odometer": snapshot.odometer,
+            "primary_damage": snapshot.primary_damage,
+            "estimated_retail_value": snapshot.estimated_retail_value,
+            "has_key": snapshot.has_key,
+            "drivetrain": snapshot.drivetrain,
+            "highlights": list(snapshot.highlights),
+            "vin": snapshot.vin,
+            "status": snapshot.status,
+            "raw_status": snapshot.raw_status,
+            "sale_date": snapshot.sale_date,
+            "current_bid": snapshot.current_bid,
+            "buy_now_price": snapshot.buy_now_price,
+            "currency": snapshot.currency,
+        }
 
     @staticmethod
     def serialize_tracked_lot(document: dict) -> dict:
@@ -127,6 +161,13 @@ class WatchlistService:
             "title": document["title"],
             "thumbnail_url": document.get("thumbnail_url"),
             "image_urls": list(document.get("image_urls", [])),
+            "odometer": document.get("odometer"),
+            "primary_damage": document.get("primary_damage"),
+            "estimated_retail_value": document.get("estimated_retail_value"),
+            "has_key": document.get("has_key"),
+            "drivetrain": document.get("drivetrain"),
+            "highlights": list(document.get("highlights", [])),
+            "vin": document.get("vin"),
             "status": document["status"],
             "raw_status": document["raw_status"],
             "current_bid": document.get("current_bid"),

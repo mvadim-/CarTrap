@@ -35,6 +35,13 @@ class CopartLotSnapshot(BaseModel):
     url: HttpUrl
     thumbnail_url: Optional[HttpUrl] = None
     image_urls: list[HttpUrl] = []
+    odometer: Optional[str] = None
+    primary_damage: Optional[str] = None
+    estimated_retail_value: Optional[float] = None
+    has_key: Optional[bool] = None
+    drivetrain: Optional[str] = None
+    highlights: list[str] = []
+    vin: Optional[str] = None
     status: str
     sale_date: Optional[datetime] = None
     current_bid: Optional[float] = None

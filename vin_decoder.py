@@ -1,17 +1,12 @@
-import base64
+from pathlib import Path
 import sys
 
-KEY = "g2memberutil97534"
 
+ROOT = Path(__file__).resolve().parent / "backend" / "src"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-def decode_encrypted_vin(encrypted_vin: str, key: str = KEY) -> str:
-    encrypted_bytes = base64.b64decode(encrypted_vin)
-
-    vin_chars = []
-    for i, b in enumerate(encrypted_bytes):
-        vin_chars.append(chr(b ^ ord(key[i])))
-
-    return "".join(vin_chars)
+from cartrap.modules.copart_provider.vin import decode_encrypted_vin
 
 
 def main():

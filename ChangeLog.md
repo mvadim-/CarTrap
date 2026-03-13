@@ -271,3 +271,51 @@
 - Оновлено `frontend/src/features/search/SearchPanel.tsx`: `Year From` і `Year To` згруповано в окремий `search-grid__year-group`, щоб ці два поля рендерилися як зв’язана пара.
 - Оновлено `frontend/src/styles.css`: для `search-grid__year-group` додано внутрішню двоколонну grid-розкладку, тож year inputs залишаються поруч один біля одного навіть коли основна search-grid переходить у вузький layout.
 - Verification: `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 14:31] Add implementation plan for tracked lot detail tiles
+- Додано `docs/plans/20260313-enhance-tracked-lots-tiles-with-lot-details.md` з end-to-end планом для розширення `Tracked Lots` полями `Odometer`, `Primary damage`, `Estimated retail value`, `Has Key`, `Drivetrain`, `Highlights`, `Vin`.
+- У плані зафіксовано рекомендований підхід: нормалізувати Copart lot-details на backend, декодувати `encryptedVIN` через логіку з `vin_decoder.py`, розширити watchlist API/persistence і лише потім оновити frontend tiles та regression-тести.
+
+## [2026-03-13 14:35] Auto-review tracked lot details implementation plan
+- Проведено auto review `docs/plans/20260313-enhance-tracked-lots-tiles-with-lot-details.md` і уточнено два ризики реалізації: крихкий імпорт `vin_decoder.py` з кореня repo та неоднозначний критерій backfill для nullable detail-полів.
+- Оновлено план: VIN decoder тепер явно винесено в backend-safe importable helper, а backfill для legacy tracked lots має спиратися на відсутність ключів у документі, а не на прості `None`-перевірки.
+
+## [2026-03-13 15:14] Enrich tracked lot tiles with decoded VIN and lot details
+- Оновлено `backend/src/cartrap/modules/copart_provider/{models.py,normalizer.py,vin.py}` і `vin_decoder.py`: `CopartLotSnapshot` тепер містить `odometer`, `primary_damage`, `estimated_retail_value`, `has_key`, `drivetrain`, `highlights`, `vin`; lot-details normalizer витягує ці поля з Copart payload і декодує `encryptedVIN` через shared backend helper.
+- Оновлено `backend/src/cartrap/modules/watchlist/{schemas.py,service.py}` та `backend/src/cartrap/modules/monitoring/service.py`: нові detail-поля зберігаються в `tracked_lots`, повертаються з `/api/watchlist`, lazy backfill працює для legacy документів за відсутніми ключами, а background polling синхронізує detail state разом із media/status/bid.
+- Оновлено `frontend/src/{types.ts,styles.css}` і `frontend/src/features/watchlist/WatchlistPanel.tsx`: `Tracked Lots` card тепер показує `Odometer`, `Primary damage`, `Estimated retail value`, `Has Key`, `Drivetrain`, `Highlights`, `Vin` з fallback `—` для відсутніх значень і читабельним responsive details-grid.
+- Розширено покриття в `backend/tests/copart/test_api_normalizer.py`, `backend/tests/watchlist/test_watchlist_api.py`, `backend/tests/watchlist/test_snapshot_storage.py`, `backend/tests/monitoring/test_change_detection.py`, `frontend/tests/app.test.tsx`; verification: `./.venv/bin/pytest backend/tests/copart/test_api_normalizer.py backend/tests/watchlist/test_watchlist_api.py backend/tests/watchlist/test_snapshot_storage.py backend/tests/monitoring/test_change_detection.py` -> `23 passed`, `npm run test --prefix frontend -- app.test.tsx` -> `12 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 15:18] Fix Copart key mapping for retail value and key status
+- Уточнено `backend/src/cartrap/modules/copart_provider/normalizer.py`: `estimated_retail_value` тепер у першу чергу читається з `estRetailValue`, а `has_key` з `keys`, збережено fallback на попередні aliases для сумісності.
+- Оновлено `backend/tests/copart/test_api_normalizer.py` під фактичні Copart lot-details keys `estRetailValue` і `keys`.
+
+## [2026-03-13 15:25] Compact tracked lot tile layout
+- Оновлено `frontend/src/features/watchlist/WatchlistPanel.tsx`: detail-поля в `Tracked Lots` тепер рендеряться як щільніші рядки `label: value` через компактний `dl`, без втрати полів `Odometer`, `Primary damage`, `Retail`, `Has Key`, `Drivetrain`, `Highlights`, `Vin`.
+- Оновлено `frontend/src/styles.css`: зменшено thumb, padding і вертикальні відступи в `watchlist-card`, details-grid переведено в компактніший 3-column layout на desktop і 2-column на mobile/tablet.
+- Оновлено `frontend/tests/app.test.tsx` під новий compact markup; verification: `npm run test --prefix frontend -- app.test.tsx` -> `12 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 15:29] Make tracked lot number open Copart lot page
+- Оновлено `frontend/src/features/watchlist/WatchlistPanel.tsx`: номер лоту в `Tracked Lots` тепер рендериться як зовнішній лінк на Copart lot URL і відкривається в новій вкладці.
+- Оновлено `frontend/src/styles.css`: додано стилізацію для `watchlist-card__lot-link`, щоб лінк залишався компактним і читабельним всередині card.
+- Оновлено `frontend/tests/app.test.tsx` перевіркою `href` і `target` для лінка на Copart; verification: `npm run test --prefix frontend -- app.test.tsx` -> `12 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 15:41] Unify tracked lot parameter styling and top summary layout
+- Оновлено `frontend/src/features/watchlist/WatchlistPanel.tsx`: верхні параметри `Lot / Bid / Sale` винесено в окремий summary `dl` над нижнім details-grid, а всі параметри в tile тепер використовують один і той самий label/value layout.
+- Оновлено `frontend/src/styles.css`: уніфіковано шрифти й кольори для всіх параметрів у `Tracked Lots`, summary і details використовують спільні стилі; верхній блок лишається над нижньою таблицею і на mobile переходить у одноколонний layout.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `12 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 15:47] Align dashboard typography and move Browser Notifications beside user panel
+- Оновлено `frontend/src/features/dashboard/DashboardShell.tsx` і `frontend/src/App.tsx`: hero отримав праву `sidebar`-колонку, де `Browser Notifications` тепер стоїть поруч із user-card замість нижньої частини dashboard-grid.
+- Оновлено `frontend/src/features/push/PushPanel.tsx` і `frontend/src/styles.css`: для informational блоків введено shared `detail-label/detail-value` типографіку, яку використано в user-card, push panel і `Tracked Lots`, щоб шрифти й кольори параметрів були узгоджені по всьому dashboard.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `12 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 15:58] Extend shared parameter styling to Manual Copart Search and fix hero layout
+- Оновлено `frontend/src/features/search/SearchPanel.tsx`: `Manual Copart Search` тепер має compact summary-блок у shared style (`Make`, `Model`, `Years`, `Filters`) одразу під формою, замість окремого рядка `Active filters`.
+- Оновлено `frontend/src/features/dashboard/DashboardShell.tsx` і `frontend/src/styles.css`: hero перебудовано в три окремі колонки `intro / user / browser notifications`, щоб `Browser Notifications` був реально поруч із user-card, а не стеком під ним.
+- Оновлено `frontend/tests/app.test.tsx` під новий summary markup; verification: `npm run test --prefix frontend -- app.test.tsx` -> `12 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 16:06] Apply shared detail layout to Saved Searches and balance search form spacing
+- Оновлено `frontend/src/features/search/SearchPanel.tsx`: `Saved Searches` тепер рендеряться через той самий shared label/value layout (`Make`, `Model`, `Years`, `Filters`, `Matches`), що й інші informational блоки dashboard.
+- Оновлено `frontend/src/styles.css`: для search form додано явний нижній відступ під `Search Lots`, а saved-search details отримали власний compact detail-grid з тим самим шрифтовим контрактом.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `12 passed`, `npm run build --prefix frontend` -> успішно.

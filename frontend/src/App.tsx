@@ -314,7 +314,18 @@ export function App() {
   }
 
   return (
-    <DashboardShell user={session.user!} onLogout={handleLogout}>
+    <DashboardShell
+      user={session.user!}
+      onLogout={handleLogout}
+      sidebar={
+        <PushPanel
+          subscriptions={subscriptions}
+          permissionState={permissionState}
+          onSubscribe={handleSubscribePush}
+          onUnsubscribe={handleUnsubscribePush}
+        />
+      }
+    >
       {error ? <p className="error">{error}</p> : null}
       {session.user?.role === "admin" ? (
         <>
@@ -334,12 +345,6 @@ export function App() {
         onAddFromSearch={handleAddFromSearch}
       />
       <WatchlistPanel items={watchlist} onAddByLotNumber={handleAddByLotNumber} onRemove={handleRemoveWatchlistItem} />
-      <PushPanel
-        subscriptions={subscriptions}
-        permissionState={permissionState}
-        onSubscribe={handleSubscribePush}
-        onUnsubscribe={handleUnsubscribePush}
-      />
     </DashboardShell>
   );
 }

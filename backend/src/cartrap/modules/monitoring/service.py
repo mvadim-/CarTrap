@@ -13,6 +13,7 @@ from cartrap.modules.monitoring.change_detection import detect_significant_chang
 from cartrap.modules.monitoring.polling_policy import is_due_for_poll
 from cartrap.modules.notifications.service import NotificationService
 from cartrap.modules.watchlist.repository import WatchlistRepository
+from cartrap.modules.watchlist.service import WatchlistService
 
 
 class MonitoringService:
@@ -71,14 +72,7 @@ class MonitoringService:
         self.repository.update_tracked_lot_state(
             str(tracked_lot["_id"]),
             {
-                "thumbnail_url": str(fresh_snapshot.thumbnail_url) if fresh_snapshot.thumbnail_url else None,
-                "image_urls": [str(url) for url in fresh_snapshot.image_urls],
-                "status": fresh_snapshot.status,
-                "raw_status": fresh_snapshot.raw_status,
-                "sale_date": fresh_snapshot.sale_date,
-                "current_bid": fresh_snapshot.current_bid,
-                "buy_now_price": fresh_snapshot.buy_now_price,
-                "currency": fresh_snapshot.currency,
+                **WatchlistService._tracked_lot_state_from_snapshot(fresh_snapshot),
                 "last_checked_at": now,
             },
             updated_at=now,

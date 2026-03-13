@@ -23,6 +23,70 @@ export function WatchlistPanel({ items, onAddByLotNumber, onRemove }: Props) {
     setLotNumber("");
   }
 
+  function formatDetailValue(value: string | null | undefined): string {
+    return value && value.trim() ? value : "—";
+  }
+
+  function formatHasKey(value: boolean | null): string {
+    if (value === true) {
+      return "Yes";
+    }
+    if (value === false) {
+      return "No";
+    }
+    return "—";
+  }
+
+  function formatMoney(value: number | null, currency: string): string {
+    if (value === null) {
+      return "—";
+    }
+    const digits = Number.isInteger(value) ? 0 : 2;
+    return `${new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(value)} ${currency}`;
+  }
+
+  function getTrackedLotDetails(item: WatchlistItem) {
+    return [
+      { label: "Odometer", value: formatDetailValue(item.odometer) },
+      { label: "Primary damage", value: formatDetailValue(item.primary_damage) },
+      { label: "Retail", value: formatMoney(item.estimated_retail_value, item.currency) },
+      { label: "Has Key", value: formatHasKey(item.has_key) },
+      { label: "Drivetrain", value: formatDetailValue(item.drivetrain) },
+      { label: "Highlights", value: item.highlights.length > 0 ? item.highlights.join(" · ") : "—", full: true },
+      { label: "Vin", value: formatDetailValue(item.vin), full: true },
+    ];
+  }
+
+  function getTrackedLotSummary(item: WatchlistItem) {
+    return [
+      {
+        label: "Lot",
+        value: (
+          <a
+            className="watchlist-card__lot-link"
+            href={item.url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open Copart lot ${item.lot_number}`}
+          >
+            {item.lot_number}
+          </a>
+        ),
+      },
+      {
+        label: "Bid",
+        value: formatMoney(item.current_bid, item.currency),
+      },
+      {
+        label: "Sale",
+        value: item.sale_date ? new Date(item.sale_date).toLocaleDateString() : "—",
+      },
+    ];
+  }
+
   return (
     <section className="panel">
       <div className="panel-header">
@@ -58,11 +122,25 @@ export function WatchlistPanel({ items, onAddByLotNumber, onRemove }: Props) {
                   <strong>{item.title}</strong>
                   <span className="status-pill">{item.status}</span>
                 </div>
-                <p className="muted">Lot {item.lot_number}</p>
-                <div className="watchlist-card__meta muted">
-                  <span>Bid {item.current_bid ?? 0} {item.currency}</span>
-                  {item.sale_date ? <span>Sale {new Date(item.sale_date).toLocaleDateString()}</span> : null}
-                </div>
+                <dl className="watchlist-card__summary">
+                  {getTrackedLotSummary(item).map((detail) => (
+                    <div key={detail.label} className="watchlist-card__detail detail-item">
+                      <dt className="watchlist-card__detail-label detail-label">{detail.label}:</dt>
+                      <dd className="watchlist-card__detail-value detail-value">{detail.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <dl className="watchlist-card__details">
+                  {getTrackedLotDetails(item).map((detail) => (
+                    <div
+                      key={detail.label}
+                      className={`watchlist-card__detail detail-item${detail.full ? " watchlist-card__detail--full" : ""}`}
+                    >
+                      <dt className="watchlist-card__detail-label detail-label">{detail.label}:</dt>
+                      <dd className="watchlist-card__detail-value detail-value">{detail.value}</dd>
+                    </div>
+                  ))}
+                </dl>
               </div>
               <div className="watchlist-card__actions">
                 <button type="button" className="ghost-button" onClick={() => onRemove(item.id)}>

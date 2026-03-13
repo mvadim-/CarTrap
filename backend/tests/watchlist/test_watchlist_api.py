@@ -75,6 +75,13 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
                 "https://img.copart.com/12345678-detail.jpg",
                 "https://img.copart.com/12345678-detail-2.jpg",
             ],
+            odometer="12,345 ACTUAL",
+            primary_damage="FRONT END",
+            estimated_retail_value=36500.0,
+            has_key=True,
+            drivetrain="AWD",
+            highlights=["Run and Drive", "Enhanced Vehicles"],
+            vin="1FA6P8TH0J5100001",
             status="on_approval",
             raw_status="On Approval",
             sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
@@ -88,6 +95,13 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
             url="https://www.copart.com/lot/87654321",
             thumbnail_url=None,
             image_urls=[],
+            odometer=None,
+            primary_damage=None,
+            estimated_retail_value=None,
+            has_key=None,
+            drivetrain=None,
+            highlights=[],
+            vin=None,
             status="upcoming",
             raw_status="Upcoming",
             sale_date=datetime(2026, 3, 21, 18, 30, tzinfo=timezone.utc),
@@ -139,6 +153,13 @@ def test_watchlist_crud_for_user(client: TestClient) -> None:
             "https://img.copart.com/12345678-detail.jpg",
             "https://img.copart.com/12345678-detail-2.jpg",
         ]
+        assert list_response.json()["items"][0]["odometer"] == "12,345 ACTUAL"
+        assert list_response.json()["items"][0]["primary_damage"] == "FRONT END"
+        assert list_response.json()["items"][0]["estimated_retail_value"] == 36500.0
+        assert list_response.json()["items"][0]["has_key"] is True
+        assert list_response.json()["items"][0]["drivetrain"] == "AWD"
+        assert list_response.json()["items"][0]["highlights"] == ["Run and Drive", "Enhanced Vehicles"]
+        assert list_response.json()["items"][0]["vin"] == "1FA6P8TH0J5100001"
 
         delete_response = client.delete(
             f"/api/watchlist/{tracked_lot_id}",
@@ -178,6 +199,7 @@ def test_watchlist_accepts_lot_number_input(client: TestClient) -> None:
         "https://img.copart.com/12345678-detail.jpg",
         "https://img.copart.com/12345678-detail-2.jpg",
     ]
+    assert response.json()["tracked_lot"]["vin"] == "1FA6P8TH0J5100001"
 
 
 def test_watchlist_rejects_empty_identifier(client: TestClient) -> None:
@@ -271,4 +293,51 @@ def test_watchlist_list_backfills_missing_media_for_legacy_items(client: TestCli
         "https://img.copart.com/12345678-detail.jpg",
         "https://img.copart.com/12345678-detail-2.jpg",
     ]
+    assert response.json()["items"][0]["odometer"] == "12,345 ACTUAL"
+    assert response.json()["items"][0]["primary_damage"] == "FRONT END"
+    assert response.json()["items"][0]["estimated_retail_value"] == 36500.0
+    assert response.json()["items"][0]["has_key"] is True
+    assert response.json()["items"][0]["drivetrain"] == "AWD"
+    assert response.json()["items"][0]["highlights"] == ["Run and Drive", "Enhanced Vehicles"]
+    assert response.json()["items"][0]["vin"] == "1FA6P8TH0J5100001"
     assert stored["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"
+    assert stored["vin"] == "1FA6P8TH0J5100001"
+
+
+def test_watchlist_does_not_refetch_when_detail_keys_are_present_with_null_values(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "nulls@example.com", "NullsPass123")
+        owner_id = client.app.state.mongo.database["users"].find_one({"email": "nulls@example.com"})["_id"]
+        client.app.state.copart_provider_factory = lambda: FakeProvider({}, should_fail=True)
+        client.app.state.mongo.database["tracked_lots"].insert_one(
+            {
+                "owner_user_id": str(owner_id),
+                "lot_number": "87654321",
+                "url": "https://www.copart.com/lot/87654321",
+                "title": "2018 HONDA CIVIC EX",
+                "thumbnail_url": "https://img.copart.com/87654321-detail.jpg",
+                "image_urls": ["https://img.copart.com/87654321-detail.jpg"],
+                "odometer": None,
+                "primary_damage": None,
+                "estimated_retail_value": None,
+                "has_key": None,
+                "drivetrain": None,
+                "highlights": [],
+                "vin": None,
+                "status": "upcoming",
+                "raw_status": "Upcoming",
+                "sale_date": datetime(2026, 3, 21, 18, 30, tzinfo=timezone.utc),
+                "current_bid": 1800.0,
+                "buy_now_price": None,
+                "currency": "USD",
+                "last_checked_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+                "active": True,
+                "created_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+            }
+        )
+
+        response = client.get("/api/watchlist", headers={"Authorization": f"Bearer {user_token}"})
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["vin"] is None

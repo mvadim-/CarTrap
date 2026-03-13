@@ -41,6 +41,13 @@ def test_initial_snapshot_is_stored_with_tracked_lot_state() -> None:
             "https://img.copart.com/12345678-detail.jpg",
             "https://img.copart.com/12345678-detail-2.jpg",
         ],
+        odometer="12,345 ACTUAL",
+        primary_damage="FRONT END",
+        estimated_retail_value=36500.0,
+        has_key=True,
+        drivetrain="AWD",
+        highlights=["Run and Drive"],
+        vin="1FA6P8TH0J5100001",
         status="on_approval",
         raw_status="On Approval",
         sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
@@ -62,6 +69,13 @@ def test_initial_snapshot_is_stored_with_tracked_lot_state() -> None:
         "https://img.copart.com/12345678-detail.jpg",
         "https://img.copart.com/12345678-detail-2.jpg",
     ]
+    assert tracked_lot["odometer"] == "12,345 ACTUAL"
+    assert tracked_lot["primary_damage"] == "FRONT END"
+    assert tracked_lot["estimated_retail_value"] == 36500.0
+    assert tracked_lot["has_key"] is True
+    assert tracked_lot["drivetrain"] == "AWD"
+    assert tracked_lot["highlights"] == ["Run and Drive"]
+    assert tracked_lot["vin"] == "1FA6P8TH0J5100001"
     assert tracked_lot["status"] == "on_approval"
     assert len(snapshots) == 1
     assert snapshots[0]["current_bid"] == 4200.0

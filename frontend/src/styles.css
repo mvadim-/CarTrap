@@ -66,7 +66,7 @@ select {
 
 .hero {
   display: grid;
-  grid-template-columns: 1.8fr 1fr;
+  grid-template-columns: minmax(0, 1.8fr) minmax(18rem, 0.9fr) minmax(18rem, 1fr);
   gap: 1rem;
   align-items: stretch;
   margin-bottom: 1rem;
@@ -87,6 +87,13 @@ select {
   flex-direction: column;
   gap: 0.8rem;
   justify-content: center;
+}
+
+.hero-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .dashboard-grid {
@@ -123,6 +130,10 @@ select {
   margin-top: 0.35rem;
 }
 
+.saved-search-card__detail--full {
+  grid-column: 1 / -1;
+}
+
 .filter-summary {
   margin-top: 0.75rem;
 }
@@ -132,12 +143,22 @@ select {
   margin-top: 1rem;
 }
 
+.search-summary {
+  margin-top: 0.8rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(19, 38, 47, 0.08);
+}
+
 .search-grid,
 .inline-form {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
   gap: 0.75rem;
   align-items: end;
+}
+
+.search-grid--panel {
+  margin-bottom: 0.8rem;
 }
 
 .search-grid__year-field {
@@ -214,6 +235,56 @@ select {
   margin: 0 0 0.35rem;
 }
 
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.22rem 0.8rem;
+  margin: 0;
+}
+
+.detail-grid--single {
+  grid-template-columns: 1fr;
+}
+
+.detail-grid--search {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.detail-grid--saved-search {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(19, 38, 47, 0.08);
+}
+
+.detail-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.detail-item--stack {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.detail-label {
+  color: rgba(19, 38, 47, 0.56);
+  font-size: 0.76rem;
+  letter-spacing: 0.03em;
+  text-transform: none;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.detail-value {
+  color: #13262f;
+  font-size: 0.82rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .lede,
 .muted {
   color: rgba(19, 38, 47, 0.74);
@@ -249,37 +320,94 @@ select {
 .watchlist-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
+  gap: 0.85rem;
+  padding: 0.8rem;
 }
 
 .watchlist-card__body,
-.watchlist-card__meta,
 .watchlist-card__actions {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.3rem;
 }
 
 .watchlist-card__header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.55rem;
 }
 
-.watchlist-card__meta {
-  grid-template-columns: repeat(2, minmax(0, max-content));
-  gap: 0.4rem 1rem;
+.watchlist-card__header strong {
+  font-size: 0.96rem;
+  line-height: 1.2;
+}
+
+.watchlist-card__lot-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(19, 38, 47, 0.28);
+  text-underline-offset: 0.15em;
+}
+
+.watchlist-card__lot-link:hover {
+  text-decoration-color: currentColor;
+}
+
+.watchlist-card__summary,
+.watchlist-card__details {
+  display: grid;
+  margin: 0;
+}
+
+.watchlist-card__summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.22rem 0.8rem;
+}
+
+.watchlist-card__details {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.22rem 0.8rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(19, 38, 47, 0.1);
+}
+
+.watchlist-card__detail {
+  display: flex;
+  align-items: baseline;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.watchlist-card__detail--full {
+  grid-column: 1 / -1;
+}
+
+.watchlist-card__detail-label {
+  white-space: nowrap;
+}
+
+.watchlist-card__detail-value {
+  overflow-wrap: anywhere;
 }
 
 .watchlist-card__actions {
-  align-self: center;
+  align-self: start;
+}
+
+.push-panel .panel-header {
+  align-items: flex-start;
+}
+
+.push-panel__actions {
+  margin-top: 0.65rem;
 }
 
 .lot-thumb {
-  width: 6rem;
-  height: 6rem;
+  width: 4.75rem;
+  height: 4.75rem;
   object-fit: cover;
-  border-radius: 1rem;
+  border-radius: 0.8rem;
   background: rgba(19, 38, 47, 0.08);
   flex-shrink: 0;
 }
@@ -461,9 +589,17 @@ select {
   }
 
   .watchlist-card__header,
-  .watchlist-card__meta {
+  .watchlist-card__summary {
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .watchlist-card__details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .watchlist-card__actions {
@@ -476,6 +612,6 @@ select {
 
   .lot-thumb {
     width: 100%;
-    height: 11rem;
+    height: 9rem;
   }
 }

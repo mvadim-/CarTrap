@@ -20,6 +20,13 @@ export type WatchlistItem = {
   title: string;
   thumbnail_url: string | null;
   image_urls: string[];
+  odometer: string | null;
+  primary_damage: string | null;
+  estimated_retail_value: number | null;
+  has_key: boolean | null;
+  drivetrain: string | null;
+  highlights: string[];
+  vin: string | null;
   status: string;
   raw_status: string;
   current_bid: number | null;

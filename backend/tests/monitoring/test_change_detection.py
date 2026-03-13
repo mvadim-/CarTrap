@@ -67,6 +67,13 @@ def test_monitoring_service_stores_new_snapshot_when_state_changes() -> None:
         url="https://www.copart.com/lot/12345678",
         thumbnail_url=None,
         image_urls=[],
+        odometer="10,000 ACTUAL",
+        primary_damage="FRONT END",
+        estimated_retail_value=35500.0,
+        has_key=False,
+        drivetrain="FWD",
+        highlights=["Run and Drive"],
+        vin="1FA6P8TH0J5100001",
         status="upcoming",
         raw_status="Upcoming",
         sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
@@ -86,6 +93,13 @@ def test_monitoring_service_stores_new_snapshot_when_state_changes() -> None:
             "https://img.copart.com/12345678-detail.jpg",
             "https://img.copart.com/12345678-detail-2.jpg",
         ],
+        odometer="12,345 ACTUAL",
+        primary_damage="REAR END",
+        estimated_retail_value=36500.0,
+        has_key=True,
+        drivetrain="AWD",
+        highlights=["Enhanced Vehicles"],
+        vin="1FA6P8TH0J5100002",
         status="live",
         raw_status="Live",
         sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
@@ -108,6 +122,13 @@ def test_monitoring_service_stores_new_snapshot_when_state_changes() -> None:
         "https://img.copart.com/12345678-detail.jpg",
         "https://img.copart.com/12345678-detail-2.jpg",
     ]
+    assert tracked_lot["odometer"] == "12,345 ACTUAL"
+    assert tracked_lot["primary_damage"] == "REAR END"
+    assert tracked_lot["estimated_retail_value"] == 36500.0
+    assert tracked_lot["has_key"] is True
+    assert tracked_lot["drivetrain"] == "AWD"
+    assert tracked_lot["highlights"] == ["Enhanced Vehicles"]
+    assert tracked_lot["vin"] == "1FA6P8TH0J5100002"
 
 
 def test_monitoring_service_counts_failures_without_overwriting_state() -> None:
@@ -118,6 +139,13 @@ def test_monitoring_service_counts_failures_without_overwriting_state() -> None:
         url="https://www.copart.com/lot/87654321",
         thumbnail_url=None,
         image_urls=[],
+        odometer=None,
+        primary_damage=None,
+        estimated_retail_value=None,
+        has_key=None,
+        drivetrain=None,
+        highlights=[],
+        vin=None,
         status="upcoming",
         raw_status="Upcoming",
         sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),

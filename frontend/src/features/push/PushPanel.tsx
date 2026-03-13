@@ -9,17 +9,30 @@ type Props = {
 
 export function PushPanel({ subscriptions, permissionState, onSubscribe, onUnsubscribe }: Props) {
   return (
-    <section className="panel">
+    <section className="panel push-panel">
       <div className="panel-header">
         <div>
           <p className="eyebrow">Push</p>
           <h2>Browser Notifications</h2>
         </div>
-        <span className="status-pill">{permissionState}</span>
       </div>
-      <button type="button" onClick={onSubscribe}>
-        Enable Push On This Device
-      </button>
+      <dl className="detail-grid detail-grid--single">
+        <div className="detail-item">
+          <dt className="detail-label">Status:</dt>
+          <dd className="detail-value">
+            <span className="status-pill">{permissionState}</span>
+          </dd>
+        </div>
+        <div className="detail-item detail-item--stack">
+          <dt className="detail-label">Subscriptions:</dt>
+          <dd className="detail-value">{subscriptions.length}</dd>
+        </div>
+      </dl>
+      <div className="push-panel__actions">
+        <button type="button" onClick={onSubscribe}>
+          Enable Push On This Device
+        </button>
+      </div>
       {subscriptions.length === 0 ? (
         <p className="muted">No device subscriptions registered.</p>
       ) : (

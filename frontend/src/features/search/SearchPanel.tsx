@@ -332,6 +332,17 @@ export function SearchPanel({
     return `${count} ${count === 1 ? "lot" : "lots"} found`;
   }
 
+  function formatYearRange(from?: string, to?: string): string {
+    if (from && to) {
+      return `${from}-${to}`;
+    }
+    return from || to || "—";
+  }
+
+  function formatSavedSearchYears(item: SavedSearch): string {
+    return formatYearRange(item.criteria.year_from?.toString(), item.criteria.year_to?.toString());
+  }
+
   const activeFilterLabels = getSearchFilterLabels({
     driveType,
     primaryDamage,
@@ -352,7 +363,7 @@ export function SearchPanel({
           Filters{activeFilterLabels.length > 0 ? ` (${activeFilterLabels.length})` : ""}
         </button>
       </div>
-      <form className="search-grid" onSubmit={handleSubmit}>
+      <form className="search-grid search-grid--panel" onSubmit={handleSubmit}>
         <SearchableSelector
           label="Make"
           ariaLabel="Make"
@@ -414,9 +425,26 @@ export function SearchPanel({
           Search Lots
         </button>
       </form>
-      {activeFilterLabels.length > 0 ? (
-        <p className="muted filter-summary">Active filters: {activeFilterLabels.join(" · ")}</p>
-      ) : null}
+      <dl className="detail-grid detail-grid--search search-summary">
+        <div className="detail-item">
+          <dt className="detail-label">Make:</dt>
+          <dd className="detail-value">{selectedMake?.name ?? "—"}</dd>
+        </div>
+        <div className="detail-item">
+          <dt className="detail-label">Model:</dt>
+          <dd className="detail-value">{selectedModel?.name ?? "—"}</dd>
+        </div>
+        <div className="detail-item">
+          <dt className="detail-label">Years:</dt>
+          <dd className="detail-value">{formatYearRange(yearFrom, yearTo)}</dd>
+        </div>
+        <div className="detail-item detail-item--stack">
+          <dt className="detail-label">Filters:</dt>
+          <dd className="detail-value">
+            {activeFilterLabels.length > 0 ? activeFilterLabels.join(" · ") : "None"}
+          </dd>
+        </div>
+      </dl>
       {!catalog && !isLoadingCatalog ? <p className="muted">Search catalog is unavailable.</p> : null}
 
       <div className="saved-searches">
@@ -434,34 +462,46 @@ export function SearchPanel({
               <article key={item.id} className="result-card">
                 <div className="result-copy">
                   <strong>{item.label}</strong>
-                  <p className="muted">
-                    {item.criteria.make ?? "Unknown make"}
-                    {item.criteria.model ? ` · ${item.criteria.model}` : ""}
-                    {item.criteria.year_from || item.criteria.year_to
-                      ? ` · ${item.criteria.year_from ?? item.criteria.year_to}-${item.criteria.year_to ?? item.criteria.year_from}`
-                      : ""}
-                  </p>
-                  {getSearchFilterLabels({
-                    driveType: item.criteria.drive_type,
-                    primaryDamage: item.criteria.primary_damage,
-                    titleType: item.criteria.title_type,
-                    fuelType: item.criteria.fuel_type,
-                    lotCondition: item.criteria.lot_condition,
-                    odometerRange: item.criteria.odometer_range,
-                  }).length > 0 ? (
-                    <p className="muted">
-                      Filters:{" "}
-                      {getSearchFilterLabels({
-                        driveType: item.criteria.drive_type,
-                        primaryDamage: item.criteria.primary_damage,
-                        titleType: item.criteria.title_type,
-                        fuelType: item.criteria.fuel_type,
-                        lotCondition: item.criteria.lot_condition,
-                        odometerRange: item.criteria.odometer_range,
-                      }).join(" · ")}
-                    </p>
-                  ) : null}
-                  <p className="muted saved-search-count">{formatLotCount(item.result_count)}</p>
+                  <dl className="detail-grid detail-grid--saved-search saved-search-card__details">
+                    <div className="detail-item">
+                      <dt className="detail-label">Make:</dt>
+                      <dd className="detail-value">{item.criteria.make ?? "Unknown make"}</dd>
+                    </div>
+                    <div className="detail-item">
+                      <dt className="detail-label">Model:</dt>
+                      <dd className="detail-value">{item.criteria.model ?? "—"}</dd>
+                    </div>
+                    <div className="detail-item">
+                      <dt className="detail-label">Years:</dt>
+                      <dd className="detail-value">{formatSavedSearchYears(item)}</dd>
+                    </div>
+                    <div className="detail-item detail-item--stack saved-search-card__detail--full">
+                      <dt className="detail-label">Filters:</dt>
+                      <dd className="detail-value">
+                        {getSearchFilterLabels({
+                          driveType: item.criteria.drive_type,
+                          primaryDamage: item.criteria.primary_damage,
+                          titleType: item.criteria.title_type,
+                          fuelType: item.criteria.fuel_type,
+                          lotCondition: item.criteria.lot_condition,
+                          odometerRange: item.criteria.odometer_range,
+                        }).length > 0
+                          ? getSearchFilterLabels({
+                              driveType: item.criteria.drive_type,
+                              primaryDamage: item.criteria.primary_damage,
+                              titleType: item.criteria.title_type,
+                              fuelType: item.criteria.fuel_type,
+                              lotCondition: item.criteria.lot_condition,
+                              odometerRange: item.criteria.odometer_range,
+                            }).join(" · ")
+                          : "None"}
+                      </dd>
+                    </div>
+                    <div className="detail-item saved-search-card__detail--full">
+                      <dt className="detail-label">Matches:</dt>
+                      <dd className="detail-value">{formatLotCount(item.result_count)}</dd>
+                    </div>
+                  </dl>
                 </div>
                 <div className="result-actions">
                   <button type="button" className="ghost-button" onClick={() => void handleRunSavedSearch(item)}>
