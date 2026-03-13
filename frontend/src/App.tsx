@@ -16,6 +16,7 @@ import {
   addLotNumberToWatchlist,
   configureAuthLifecycle,
   createInvite,
+  deleteSavedSearch,
   getSearchCatalog,
   listPushSubscriptions,
   listSavedSearches,
@@ -39,6 +40,7 @@ export function App() {
   const session = useSession();
   const [error, setError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchTotalResults, setSearchTotalResults] = useState(0);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
@@ -59,6 +61,7 @@ export function App() {
       onAuthFailed: () => {
         session.logout();
         setSearchResults([]);
+        setSearchTotalResults(0);
         setSavedSearches([]);
         setWatchlist([]);
         setSubscriptions([]);
@@ -110,6 +113,8 @@ export function App() {
     model?: string;
     makeFilter?: string;
     modelFilter?: string;
+    driveType?: string;
+    primaryDamage?: string;
     yearFrom?: string;
     yearTo?: string;
   }) {
@@ -118,18 +123,21 @@ export function App() {
     }
     try {
       setError(null);
-      const results = await searchLots(
+      const response = await searchLots(
         {
           make: payload.make,
           model: payload.model,
           make_filter: payload.makeFilter,
           model_filter: payload.modelFilter,
+          drive_type: payload.driveType,
+          primary_damage: payload.primaryDamage,
           year_from: payload.yearFrom ? Number(payload.yearFrom) : undefined,
           year_to: payload.yearTo ? Number(payload.yearTo) : undefined,
         },
         session.accessToken,
       );
-      setSearchResults(results);
+      setSearchResults(response.results);
+      setSearchTotalResults(response.total_results);
       return;
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Search failed";
@@ -143,6 +151,8 @@ export function App() {
     model?: string;
     makeFilter?: string;
     modelFilter?: string;
+    driveType?: string;
+    primaryDamage?: string;
     yearFrom?: string;
     yearTo?: string;
   }) {
@@ -157,8 +167,11 @@ export function App() {
           model: payload.model,
           make_filter: payload.makeFilter,
           model_filter: payload.modelFilter,
+          drive_type: payload.driveType,
+          primary_damage: payload.primaryDamage,
           year_from: payload.yearFrom ? Number(payload.yearFrom) : undefined,
           year_to: payload.yearTo ? Number(payload.yearTo) : undefined,
+          result_count: searchTotalResults,
         },
         session.accessToken,
       );
@@ -178,6 +191,19 @@ export function App() {
       setWatchlist((current) => [trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not add lot");
+    }
+  }
+
+  async function handleDeleteSavedSearch(id: string) {
+    if (!session.accessToken) {
+      return;
+    }
+    try {
+      setError(null);
+      await deleteSavedSearch(id, session.accessToken);
+      setSavedSearches((current) => current.filter((item) => item.id !== id));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not delete saved search");
     }
   }
 
@@ -249,6 +275,7 @@ export function App() {
   function handleLogout() {
     session.logout();
     setSearchResults([]);
+    setSearchTotalResults(0);
     setSavedSearches([]);
     setWatchlist([]);
     setSubscriptions([]);
@@ -283,9 +310,11 @@ export function App() {
         catalog={searchCatalog}
         isLoadingCatalog={isLoadingSearchCatalog}
         results={searchResults}
+        totalResults={searchTotalResults}
         savedSearches={savedSearches}
         onSearch={handleSearch}
         onSaveSearch={handleSaveSearch}
+        onDeleteSavedSearch={handleDeleteSavedSearch}
         onAddFromSearch={handleAddFromSearch}
       />
       <WatchlistPanel items={watchlist} onAddByLotNumber={handleAddByLotNumber} onRemove={handleRemoveWatchlistItem} />

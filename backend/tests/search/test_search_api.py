@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
+from urllib.parse import parse_qs, urlparse
 
 import mongomock
 from fastapi.testclient import TestClient
@@ -18,7 +20,7 @@ if str(ROOT) not in sys.path:
 
 import cartrap.app as app_module
 from cartrap.config import Settings
-from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSearchResult
+from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSearchPage, CopartSearchResult
 from cartrap.modules.search.schemas import SearchRequest
 from cartrap.modules.search.service import SearchService
 
@@ -40,17 +42,27 @@ class FakeMongoManager:
 
 
 class FakeProvider:
-    def __init__(self, results: list[CopartSearchResult], lots: dict[str, CopartLotSnapshot], should_fail: bool = False) -> None:
+    def __init__(
+        self,
+        results: list[CopartSearchResult],
+        lots: dict[str, CopartLotSnapshot],
+        should_fail: bool = False,
+        num_found: Optional[int] = None,
+        page_results: Optional[dict[int, list[CopartSearchResult]]] = None,
+    ) -> None:
         self._results = results
         self._lots = lots
         self._should_fail = should_fail
+        self._num_found = len(results) if num_found is None else num_found
+        self._page_results = page_results or {1: results}
         self.search_payloads: list[dict[str, Any]] = []
 
-    def search_lots(self, payload: dict) -> list[CopartSearchResult]:
+    def search_lots(self, payload: dict) -> CopartSearchPage:
         if self._should_fail:
             raise RuntimeError("upstream failed")
         self.search_payloads.append(payload)
-        return self._results
+        page_number = int(payload.get("pageNumber", 1))
+        return CopartSearchPage(results=self._page_results.get(page_number, []), num_found=self._num_found)
 
     def fetch_lot(self, url: str) -> CopartLotSnapshot:
         if self._should_fail:
@@ -155,6 +167,7 @@ def test_search_endpoint_returns_results(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert len(response.json()["results"]) == 2
+    assert response.json()["total_results"] == 2
     assert response.json()["results"][0]["thumbnail_url"] == "https://img.copart.com/12345678.jpg"
     assert response.json()["source_request"]["MISC"] == [
         "vehicle_type_code:VEHTYPE_V",
@@ -162,6 +175,41 @@ def test_search_endpoint_returns_results(client: TestClient) -> None:
         "lot_make_code:FORD",
         'lot_model_group:"MUSTANG MACH-E" OR lot_model_desc:"MUSTANG MACH-E"',
     ]
+
+
+def test_search_fetches_all_pages_from_num_found(client: TestClient) -> None:
+    second_page_result = CopartSearchResult(
+        lot_number="11112222",
+        title="2024 FORD ESCAPE",
+        url="https://www.copart.com/lot/11112222",
+        thumbnail_url=None,
+        location="FL - MIAMI CENTRAL",
+        sale_date=datetime(2026, 3, 22, 17, 0, tzinfo=timezone.utc),
+        current_bid=3100.0,
+        currency="USD",
+        status="upcoming",
+    )
+
+    with client:
+        user_token = _create_user(client, "paging@example.com", "PagingPass123")
+        client.app.state.copart_provider_factory = lambda: FakeProvider(
+            results=[],
+            lots={},
+            num_found=21,
+            page_results={
+                1: client.app.state.fake_provider._results,
+                2: [second_page_result],
+            },
+        )
+        response = client.post(
+            "/api/search",
+            json={"make": "Ford", "model": "Mustang Mach-E", "year_from": 2025, "year_to": 2027},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["total_results"] == 21
+    assert len(response.json()["results"]) == 3
 
 
 def test_search_catalog_endpoint_returns_seeded_catalog(client: TestClient) -> None:
@@ -243,7 +291,15 @@ def test_user_can_save_and_list_saved_searches(client: TestClient) -> None:
         user_token = _create_user(client, "saved@example.com", "SavedPass123")
         create_response = client.post(
             "/api/search/saved",
-            json={"make": "Ford", "model": "Mustang Mach-E", "year_from": 2025, "year_to": 2027},
+            json={
+                "make": "Ford",
+                "model": "Mustang Mach-E",
+                "drive_type": "all_wheel_drive",
+                "primary_damage": "hail",
+                "year_from": 2025,
+                "year_to": 2027,
+                "result_count": 21,
+            },
             headers={"Authorization": f"Bearer {user_token}"},
         )
         list_response = client.get(
@@ -254,9 +310,39 @@ def test_user_can_save_and_list_saved_searches(client: TestClient) -> None:
     assert create_response.status_code == 201
     assert create_response.json()["saved_search"]["label"] == "FORD MUSTANG MACH-E 2025-2027"
     assert create_response.json()["saved_search"]["criteria"]["make"] == "FORD"
+    assert create_response.json()["saved_search"]["criteria"]["drive_type"] == "all_wheel_drive"
+    assert create_response.json()["saved_search"]["criteria"]["primary_damage"] == "hail"
+    assert create_response.json()["saved_search"]["external_url"].startswith("https://www.copart.com/lotSearchResults?")
+    assert create_response.json()["saved_search"]["result_count"] == 21
     assert list_response.status_code == 200
     assert len(list_response.json()["items"]) == 1
     assert list_response.json()["items"][0]["criteria"]["model"] == "MUSTANG MACH-E"
+    assert list_response.json()["items"][0]["criteria"]["drive_type"] == "all_wheel_drive"
+    assert list_response.json()["items"][0]["external_url"].startswith("https://www.copart.com/lotSearchResults?")
+    assert list_response.json()["items"][0]["result_count"] == 21
+
+
+def test_user_can_delete_saved_search(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "delete-saved@example.com", "DeleteSavedPass123")
+        create_response = client.post(
+            "/api/search/saved",
+            json={"make": "Ford", "model": "Mustang Mach-E", "result_count": 8},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        saved_search_id = create_response.json()["saved_search"]["id"]
+        delete_response = client.delete(
+            f"/api/search/saved/{saved_search_id}",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        list_response = client.get(
+            "/api/search/saved",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert delete_response.status_code == 204
+    assert list_response.status_code == 200
+    assert list_response.json()["items"] == []
 
 
 def test_saved_search_duplicate_is_scoped_per_user(client: TestClient) -> None:
@@ -352,8 +438,25 @@ def test_search_request_builds_api_payload() -> None:
         "lot_make_code:FORD",
         'lot_model_group:"MUSTANG MACH-E" OR lot_model_desc:"MUSTANG MACH-E"',
     ]
+    assert payload["filter"] == []
     assert payload["pageNumber"] == 1
     assert payload["userStartUtcDatetime"] == "2026-03-12T00:00:00Z"
+
+
+def test_search_request_builds_structured_filters_payload() -> None:
+    request = SearchRequest(
+        make="Ford",
+        model="Mustang Mach-E",
+        drive_type="all_wheel_drive",
+        primary_damage="hail",
+    )
+
+    payload = request.to_api_request(datetime(2026, 3, 12, 15, 45, tzinfo=timezone.utc)).to_payload()
+
+    assert payload["filter"] == [
+        '(drive:"ALL WHEEL DRIVE" OR drive:"All Wheel Drive")',
+        "(damage_type_code:DAMAGECODE_HL)",
+    ]
 
 
 def test_search_request_prefers_catalog_filters() -> None:
@@ -371,3 +474,35 @@ def test_search_request_prefers_catalog_filters() -> None:
         '(lot_make_desc:"TOYO" OR manufacturer_make_desc:"TOYO") OR (lot_make_desc:"TOYOTA" OR manufacturer_make_desc:"TOYOTA")',
         'lot_model_desc:"CAMRY" OR lot_model_group:"CAMRY" OR manufacturer_model_desc:"CAMRY"',
     ]
+
+
+def test_search_request_builds_external_copart_url() -> None:
+    request = SearchRequest(
+        make="Ford",
+        model="Mustang Mach-E",
+        year_from=2025,
+        year_to=2027,
+        drive_type="all_wheel_drive",
+    )
+
+    url = request.to_external_url()
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    payload = json.loads(params["searchCriteria"][0])
+
+    assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == "https://www.copart.com/lotSearchResults"
+    assert params["free"] == ["true"]
+    assert params["displayStr"] == ["FORD MUSTANG MACH-E 2025-2027"]
+    assert "qId" in params
+    assert payload["filter"] == {
+        "YEAR": ["lot_year:[2025 TO 2027]"],
+        "MAKE": ['lot_make_desc:"FORD"'],
+        "MODL": ['lot_model_desc:"MUSTANG MACH-E"'],
+        "DRIV": ['drive:"ALL WHEEL DRIVE"'],
+    }
+
+
+def test_search_request_builds_direct_lot_url_for_lot_number() -> None:
+    request = SearchRequest(lot_number=" 123-456-78 ")
+
+    assert request.to_external_url() == "https://www.copart.com/lot/12345678"

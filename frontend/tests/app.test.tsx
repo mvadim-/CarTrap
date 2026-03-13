@@ -10,8 +10,11 @@ function buildToken(payload: Record<string, unknown>) {
 }
 
 describe("CarTrap app", () => {
+  let lastSearchPayload: Record<string, unknown> | null;
+
   beforeEach(() => {
     const storage = new Map<string, string>();
+    lastSearchPayload = null;
     const savedSearches: Array<{
       id: string;
       label: string;
@@ -20,9 +23,13 @@ describe("CarTrap app", () => {
         model?: string;
         make_filter?: string;
         model_filter?: string;
+        drive_type?: string;
+        primary_damage?: string;
         year_from?: number;
         year_to?: number;
       };
+      external_url: string;
+      result_count: number | null;
       created_at: string;
     }> = [];
     vi.stubGlobal("localStorage", {
@@ -156,6 +163,14 @@ describe("CarTrap app", () => {
           );
         }
         if (url.includes("/search/saved")) {
+          if ((init?.method ?? "GET") === "DELETE") {
+            const id = url.split("/").pop() ?? "";
+            const index = savedSearches.findIndex((item) => item.id === id);
+            if (index >= 0) {
+              savedSearches.splice(index, 1);
+            }
+            return new Response(null, { status: 204 });
+          }
           if ((init?.method ?? "GET") === "POST") {
             const body = init?.body ? JSON.parse(String(init.body)) : {};
             const duplicate = savedSearches.find(
@@ -166,6 +181,8 @@ describe("CarTrap app", () => {
                   model: body.model,
                   make_filter: body.make_filter,
                   model_filter: body.model_filter,
+                  drive_type: body.drive_type,
+                  primary_damage: body.primary_damage,
                   year_from: body.year_from,
                   year_to: body.year_to,
                 }),
@@ -181,9 +198,14 @@ describe("CarTrap app", () => {
                 model: body.model,
                 make_filter: body.make_filter,
                 model_filter: body.model_filter,
+                drive_type: body.drive_type,
+                primary_damage: body.primary_damage,
                 year_from: body.year_from,
                 year_to: body.year_to,
               },
+              external_url:
+                "https://www.copart.com/lotSearchResults?free=true&displayStr=FORD%20MUSTANG%20MACH-E%202025-2027&from=%2FvehicleFinder&fromSource=widget&qId=test-qid-1&searchCriteria=%7B%22query%22%3A%5B%22FORD%20MUSTANG%20MACH-E%202025-2027%22%5D%2C%22filter%22%3A%7B%22YEAR%22%3A%5B%22lot_year%3A%5B2025%20TO%202027%5D%22%5D%2C%22MAKE%22%3A%5B%22lot_make_desc%3A%5C%22FORD%5C%22%22%5D%2C%22MODL%22%3A%5B%22lot_model_desc%3A%5C%22MUSTANG%20MACH-E%5C%22%22%5D%2C%22DRIV%22%3A%5B%22drive%3A%5C%22ALL%20WHEEL%20DRIVE%5C%22%22%5D%7D%2C%22searchName%22%3A%22%22%2C%22watchListOnly%22%3Afalse%2C%22freeFormSearch%22%3Atrue%7D",
+              result_count: body.result_count ?? null,
               created_at: "2026-03-12T18:00:00Z",
             };
             savedSearches.unshift(savedSearch);
@@ -214,11 +236,13 @@ describe("CarTrap app", () => {
         }
         if (url.endsWith("/search")) {
           const body = init?.body ? JSON.parse(String(init.body)) : {};
+          lastSearchPayload = body;
           if (body.make !== "FORD" || body.model !== "MUSTANG MACH-E") {
-            return new Response(JSON.stringify({ results: [] }), { status: 200 });
+            return new Response(JSON.stringify({ total_results: 0, results: [] }), { status: 200 });
           }
           return new Response(
             JSON.stringify({
+              total_results: 1,
               results: [
                 {
                   lot_number: "12345678",
@@ -322,6 +346,26 @@ describe("CarTrap app", () => {
     expect(screen.getAllByAltText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);
   });
 
+  it("applies modal filters before running search", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    await screen.findByRole("dialog", { name: /search filters/i });
+
+    fireEvent.change(screen.getByLabelText(/drive train/i), { target: { value: "all_wheel_drive" } });
+    fireEvent.change(screen.getByLabelText(/primary damage/i), { target: { value: "hail" } });
+    fireEvent.click(screen.getByRole("button", { name: /apply filters/i }));
+
+    await screen.findByText(/active filters: all wheel drive · hail/i);
+    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+    await screen.findByRole("dialog", { name: /search results/i });
+
+    expect(lastSearchPayload?.drive_type).toBe("all_wheel_drive");
+    expect(lastSearchPayload?.primary_damage).toBe("hail");
+  });
+
   it("saves a search and reruns it from the saved searches list", async () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
@@ -333,10 +377,44 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /save search/i }));
 
     await screen.findByText(/FORD MUSTANG MACH-E 2025-2027/i);
+    expect(await screen.findAllByText(/1 lot found/i)).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
     fireEvent.click(screen.getByRole("button", { name: /run search/i }));
 
     await screen.findByRole("dialog", { name: /search results/i });
+  });
+
+  it("renders external url link for saved search", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+    await screen.findByRole("dialog", { name: /search results/i });
+    fireEvent.click(screen.getByRole("button", { name: /save search/i }));
+
+    const link = await screen.findByRole("link", { name: /open url/i });
+    expect(link.getAttribute("href")).toContain("https://www.copart.com/lotSearchResults?free=true&displayStr=FORD%20MUSTANG%20MACH-E%202025-2027");
+    expect(link.getAttribute("href")).toContain("qId=test-qid-1");
+    expect(link.getAttribute("href")).toContain("DRIV");
+  });
+
+  it("deletes a saved search from the list", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+
+    await screen.findByRole("dialog", { name: /search results/i });
+    fireEvent.click(screen.getByRole("button", { name: /save search/i }));
+    await screen.findByText(/FORD MUSTANG MACH-E 2025-2027/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/FORD MUSTANG MACH-E 2025-2027/i)).toBeNull();
+    });
   });
 
   it("adds lot to watchlist by lot number", async () => {

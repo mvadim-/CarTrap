@@ -53,3 +53,8 @@ class CopartSearchResult(BaseModel):
     current_bid: Optional[float] = None
     currency: str = "USD"
     status: str = "upcoming"
+
+
+class CopartSearchPage(BaseModel):
+    results: list[CopartSearchResult]
+    num_found: int = 0

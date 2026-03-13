@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 CATALOG_DATA_DIR = Path(__file__).with_name("data")
 CATALOG_JSON_PATH = CATALOG_DATA_DIR / "copart_make_model_catalog.json"
 CATALOG_OVERRIDES_PATH = CATALOG_DATA_DIR / "copart_make_model_overrides.json"
+SEARCH_PAGE_SIZE = 20
 
 
 class SearchService:
@@ -49,7 +51,17 @@ class SearchService:
         source_request = payload.to_api_request().to_payload()
         provider = self._provider_factory()
         try:
-            results = provider.search_lots(source_request)
+            first_page = provider.search_lots(source_request)
+            total_results = first_page.num_found
+            results_by_lot_number = {item.lot_number: item for item in first_page.results}
+            total_pages = max(1, math.ceil(total_results / SEARCH_PAGE_SIZE)) if total_results else 1
+
+            for page_number in range(2, total_pages + 1):
+                page_request = dict(source_request)
+                page_request["pageNumber"] = page_number
+                page = provider.search_lots(page_request)
+                for item in page.results:
+                    results_by_lot_number[item.lot_number] = item
         except Exception as exc:
             logger.exception("Copart search failed for source_request=%s", source_request)
             raise HTTPException(
@@ -58,7 +70,11 @@ class SearchService:
             ) from exc
         finally:
             provider.close()
-        return {"results": [self.serialize_result(item) for item in results], "source_request": source_request}
+        return {
+            "results": [self.serialize_result(item) for item in results_by_lot_number.values()],
+            "total_results": total_results,
+            "source_request": source_request,
+        }
 
     def add_from_search(self, owner_user: dict, lot_url: str) -> dict:
         watchlist_service = self._watchlist_service_factory()
@@ -77,6 +93,7 @@ class SearchService:
                 "owner_user_id": owner_user["id"],
                 "label": payload.label.strip() if payload.label else payload.display_title(),
                 "criteria": criteria,
+                "result_count": payload.result_count,
                 "criteria_key": criteria_key,
                 "created_at": now,
                 "updated_at": now,
@@ -87,6 +104,12 @@ class SearchService:
     def list_saved_searches(self, owner_user: dict) -> dict:
         items = [self.serialize_saved_search(item) for item in self._saved_search_repository.list_saved_searches_for_owner(owner_user["id"])]
         return {"items": items}
+
+    def remove_saved_search(self, owner_user: dict, saved_search_id: str) -> None:
+        saved_search = self._saved_search_repository.find_saved_search_by_id_for_owner(saved_search_id, owner_user["id"])
+        if saved_search is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved search not found.")
+        self._saved_search_repository.delete_saved_search(saved_search_id)
 
     def ensure_catalog_seeded(self) -> None:
         self._catalog_repository.ensure_indexes()
@@ -128,6 +151,7 @@ class SearchService:
     @staticmethod
     def serialize_saved_search(document: dict) -> dict:
         criteria = document.get("criteria", {})
+        search_request = SearchRequest(**criteria)
         return {
             "id": str(document["_id"]),
             "label": document["label"],
@@ -136,10 +160,14 @@ class SearchService:
                 "model": criteria.get("model"),
                 "make_filter": criteria.get("make_filter"),
                 "model_filter": criteria.get("model_filter"),
+                "drive_type": criteria.get("drive_type"),
+                "primary_damage": criteria.get("primary_damage"),
                 "year_from": criteria.get("year_from"),
                 "year_to": criteria.get("year_to"),
                 "lot_number": criteria.get("lot_number"),
             },
+            "external_url": search_request.to_external_url(),
+            "result_count": document.get("result_count"),
             "created_at": document["created_at"],
         }
 

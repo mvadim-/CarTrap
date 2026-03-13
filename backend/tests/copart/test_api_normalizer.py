@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 from cartrap.modules.copart_provider.normalizer import (
     extract_lot_details,
     extract_search_documents,
+    extract_search_num_found,
     normalize_lot_details_payload,
     normalize_lot_payload,
     normalize_search_results,
@@ -89,6 +90,10 @@ def test_extract_search_documents_returns_docs() -> None:
 
     assert len(documents) == 2
     assert documents[0]["lot_number"] == 99251295
+
+
+def test_extract_search_num_found_returns_total_hit_count() -> None:
+    assert extract_search_num_found(SAMPLE_RESPONSE) == 2
 
 
 def test_normalize_search_results_maps_api_fields() -> None:

@@ -97,3 +97,28 @@ def test_create_app_handles_cors_preflight() -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_create_app_handles_lan_cors_preflight_in_non_production() -> None:
+    app = create_app(
+        Settings(
+            app_name="CarTrap LAN CORS Test",
+            environment="development",
+            MONGO_URI="mongodb://localhost:27017",
+            MONGO_DB="cartrap_test",
+            MONGO_PING_ON_STARTUP=False,
+            BACKEND_CORS_ORIGINS="http://localhost:5173",
+        )
+    )
+
+    with TestClient(app) as client:
+        response = client.options(
+            "/api/auth/login",
+            headers={
+                "Origin": "http://192.168.86.48:5173",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://192.168.86.48:5173"

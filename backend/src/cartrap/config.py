@@ -9,6 +9,16 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+PRIVATE_NETWORK_CORS_REGEX = (
+    r"^https?://("
+    r"localhost|127\.0\.0\.1|"
+    r"10(?:\.\d{1,3}){3}|"
+    r"192\.168(?:\.\d{1,3}){2}|"
+    r"172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}"
+    r")(?::\d+)?$"
+)
+
+
 class Settings(BaseSettings):
     """Typed settings loaded from the environment."""
 
@@ -59,6 +69,12 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> List[str]:
         return [origin.strip() for origin in self.backend_cors_origins.split(",") if origin.strip()]
+
+    @property
+    def cors_origin_regex(self) -> Optional[str]:
+        if self.environment.strip().lower() == "production":
+            return None
+        return PRIVATE_NETWORK_CORS_REGEX
 
 
 @lru_cache(maxsize=1)

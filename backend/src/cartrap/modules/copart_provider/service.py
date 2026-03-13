@@ -6,10 +6,11 @@ import re
 from typing import Optional
 
 from cartrap.modules.copart_provider.client import CopartHttpClient
-from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSearchResult
+from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSearchPage
 from cartrap.modules.copart_provider.normalizer import (
     extract_lot_details,
     extract_search_documents,
+    extract_search_num_found,
     normalize_lot_details_payload,
     normalize_search_results,
 )
@@ -27,9 +28,12 @@ class CopartProvider:
         response = self._client.lot_details(lot_number)
         return normalize_lot_details_payload(extract_lot_details(response))
 
-    def search_lots(self, payload: dict) -> list[CopartSearchResult]:
+    def search_lots(self, payload: dict) -> CopartSearchPage:
         response = self._client.search(payload)
-        return normalize_search_results(extract_search_documents(response))
+        return CopartSearchPage(
+            results=normalize_search_results(extract_search_documents(response)),
+            num_found=extract_search_num_found(response),
+        )
 
     def fetch_search_keywords(self) -> dict:
         return self._client.search_keywords()

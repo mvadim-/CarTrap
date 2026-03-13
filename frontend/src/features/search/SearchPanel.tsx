@@ -7,13 +7,17 @@ import type {
   SearchCatalogModel,
   SearchResult,
 } from "../../types";
+import { SearchFiltersModal } from "./SearchFiltersModal";
 import { SearchResultsModal } from "./SearchResultsModal";
+import { getDriveTypeLabel, getPrimaryDamageLabel } from "./searchFilters";
 
 type SearchPayload = {
   make?: string;
   model?: string;
   makeFilter?: string;
   modelFilter?: string;
+  driveType?: string;
+  primaryDamage?: string;
   yearFrom?: string;
   yearTo?: string;
 };
@@ -22,9 +26,11 @@ type Props = {
   catalog: SearchCatalog | null;
   isLoadingCatalog: boolean;
   results: SearchResult[];
+  totalResults: number;
   savedSearches: SavedSearch[];
   onSearch: (payload: SearchPayload) => Promise<void>;
   onSaveSearch: (payload: SearchPayload) => Promise<void>;
+  onDeleteSavedSearch: (id: string) => Promise<void>;
   onAddFromSearch: (lotUrl: string) => Promise<void>;
 };
 
@@ -32,9 +38,11 @@ export function SearchPanel({
   catalog,
   isLoadingCatalog,
   results,
+  totalResults,
   savedSearches,
   onSearch,
   onSaveSearch,
+  onDeleteSavedSearch,
   onAddFromSearch,
 }: Props) {
   const [selectedMakeSlug, setSelectedMakeSlug] = useState("");
@@ -42,6 +50,9 @@ export function SearchPanel({
   const [yearFrom, setYearFrom] = useState("2025");
   const [yearTo, setYearTo] = useState("2027");
   const [isResultsOpen, setIsResultsOpen] = useState(false);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [driveType, setDriveType] = useState<string | undefined>(undefined);
+  const [primaryDamage, setPrimaryDamage] = useState<string | undefined>(undefined);
   const [lastSubmittedPayload, setLastSubmittedPayload] = useState<SearchPayload | null>(null);
 
   const selectedMake: SearchCatalogMake | null = catalog?.makes.find((item) => item.slug === selectedMakeSlug) ?? null;
@@ -79,6 +90,8 @@ export function SearchPanel({
       model: resolvedModel?.name,
       makeFilter: resolvedMake?.search_filter,
       modelFilter: resolvedModel?.search_filter,
+      driveType,
+      primaryDamage,
       yearFrom,
       yearTo,
     };
@@ -113,6 +126,8 @@ export function SearchPanel({
     }
     setYearFrom(savedSearch.criteria.year_from?.toString() ?? "");
     setYearTo(savedSearch.criteria.year_to?.toString() ?? "");
+    setDriveType(savedSearch.criteria.drive_type);
+    setPrimaryDamage(savedSearch.criteria.primary_damage);
 
     try {
       await runSearch({
@@ -120,6 +135,8 @@ export function SearchPanel({
         model: savedSearch.criteria.model,
         makeFilter: savedSearch.criteria.make_filter,
         modelFilter: savedSearch.criteria.model_filter,
+        driveType: savedSearch.criteria.drive_type,
+        primaryDamage: savedSearch.criteria.primary_damage,
         yearFrom: savedSearch.criteria.year_from?.toString(),
         yearTo: savedSearch.criteria.year_to?.toString(),
       });
@@ -139,6 +156,17 @@ export function SearchPanel({
     }
   }
 
+  function formatLotCount(count: number | null | undefined): string {
+    if (count === null || count === undefined) {
+      return "Lot count unavailable";
+    }
+    return `${count} ${count === 1 ? "lot" : "lots"} found`;
+  }
+
+  const activeFilterLabels = [getDriveTypeLabel(driveType), getPrimaryDamageLabel(primaryDamage)].filter(
+    (value): value is string => Boolean(value),
+  );
+
   return (
     <section className="panel">
       <div className="panel-header">
@@ -146,6 +174,9 @@ export function SearchPanel({
           <p className="eyebrow">Search</p>
           <h2>Manual Copart Search</h2>
         </div>
+        <button type="button" className="ghost-button" onClick={() => setIsFiltersOpen(true)}>
+          Filters{activeFilterLabels.length > 0 ? ` (${activeFilterLabels.length})` : ""}
+        </button>
       </div>
       <form className="search-grid" onSubmit={handleSubmit}>
         <label>
@@ -196,6 +227,9 @@ export function SearchPanel({
           Search Lots
         </button>
       </form>
+      {activeFilterLabels.length > 0 ? (
+        <p className="muted filter-summary">Active filters: {activeFilterLabels.join(" · ")}</p>
+      ) : null}
       {!catalog && !isLoadingCatalog ? <p className="muted">Search catalog is unavailable.</p> : null}
 
       <div className="saved-searches">
@@ -220,10 +254,25 @@ export function SearchPanel({
                       ? ` · ${item.criteria.year_from ?? item.criteria.year_to}-${item.criteria.year_to ?? item.criteria.year_from}`
                       : ""}
                   </p>
+                  {[getDriveTypeLabel(item.criteria.drive_type), getPrimaryDamageLabel(item.criteria.primary_damage)].some(Boolean) ? (
+                    <p className="muted">
+                      Filters:{" "}
+                      {[getDriveTypeLabel(item.criteria.drive_type), getPrimaryDamageLabel(item.criteria.primary_damage)]
+                        .filter((value): value is string => Boolean(value))
+                        .join(" · ")}
+                    </p>
+                  ) : null}
+                  <p className="muted saved-search-count">{formatLotCount(item.result_count)}</p>
                 </div>
                 <div className="result-actions">
                   <button type="button" className="ghost-button" onClick={() => void handleRunSavedSearch(item)}>
                     Run Search
+                  </button>
+                  <a className="ghost-button" href={item.external_url} target="_blank" rel="noreferrer">
+                    Open URL
+                  </a>
+                  <button type="button" className="ghost-button" onClick={() => void onDeleteSavedSearch(item.id)}>
+                    Delete
                   </button>
                 </div>
               </article>
@@ -235,10 +284,20 @@ export function SearchPanel({
       <SearchResultsModal
         isOpen={isResultsOpen}
         results={results}
+        totalResults={totalResults}
         onClose={() => setIsResultsOpen(false)}
         onAddFromSearch={onAddFromSearch}
         onSaveSearch={handleSaveCurrentSearch}
         canSave={lastSubmittedPayload !== null}
+      />
+      <SearchFiltersModal
+        isOpen={isFiltersOpen}
+        filters={{ driveType, primaryDamage }}
+        onApply={({ driveType: nextDriveType, primaryDamage: nextPrimaryDamage }) => {
+          setDriveType(nextDriveType);
+          setPrimaryDamage(nextPrimaryDamage);
+        }}
+        onClose={() => setIsFiltersOpen(false)}
       />
     </section>
   );

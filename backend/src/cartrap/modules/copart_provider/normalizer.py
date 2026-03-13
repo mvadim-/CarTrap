@@ -29,6 +29,17 @@ def extract_search_documents(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in documents if isinstance(item, dict)]
 
 
+def extract_search_num_found(payload: dict[str, Any]) -> int:
+    response = payload.get("response")
+    if not isinstance(response, dict):
+        raise ValueError("Copart response is missing 'response' object.")
+    num_found = response.get("numFound", 0)
+    try:
+        return max(0, int(num_found))
+    except (TypeError, ValueError):
+        return 0
+
+
 def extract_lot_details(payload: dict[str, Any]) -> dict[str, Any]:
     details = payload.get("lotDetails")
     data_payload = payload.get("data")

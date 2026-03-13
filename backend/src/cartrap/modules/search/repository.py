@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from pymongo.collection import Collection
 from pymongo.database import Database
 
@@ -48,3 +50,13 @@ class SavedSearchRepository:
 
     def find_saved_search_by_owner_and_key(self, owner_user_id: str, criteria_key: str) -> Optional[dict]:
         return self.saved_searches.find_one({"owner_user_id": owner_user_id, "criteria_key": criteria_key})
+
+    def find_saved_search_by_id_for_owner(self, saved_search_id: str, owner_user_id: str) -> Optional[dict]:
+        try:
+            object_id = ObjectId(saved_search_id)
+        except (InvalidId, TypeError):
+            return None
+        return self.saved_searches.find_one({"_id": object_id, "owner_user_id": owner_user_id})
+
+    def delete_saved_search(self, saved_search_id: str) -> None:
+        self.saved_searches.delete_one({"_id": ObjectId(saved_search_id)})

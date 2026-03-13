@@ -205,3 +205,43 @@
 - Перероблено `frontend/src/features/watchlist/WatchlistPanel.tsx`: tracked-lot card тепер має окремі зони `media / body / actions`, статус винесено в pill, метадані й bid не злипаються з кнопкою `Remove`.
 - Оновлено `frontend/src/styles.css`: додано стабільний відступ між watchlist form і списком, card surface styling для `result-card`, кращий mobile stack для watchlist actions/meta та загальний cleanup заголовків/label spacing у panel forms.
 - Прогнано frontend verification: `npm run test --prefix frontend` -> `7 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-12 19:05] Add saved-search delete, result counts, and full search pagination
+- Оновлено backend search flow у `backend/src/cartrap/modules/copart_provider/{models.py,normalizer.py,service.py}` та `backend/src/cartrap/modules/search/{schemas.py,service.py,repository.py,router.py}`: `/api/search` тепер читає `numFound`, проходить усі `pageNumber` по 20 лотів на сторінку, повертає `total_results`, а saved searches зберігають `result_count` і підтримують `DELETE /api/search/saved/{id}`.
+- Оновлено frontend contract/UX у `frontend/src/{types.ts,lib/api.ts,App.tsx}`, `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx}`, `frontend/src/styles.css`: у saved search row відображається кількість знайдених лотів, з’явилась кнопка `Delete`, modal показує загальний count поточного пошуку.
+- Розширено regression coverage в `backend/tests/search/test_search_api.py`, `backend/tests/copart/test_api_normalizer.py`, `frontend/tests/app.test.tsx` під `numFound`, multi-page fetch, saved-search count і delete flow.
+
+## [2026-03-12 19:18] Fix LAN-access frontend API host and backend CORS
+- Оновлено `frontend/src/lib/api.ts`: якщо `VITE_API_BASE_URL` не заданий, frontend більше не хардкодить `localhost`, а будує API base URL як `http://<current-host>:8000/api`, тож відкриття через `192.168.x.x:5173` використовує той самий LAN host для backend.
+- Оновлено `backend/src/cartrap/{config.py,app.py}`: у non-production backend дозволяє CORS для private LAN IPv4 origins через `allow_origin_regex`, не обмежуючись лише `localhost`/`127.0.0.1`.
+- Розширено документацію й тести в `README.md`, `backend/tests/test_app_boot.py`, `backend/tests/test_config.py` під LAN-origin preflight і новий default API-host behavior.
+
+## [2026-03-12 19:24] Remove localhost API default from frontend container build
+- Оновлено `docker-compose.yml` і `frontend/Dockerfile`: containerized frontend більше не вшиває `VITE_API_BASE_URL=http://localhost:8000/api` за замовчуванням, щоб LAN access міг використовувати runtime-derived `http://<current-host>:8000/api`.
+- Уточнено `README.md`, що для авто-визначення API host `VITE_API_BASE_URL` треба лишати порожнім, а не задавати `localhost`.
+
+## [2026-03-13 12:36] Add backend API and MongoDB documentation
+- Додано `docs/backend-api.md` з актуальним описом backend endpoint-ів: auth, admin, search, watchlist, notifications, auth model, основні request/response payload-и та error semantics.
+- Додано `docs/database-schema.md` з описом MongoDB-колекцій, ключових полів, зв’язків між документами, індексів і приміток по тому, що зараз не зберігається в БД.
+- Документацію зібрано на основі фактичних router/schema/repository/service модулів у `backend/src/cartrap/modules/*`, без зміни runtime-коду.
+
+## [2026-03-13 12:44] Add external Copart URL button to saved searches
+- Оновлено `backend/src/cartrap/modules/search/{schemas.py,service.py}`: saved search response тепер містить `external_url`, який генерується з критеріїв через Copart `lotSearchResults`, а для `lot_number`-based search веде напряму на сторінку лота.
+- Оновлено `frontend/src/{types.ts}` та `frontend/src/features/search/SearchPanel.tsx`: у рядку saved search додано кнопку-лінк `Open URL`, що відкриває пошук у зовнішньому браузері.
+- Розширено покриття в `backend/tests/search/test_search_api.py` і `frontend/tests/app.test.tsx` для перевірки generated URL та рендеру нового зовнішнього лінка.
+
+## [2026-03-13 12:49] Align saved-search external URL with Copart web filters
+- Уточнено `backend/src/cartrap/modules/search/schemas.py`: `external_url` для saved searches тепер будується з `displayStr`, `qId` і `searchCriteria.filter` (`YEAR` / `MAKE` / `MODL`) у форматі, ближчому до реального Copart `vehicleFinder` URL, а не як порожній free-form filter.
+- Оновлено `backend/tests/search/test_search_api.py` і `frontend/tests/app.test.tsx`, щоб перевіряти новий URL contract із `qId` та заповненим `searchCriteria.filter`.
+
+## [2026-03-13 12:52] Normalize saved-search external link button styling
+- Оновлено `frontend/src/styles.css`: `.ghost-button` тепер задає layout/padding/radius/text-decoration самостійно, щоб `Open URL` як `<a>` виглядав так само, як інші action buttons у `Saved Searches`.
+
+## [2026-03-13 13:06] Add pre-search filter modal for drive train and primary damage
+- Оновлено `backend/src/cartrap/modules/search/{schemas.py,service.py}`: manual search і saved searches тепер підтримують додаткові поля `drive_type` та `primary_damage`, які мапляться в Copart `filter[]` як structured filters для `Drive train` і `Primary damage`.
+- Додано frontend filter UX у `frontend/src/features/search/{SearchPanel.tsx,SearchFiltersModal.tsx,searchFilters.ts}` та оновлено `frontend/src/{App.tsx,lib/api.ts,types.ts,styles.css}`: кнопка `Filters` відкриває modal до `Search Lots`, можна застосувати/очистити фільтри, а активні значення показуються під формою й у saved searches.
+- Розширено покриття в `backend/tests/search/test_search_api.py` і `frontend/tests/app.test.tsx` для перевірки нового `filter[]` payload і modal-based apply flow.
+
+## [2026-03-13 13:11] Include drive filter in saved-search external Copart URL
+- Уточнено `backend/src/cartrap/modules/search/schemas.py`: `external_url` для saved searches тепер додає `searchCriteria.filter.DRIV` із канонічним Copart значенням, якщо обрано `Drive train`, щоб зовнішній `lotSearchResults` URL відповідав web-format payload.
+- Оновлено `backend/tests/search/test_search_api.py` і `frontend/tests/app.test.tsx` для перевірки `DRIV` у generated external URL.

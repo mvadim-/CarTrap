@@ -38,6 +38,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.environment == "test"
     assert settings.api_prefix == "/internal"
     assert settings.cors_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
+    assert settings.cors_origin_regex is not None
     assert settings.mongo_uri == "mongodb://example:27017"
     assert settings.mongo_db == "cartrap_local"
     assert settings.mongo_ping_on_startup is True
@@ -63,3 +64,9 @@ def test_get_settings_caches_instance() -> None:
 def test_settings_reject_empty_mongo_uri() -> None:
     with pytest.raises(ValidationError):
         Settings(MONGO_URI="")
+
+
+def test_settings_disable_default_cors_regex_in_production() -> None:
+    settings = Settings(environment="production")
+
+    assert settings.cors_origin_regex is None

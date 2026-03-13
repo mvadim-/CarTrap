@@ -4,13 +4,35 @@ import type {
   SavedSearch,
   SearchCatalog,
   SearchResult,
+  SearchResultsResponse,
   TokenPair,
   User,
   WatchlistItem,
 } from "../types";
 import { clearSession, loadTokens, saveTokens } from "./session";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+function getApiBaseUrl(): string {
+  const configured = import.meta.env.VITE_API_BASE_URL;
+  if (configured) {
+    return configured;
+  }
+  if (typeof window === "undefined") {
+    return "http://localhost:8000/api";
+  }
+
+  const current = new URL(window.location.origin);
+  if (current.protocol !== "http:" && current.protocol !== "https:") {
+    return "http://localhost:8000/api";
+  }
+
+  current.port = "8000";
+  current.pathname = "/api";
+  current.search = "";
+  current.hash = "";
+  return current.toString().replace(/\/$/, "");
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 type HttpMethod = "GET" | "POST" | "DELETE";
 type AuthLifecycleHandlers = {
@@ -123,14 +145,15 @@ export async function searchLots(
     model?: string;
     make_filter?: string;
     model_filter?: string;
+    drive_type?: string;
+    primary_damage?: string;
     year_from?: number;
     year_to?: number;
     lot_number?: string;
   },
   token: string,
-): Promise<SearchResult[]> {
-  const response = await request<{ results: SearchResult[] }>("/search", { method: "POST", body: payload, token });
-  return response.results;
+): Promise<SearchResultsResponse> {
+  return request<SearchResultsResponse>("/search", { method: "POST", body: payload, token });
 }
 
 export async function getSearchCatalog(token: string): Promise<SearchCatalog> {
@@ -148,10 +171,13 @@ export async function saveSearch(
     model?: string;
     make_filter?: string;
     model_filter?: string;
+    drive_type?: string;
+    primary_damage?: string;
     year_from?: number;
     year_to?: number;
     lot_number?: string;
     label?: string;
+    result_count?: number;
   },
   token: string,
 ): Promise<SavedSearch> {
@@ -161,6 +187,10 @@ export async function saveSearch(
     token,
   });
   return response.saved_search;
+}
+
+export async function deleteSavedSearch(id: string, token: string): Promise<void> {
+  await request<void>(`/search/saved/${id}`, { method: "DELETE", token });
 }
 
 export async function refreshSearchCatalog(token: string): Promise<SearchCatalog> {

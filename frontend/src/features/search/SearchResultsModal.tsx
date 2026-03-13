@@ -6,13 +6,14 @@ import { LotThumbnail } from "../shared/LotThumbnail";
 type Props = {
   isOpen: boolean;
   results: SearchResult[];
+  totalResults: number;
   onClose: () => void;
   onAddFromSearch: (lotUrl: string) => Promise<void>;
   onSaveSearch: () => Promise<void>;
   canSave: boolean;
 };
 
-export function SearchResultsModal({ isOpen, results, onClose, onAddFromSearch, onSaveSearch, canSave }: Props) {
+export function SearchResultsModal({ isOpen, results, totalResults, onClose, onAddFromSearch, onSaveSearch, canSave }: Props) {
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -56,7 +57,9 @@ export function SearchResultsModal({ isOpen, results, onClose, onAddFromSearch, 
           </div>
         </div>
         <div className="modal-filter-bar">
-          <span className="muted">Filters will live here next. Current result set stays reopenable until you close it.</span>
+          <span className="muted">
+            {totalResults} {totalResults === 1 ? "lot" : "lots"} found. Current result set stays reopenable until you close it.
+          </span>
         </div>
         <div className="modal-body result-list">
           {results.length === 0 ? (

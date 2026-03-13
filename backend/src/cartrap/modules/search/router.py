@@ -61,6 +61,15 @@ def save_search(
     return search_service.save_search(current_user, payload)
 
 
+@router.delete("/saved/{saved_search_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_saved_search(
+    saved_search_id: str,
+    current_user: dict = Depends(get_current_user),
+    search_service: SearchService = Depends(get_search_service),
+) -> None:
+    search_service.remove_saved_search(current_user, saved_search_id)
+
+
 @router.get("/catalog", response_model=SearchCatalogResponse)
 def get_search_catalog(
     current_user: dict = Depends(get_current_user),

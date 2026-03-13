@@ -47,6 +47,8 @@ export type SavedSearchCriteria = {
   model?: string;
   make_filter?: string;
   model_filter?: string;
+  drive_type?: string;
+  primary_damage?: string;
   year_from?: number;
   year_to?: number;
   lot_number?: string;
@@ -56,7 +58,14 @@ export type SavedSearch = {
   id: string;
   label: string;
   criteria: SavedSearchCriteria;
+  external_url: string;
+  result_count: number | null;
   created_at: string;
+};
+
+export type SearchResultsResponse = {
+  results: SearchResult[];
+  total_results: number;
 };
 
 export type SearchCatalogModel = {
