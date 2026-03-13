@@ -14,7 +14,7 @@ from cartrap.config import Settings, get_settings
 from cartrap.core.logging import configure_logging
 from cartrap.db.mongo import MongoManager
 from cartrap.modules.auth.service import AuthService
-from cartrap.modules.notifications.service import WebPushSender
+from cartrap.modules.notifications.service import build_web_push_sender
 from cartrap.modules.search.service import SearchService
 
 
@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     set_service_factory(app, lambda: AuthService(mongo.database, settings))
     AuthService(mongo.database, settings).ensure_bootstrap_admin()
     SearchService(mongo.database).ensure_catalog_seeded()
-    app.state.web_push_sender = WebPushSender()
+    app.state.web_push_sender = build_web_push_sender(settings.vapid_private_key, settings.vapid_subject)
 
     try:
         yield

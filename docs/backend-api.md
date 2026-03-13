@@ -62,8 +62,10 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 | `GET` | `/watchlist` | user/admin | List tracked lots |
 | `POST` | `/watchlist` | user/admin | Add tracked lot by URL or lot number |
 | `DELETE` | `/watchlist/{tracked_lot_id}` | user/admin | Remove tracked lot |
+| `GET` | `/notifications/subscription-config` | user/admin | Read browser push/VAPID config |
 | `GET` | `/notifications/subscriptions` | user/admin | List push subscriptions |
 | `POST` | `/notifications/subscriptions` | user/admin | Create/update push subscription |
+| `POST` | `/notifications/test` | user/admin | Send test push to current user's subscriptions |
 | `DELETE` | `/notifications/subscriptions?endpoint=...` | user/admin | Remove push subscription |
 
 ## Detailed Endpoints
@@ -430,6 +432,30 @@ Deletes tracked lot and all related snapshots.
 
 ### Notifications
 
+#### `GET /api/notifications/subscription-config`
+
+Returns whether browser push subscription can be initialized and, when configured, exposes the VAPID public key required by `PushManager.subscribe()`.
+
+Response when configured:
+
+```json
+{
+  "enabled": true,
+  "public_key": "<vapid-public-key>",
+  "reason": null
+}
+```
+
+Response when not configured:
+
+```json
+{
+  "enabled": false,
+  "public_key": null,
+  "reason": "Push notifications are not configured on the server. Missing: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT."
+}
+```
+
 #### `GET /api/notifications/subscriptions`
 
 Lists push subscriptions for current user.
@@ -479,6 +505,30 @@ Response:
   "user_agent": "Mozilla/5.0 ...",
   "created_at": "2026-03-13T10:00:00Z",
   "updated_at": "2026-03-13T10:05:00Z"
+}
+```
+
+#### `POST /api/notifications/test`
+
+Sends a test push notification to the current user's registered browser subscriptions.
+
+Request:
+
+```json
+{
+  "title": "CarTrap test notification",
+  "body": "Push delivery is working on this device."
+}
+```
+
+Response:
+
+```json
+{
+  "delivered": 1,
+  "failed": 0,
+  "removed": 0,
+  "endpoints": ["https://push.example/subscription-id"]
 }
 ```
 

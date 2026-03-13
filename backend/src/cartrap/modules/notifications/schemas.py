@@ -32,6 +32,17 @@ class PushSubscriptionResponse(BaseModel):
     updated_at: datetime
 
 
+class PushSubscriptionConfigResponse(BaseModel):
+    enabled: bool
+    public_key: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class PushTestRequest(BaseModel):
+    title: str = Field(default="CarTrap test notification", min_length=1, max_length=120)
+    body: str = Field(default="Push delivery is working on this device.", min_length=1, max_length=240)
+
+
 class PushDeliveryResult(BaseModel):
     delivered: int
     failed: int

@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 import mongomock
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2] / "src"
@@ -14,7 +15,7 @@ if str(ROOT) not in sys.path:
 
 from cartrap.modules.copart_provider.models import CopartLotSnapshot
 from cartrap.modules.monitoring.service import MonitoringService
-from cartrap.modules.notifications.service import NotificationService
+from cartrap.modules.notifications.service import NotificationService, PushDeliveryError, WebPushSender
 from cartrap.modules.watchlist.service import WatchlistService
 
 
@@ -30,13 +31,14 @@ class FakeProvider:
 
 
 class FakeSender:
-    def __init__(self, fail_endpoint: str | None = None) -> None:
+    def __init__(self, fail_endpoint: str | None = None, *, unrecoverable: bool = True) -> None:
         self.fail_endpoint = fail_endpoint
+        self.unrecoverable = unrecoverable
         self.sent: list[tuple[str, dict]] = []
 
     def send(self, subscription: dict, payload: dict) -> None:
         if subscription["endpoint"] == self.fail_endpoint:
-            raise RuntimeError("push delivery failed")
+            raise PushDeliveryError("push delivery failed", unrecoverable=self.unrecoverable)
         self.sent.append((subscription["endpoint"], payload))
 
 
@@ -122,3 +124,66 @@ def test_failed_delivery_removes_invalid_subscription() -> None:
     assert result["failed"] == 1
     assert result["removed"] == 1
     assert database["push_subscriptions"].count_documents({}) == 0
+
+
+def test_transient_delivery_failure_keeps_subscription() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    sender = FakeSender(
+        fail_endpoint="https://push.example.test/subscriptions/transient",
+        unrecoverable=False,
+    )
+    notification_service = NotificationService(database, sender=sender)
+    notification_service.upsert_subscription(
+        {"id": "user-3"},
+        {
+            "subscription": {
+                "endpoint": "https://push.example.test/subscriptions/transient",
+                "expirationTime": None,
+                "keys": {"p256dh": "bad", "auth": "bad"},
+            }
+        },
+    )
+
+    result = notification_service.send_lot_change_notification(
+        {
+            "tracked_lot_id": "tracked-2",
+            "owner_user_id": "user-3",
+            "lot_number": "12344321",
+            "changes": {"current_bid": {"before": 1000, "after": 1200}},
+        }
+    )
+
+    assert result["delivered"] == 0
+    assert result["failed"] == 1
+    assert result["removed"] == 0
+    assert database["push_subscriptions"].count_documents({}) == 1
+
+
+def test_web_push_sender_serializes_payload_and_vapid_claims(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict = {}
+
+    def fake_webpush(**kwargs):
+        captured.update(kwargs)
+        return None
+
+    monkeypatch.setattr("cartrap.modules.notifications.service.webpush", fake_webpush)
+
+    sender = WebPushSender(
+        vapid_private_key="private-key",
+        vapid_subject="mailto:admin@example.com",
+    )
+    sender.send(
+        {
+            "endpoint": "https://push.example.test/subscriptions/real",
+            "keys": {"p256dh": "abc", "auth": "def"},
+        },
+        {"title": "Lot updated", "body": "status"},
+    )
+
+    assert captured["subscription_info"] == {
+        "endpoint": "https://push.example.test/subscriptions/real",
+        "keys": {"p256dh": "abc", "auth": "def"},
+    }
+    assert captured["vapid_private_key"] == "private-key"
+    assert captured["vapid_claims"] == {"sub": "mailto:admin@example.com"}
+    assert "Lot updated" in captured["data"]

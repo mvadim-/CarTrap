@@ -8,6 +8,7 @@ import time
 from cartrap.config import get_settings
 from cartrap.db.mongo import MongoManager
 from cartrap.modules.monitoring.service import MonitoringService
+from cartrap.modules.notifications.service import NotificationService, build_web_push_sender
 
 
 LOGGER = logging.getLogger(__name__)
@@ -17,7 +18,15 @@ def run_polling_loop(sleep_seconds: int = 30) -> None:
     settings = get_settings()
     mongo = MongoManager(settings.mongo_uri, settings.mongo_db, settings.mongo_ping_on_startup)
     mongo.connect()
-    monitoring_service = MonitoringService(mongo.database)
+    sender = build_web_push_sender(settings.vapid_private_key, settings.vapid_subject)
+    notification_service = NotificationService(
+        mongo.database,
+        sender=sender,
+        vapid_public_key=settings.vapid_public_key,
+        vapid_private_key=settings.vapid_private_key,
+        vapid_subject=settings.vapid_subject,
+    )
+    monitoring_service = MonitoringService(mongo.database, notification_service=notification_service)
 
     try:
         while True:

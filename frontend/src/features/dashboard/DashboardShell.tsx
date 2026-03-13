@@ -5,11 +5,11 @@ import type { User } from "../../types";
 type Props = {
   user: User;
   onLogout: () => void;
-  sidebar?: ReactNode;
+  onOpenSettings: () => void;
   children: ReactNode;
 };
 
-export function DashboardShell({ user, onLogout, sidebar, children }: Props) {
+export function DashboardShell({ user, onLogout, onOpenSettings, children }: Props) {
   return (
     <main className="app-shell">
       <header className="hero">
@@ -31,11 +31,15 @@ export function DashboardShell({ user, onLogout, sidebar, children }: Props) {
               <dd className="detail-value">{user.email}</dd>
             </div>
           </dl>
-          <button type="button" className="ghost-button" onClick={onLogout}>
-            Log Out
-          </button>
+          <div className="hero-card__actions">
+            <button type="button" className="ghost-button" onClick={onOpenSettings}>
+              Settings
+            </button>
+            <button type="button" className="ghost-button" onClick={onLogout}>
+              Log Out
+            </button>
+          </div>
         </div>
-        {sidebar}
       </header>
       <section className="dashboard-grid">{children}</section>
     </main>

@@ -5,7 +5,7 @@ import { AdminInvitesPanel } from "./features/admin/AdminInvitesPanel";
 import { AdminSearchCatalogPanel } from "./features/admin/AdminSearchCatalogPanel";
 import { InviteAcceptScreen } from "./features/auth/InviteAcceptScreen";
 import { LoginScreen } from "./features/auth/LoginScreen";
-import { PushPanel } from "./features/push/PushPanel";
+import { PushSettingsModal } from "./features/push/PushSettingsModal";
 import { SearchPanel } from "./features/search/SearchPanel";
 import { WatchlistPanel } from "./features/watchlist/WatchlistPanel";
 import { useHashRoute } from "./app/router";
@@ -18,6 +18,7 @@ import {
   createInvite,
   deleteSavedSearch,
   getSearchCatalog,
+  getPushSubscriptionConfig,
   listPushSubscriptions,
   listSavedSearches,
   listWatchlist,
@@ -29,10 +30,66 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
 } from "./lib/api";
-import type { Invite, PushSubscriptionItem, SavedSearch, SearchCatalog, SearchResult, WatchlistItem } from "./types";
+import type {
+  Invite,
+  PushSubscriptionItem,
+  PushSubscriptionPayload,
+  SavedSearch,
+  SearchCatalog,
+  SearchResult,
+  WatchlistItem,
+} from "./types";
 
 function getNotificationPermission(): string {
   return typeof Notification === "undefined" ? "unsupported" : Notification.permission;
+}
+
+function encodeBase64Url(buffer: ArrayBuffer | null): string {
+  if (!buffer) {
+    return "";
+  }
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function decodeBase64Url(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function serializePushSubscription(subscription: PushSubscription): PushSubscriptionPayload {
+  const p256dh = encodeBase64Url(subscription.getKey("p256dh"));
+  const auth = encodeBase64Url(subscription.getKey("auth"));
+  if (!p256dh || !auth) {
+    throw new Error("Browser returned an invalid push subscription.");
+  }
+  return {
+    endpoint: subscription.endpoint,
+    expirationTime: subscription.expirationTime,
+    keys: { p256dh, auth },
+  };
+}
+
+async function ensurePushRegistration(): Promise<ServiceWorkerRegistration> {
+  if (!("serviceWorker" in navigator)) {
+    throw new Error("This browser does not support service workers.");
+  }
+  const existingRegistration = await navigator.serviceWorker.getRegistration();
+  if (existingRegistration) {
+    return navigator.serviceWorker.ready;
+  }
+  await navigator.serviceWorker.register("/sw.js");
+  return navigator.serviceWorker.ready;
 }
 
 export function App() {
@@ -48,6 +105,7 @@ export function App() {
   const [searchCatalog, setSearchCatalog] = useState<SearchCatalog | null>(null);
   const [isLoadingSearchCatalog, setIsLoadingSearchCatalog] = useState(false);
   const [permissionState, setPermissionState] = useState(getNotificationPermission());
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -264,28 +322,66 @@ export function App() {
 
   async function handleSubscribePush() {
     if (!session.accessToken) return;
-    if (typeof Notification === "undefined") {
-      setPermissionState("unsupported");
-      return;
+    try {
+      setError(null);
+      if (!window.isSecureContext) {
+        throw new Error("Push notifications require HTTPS or localhost.");
+      }
+      if (typeof Notification === "undefined" || !("PushManager" in window)) {
+        setPermissionState("unsupported");
+        throw new Error("This browser does not support push notifications.");
+      }
+
+      const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+      setPermissionState(permission);
+      if (permission !== "granted") {
+        throw new Error(
+          permission === "denied"
+            ? "Browser notifications are blocked for this site."
+            : "Notification permission request was dismissed.",
+        );
+      }
+
+      const config = await getPushSubscriptionConfig(session.accessToken);
+      if (!config.enabled || !config.public_key) {
+        throw new Error(config.reason ?? "Push notifications are not configured on the server.");
+      }
+
+      const registration = await ensurePushRegistration();
+      const existingSubscription = await registration.pushManager.getSubscription();
+      const browserSubscription =
+        existingSubscription ??
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: decodeBase64Url(config.public_key),
+        }));
+      const created = await subscribeToPush(
+        serializePushSubscription(browserSubscription),
+        navigator.userAgent,
+        session.accessToken,
+      );
+      setSubscriptions((current) => [created, ...current.filter((item) => item.endpoint !== created.endpoint)]);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not enable push notifications");
     }
-    const permission = await Notification.requestPermission();
-    setPermissionState(permission);
-    if (permission !== "granted") {
-      return;
-    }
-    const fakeSubscription = {
-      endpoint: `${window.location.origin}/push/${session.user?.id ?? "anonymous"}`,
-      expirationTime: null,
-      keys: { p256dh: "demo-p256dh", auth: "demo-auth" },
-    } as PushSubscription;
-    const created = await subscribeToPush(fakeSubscription, navigator.userAgent, session.accessToken);
-    setSubscriptions((current) => [created, ...current.filter((item) => item.endpoint !== created.endpoint)]);
   }
 
   async function handleUnsubscribePush(endpoint: string) {
     if (!session.accessToken) return;
-    await unsubscribeFromPush(endpoint, session.accessToken);
-    setSubscriptions((current) => current.filter((item) => item.endpoint !== endpoint));
+    try {
+      setError(null);
+      if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration();
+        const browserSubscription = await registration?.pushManager.getSubscription();
+        if (browserSubscription?.endpoint === endpoint) {
+          await browserSubscription.unsubscribe();
+        }
+      }
+      await unsubscribeFromPush(endpoint, session.accessToken);
+      setSubscriptions((current) => current.filter((item) => item.endpoint !== endpoint));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not revoke push subscription");
+    }
   }
 
   function handleLogout() {
@@ -296,6 +392,7 @@ export function App() {
     setWatchlist([]);
     setSubscriptions([]);
     setSearchCatalog(null);
+    setIsSettingsOpen(false);
     navigate("/login");
   }
 
@@ -314,37 +411,36 @@ export function App() {
   }
 
   return (
-    <DashboardShell
-      user={session.user!}
-      onLogout={handleLogout}
-      sidebar={
-        <PushPanel
-          subscriptions={subscriptions}
-          permissionState={permissionState}
-          onSubscribe={handleSubscribePush}
-          onUnsubscribe={handleUnsubscribePush}
+    <>
+      <DashboardShell user={session.user!} onLogout={handleLogout} onOpenSettings={() => setIsSettingsOpen(true)}>
+        {error ? <p className="error">{error}</p> : null}
+        {session.user?.role === "admin" ? (
+          <>
+            <AdminInvitesPanel inviteLink={inviteLink} onCreateInvite={handleCreateInvite} />
+            <AdminSearchCatalogPanel catalog={searchCatalog} onRefresh={handleRefreshSearchCatalog} />
+          </>
+        ) : null}
+        <SearchPanel
+          catalog={searchCatalog}
+          isLoadingCatalog={isLoadingSearchCatalog}
+          results={searchResults}
+          totalResults={searchTotalResults}
+          savedSearches={savedSearches}
+          onSearch={handleSearch}
+          onSaveSearch={handleSaveSearch}
+          onDeleteSavedSearch={handleDeleteSavedSearch}
+          onAddFromSearch={handleAddFromSearch}
         />
-      }
-    >
-      {error ? <p className="error">{error}</p> : null}
-      {session.user?.role === "admin" ? (
-        <>
-          <AdminInvitesPanel inviteLink={inviteLink} onCreateInvite={handleCreateInvite} />
-          <AdminSearchCatalogPanel catalog={searchCatalog} onRefresh={handleRefreshSearchCatalog} />
-        </>
-      ) : null}
-      <SearchPanel
-        catalog={searchCatalog}
-        isLoadingCatalog={isLoadingSearchCatalog}
-        results={searchResults}
-        totalResults={searchTotalResults}
-        savedSearches={savedSearches}
-        onSearch={handleSearch}
-        onSaveSearch={handleSaveSearch}
-        onDeleteSavedSearch={handleDeleteSavedSearch}
-        onAddFromSearch={handleAddFromSearch}
+        <WatchlistPanel items={watchlist} onAddByLotNumber={handleAddByLotNumber} onRemove={handleRemoveWatchlistItem} />
+      </DashboardShell>
+      <PushSettingsModal
+        isOpen={isSettingsOpen}
+        subscriptions={subscriptions}
+        permissionState={permissionState}
+        onSubscribe={handleSubscribePush}
+        onUnsubscribe={handleUnsubscribePush}
+        onClose={() => setIsSettingsOpen(false)}
       />
-      <WatchlistPanel items={watchlist} onAddByLotNumber={handleAddByLotNumber} onRemove={handleRemoveWatchlistItem} />
-    </DashboardShell>
+    </>
   );
 }

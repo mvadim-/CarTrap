@@ -44,6 +44,13 @@ describe("CarTrap app", () => {
 
   beforeEach(() => {
     const storage = new Map<string, string>();
+    const pushSubscriptions: Array<{
+      id: string;
+      endpoint: string;
+      user_agent: string | null;
+      created_at: string;
+      updated_at: string;
+    }> = [];
     lastSearchPayload = null;
     const savedSearches: Array<{
       id: string;
@@ -147,8 +154,42 @@ describe("CarTrap app", () => {
           }
           return new Response(JSON.stringify({ items: [] }), { status: 200 });
         }
+        if (url.includes("/notifications/subscription-config")) {
+          return new Response(
+            JSON.stringify({
+              enabled: true,
+              public_key: "BKagOANM9SWjR8el7V_FakePublicKey1234567890abcdEFGHijklmnop",
+              reason: null,
+            }),
+            { status: 200 },
+          );
+        }
         if (url.includes("/notifications/subscriptions")) {
-          return new Response(JSON.stringify({ items: [] }), { status: 200 });
+          const method = init?.method ?? "GET";
+          if (method === "POST") {
+            const body = init?.body ? JSON.parse(String(init.body)) : {};
+            const created = {
+              id: `push-${pushSubscriptions.length + 1}`,
+              endpoint: body.subscription?.endpoint ?? "https://push.example.test/subscriptions/default",
+              user_agent: body.user_agent ?? null,
+              created_at: "2026-03-13T16:24:00Z",
+              updated_at: "2026-03-13T16:24:00Z",
+            };
+            const existingIndex = pushSubscriptions.findIndex((item) => item.endpoint === created.endpoint);
+            if (existingIndex >= 0) {
+              pushSubscriptions.splice(existingIndex, 1, created);
+            } else {
+              pushSubscriptions.unshift(created);
+            }
+            return new Response(JSON.stringify(created), { status: 201 });
+          }
+          if (method === "DELETE") {
+            const endpoint = new URL(url).searchParams.get("endpoint");
+            const nextItems = pushSubscriptions.filter((item) => item.endpoint !== endpoint);
+            pushSubscriptions.splice(0, pushSubscriptions.length, ...nextItems);
+            return new Response(null, { status: 204 });
+          }
+          return new Response(JSON.stringify({ items: pushSubscriptions }), { status: 200 });
         }
         if (url.includes("/search/catalog")) {
           return new Response(
@@ -518,6 +559,51 @@ describe("CarTrap app", () => {
     const lotLink = screen.getByRole("link", { name: /open copart lot 99251295/i });
     expect(lotLink.getAttribute("href")).toBe("https://www.copart.com/lot/99251295");
     expect(lotLink.getAttribute("target")).toBe("_blank");
+  });
+
+  it("enables browser push subscription on this device", async () => {
+    const subscribe = vi.fn(async () => ({
+      endpoint: "https://push.example.test/subscriptions/device-1",
+      expirationTime: null,
+      getKey: (name: PushEncryptionKeyName) =>
+        name === "p256dh" ? Uint8Array.from([1, 2, 3, 4]).buffer : Uint8Array.from([5, 6, 7, 8]).buffer,
+      unsubscribe: vi.fn(async () => true),
+    }));
+    const registration = {
+      pushManager: {
+        getSubscription: vi.fn(async () => null),
+        subscribe,
+      },
+    } as unknown as ServiceWorkerRegistration;
+
+    vi.stubGlobal("Notification", {
+      permission: "default",
+      requestPermission: vi.fn(async () => "granted"),
+    });
+    Object.defineProperty(window.navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        getRegistration: vi.fn(async () => registration),
+        register: vi.fn(async () => registration),
+        ready: Promise.resolve(registration),
+      },
+    });
+    Object.defineProperty(window, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+    vi.stubGlobal("PushManager", class PushManager {});
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.click(screen.getByRole("button", { name: /settings/i }));
+    await screen.findByRole("dialog", { name: /settings/i });
+    fireEvent.click(screen.getByRole("button", { name: /enable push on this device/i }));
+
+    expect(await screen.findByText(/push\.example\.test\/subscriptions\/device-1/i)).toBeTruthy();
+    expect(subscribe).toHaveBeenCalledTimes(1);
   });
 
   it("renders fallbacks for missing tracked lot detail fields", async () => {

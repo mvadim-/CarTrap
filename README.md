@@ -30,6 +30,21 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 10. Configure Copart API headers in `.env`: `COPART_API_DEVICE_NAME`, `COPART_API_D_TOKEN`, `COPART_API_COOKIE`, and optionally override `COPART_API_BASE_URL`, `COPART_API_SEARCH_PATH`, `COPART_API_SITECODE`.
 11. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
 12. If you use backend-driven catalog refresh, `COPART_API_SEARCH_KEYWORDS_PATH` defaults to `/mcs/v2/public/data/search/keywords`.
+13. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
+
+## VAPID Keys
+
+Generate VAPID keys with the installed `py-vapid` CLI:
+
+```bash
+source .venv/bin/activate
+mkdir -p backend/keys
+cd backend/keys
+vapid --gen
+vapid --applicationServerKey --private-key private_key.pem
+```
+
+Set the printed `Application Server Key` value as `VAPID_PUBLIC_KEY`, point `VAPID_PRIVATE_KEY` to `backend/keys/private_key.pem`, and use a contact URI such as `mailto:admin@example.com` for `VAPID_SUBJECT`.
 
 ## Services
 - `mongodb` - primary database

@@ -1,5 +1,25 @@
 # Change Log
 
+## [2026-03-13 17:39] Move push notifications UI into user settings modal
+- Оновлено `frontend/src/{App.tsx,styles.css}` і `frontend/src/features/{dashboard/DashboardShell.tsx,push/PushSettingsModal.tsx}`: окрема hero-панель `Browser Notifications` прибрана, hero повернуто до двоколонного layout, а весь push UX перенесено в modal `Settings`, який відкривається з кнопки `Settings` на `User` panel.
+- Видалено `frontend/src/features/push/PushPanel.tsx`: старий inline panel більше не рендериться, тому не ламає dashboard layout після розширення push functionality.
+- Оновлено `frontend/tests/app.test.tsx`: push subscription flow тепер проходить через відкриття settings modal; verification: `npm run test --prefix frontend -- app.test.tsx` -> `13 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 17:31] Add manual test-push endpoint for current user subscriptions
+- Оновлено `backend/src/cartrap/modules/notifications/{schemas.py,service.py,router.py}` і `docs/backend-api.md`: додано `POST /api/notifications/test`, який відправляє test push на всі subscriptions поточного користувача через той самий delivery path, що й worker notifications.
+- Оновлено `backend/tests/notifications/test_push_subscriptions.py`: додано route-level тест, який перевіряє доставку test push на subscription поточного користувача з очікуваним payload `title/body/test`.
+- Verification: `./.venv/bin/pytest backend/tests/notifications/test_push_subscriptions.py backend/tests/notifications/test_push_delivery.py` -> `9 passed` (є лише `urllib3` warning про локальний LibreSSL), `npm run test --prefix frontend -- app.test.tsx` -> `13 passed`.
+
+## [2026-03-13 16:24] Fix browser push subscription flow behind Enable Push button
+- Оновлено `backend/src/cartrap/{config.py}` і `backend/src/cartrap/modules/notifications/{router.py,schemas.py,service.py}`: додано `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` у settings та новий `GET /api/notifications/subscription-config`, щоб frontend міг отримати public VAPID key або явну причину, чому push не сконфігурований; placeholder `replace-me` більше не вважається валідною конфігурацією.
+- Оновлено `frontend/src/{App.tsx,lib/api.ts,main.tsx,types.ts}`: прибрано `fakeSubscription`, кнопка `Enable Push On This Device` тепер створює реальну browser subscription через `serviceWorker` + `PushManager`, працює й у локальній dev-сесії та показує користувачу зрозумілу помилку для HTTPS/permission/VAPID проблем.
+- Оновлено `backend/tests/notifications/test_push_subscriptions.py`, `frontend/tests/app.test.tsx` і `docs/backend-api.md`: додано покриття для нового subscription-config endpoint і фронтенд-flow реальної push subscription; verification: `./.venv/bin/pytest backend/tests/notifications/test_push_subscriptions.py` -> `4 passed`, `npm run test --prefix frontend -- app.test.tsx` -> `13 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 16:41] Add real backend Web Push delivery via pywebpush
+- Оновлено `backend/src/cartrap/modules/notifications/service.py`, `backend/src/cartrap/{app.py,worker/main.py,config.py}` і `backend/pyproject.toml`: інтегровано реальний `WebPushSender` через `pywebpush`, додано `VAPID_SUBJECT`, централізовану валідацію VAPID-конфігурації, а worker тепер створює `NotificationService` і реально відправляє push під час polling.
+- Оновлено `.env.example`, `README.md`, `.gitignore` і `docs/backend-api.md`: задокументовано повний набір `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`, точну послідовність генерації `applicationServerKey` через `py-vapid` і додано ignore для `*.pem`, щоб приватні ключі не комітилися в repo.
+- Розширено `backend/tests/notifications/{test_push_subscriptions.py,test_push_delivery.py}`: додано перевірки для повної VAPID-конфігурації, transient vs unrecoverable delivery failures і серіалізації payload у `pywebpush`; verification: `./.venv/bin/pytest backend/tests/notifications/test_push_subscriptions.py backend/tests/notifications/test_push_delivery.py` -> `8 passed` (є лише `urllib3` warning про локальний LibreSSL), `npm run test --prefix frontend -- app.test.tsx` -> `13 passed`, `npm run build --prefix frontend` -> успішно.
+
 ## [2026-03-11 15:12] Планування MVP для Copart PWA
 - Створено базовий `ChangeLog.md` для подальшої фіксації кожного циклу змін.
 - Додано план імплементації MVP у `docs/plans/20260311-copart-pwa-mvp.md`.

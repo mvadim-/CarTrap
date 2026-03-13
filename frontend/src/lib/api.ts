@@ -1,6 +1,8 @@
 import type {
   Invite,
+  PushSubscriptionConfig,
   PushSubscriptionItem,
+  PushSubscriptionPayload,
   SavedSearch,
   SearchCatalog,
   SearchResult,
@@ -246,7 +248,15 @@ export async function listPushSubscriptions(token: string): Promise<PushSubscrip
   return response.items;
 }
 
-export async function subscribeToPush(subscription: PushSubscription, userAgent: string, token: string): Promise<PushSubscriptionItem> {
+export async function getPushSubscriptionConfig(token: string): Promise<PushSubscriptionConfig> {
+  return request<PushSubscriptionConfig>("/notifications/subscription-config", { token });
+}
+
+export async function subscribeToPush(
+  subscription: PushSubscriptionPayload,
+  userAgent: string,
+  token: string,
+): Promise<PushSubscriptionItem> {
   return request<PushSubscriptionItem>("/notifications/subscriptions", {
     method: "POST",
     body: { subscription, user_agent: userAgent },

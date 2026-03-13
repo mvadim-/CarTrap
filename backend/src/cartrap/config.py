@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     copart_api_d_token: Optional[str] = Field(default=None, alias="COPART_API_D_TOKEN")
     copart_api_cookie: Optional[str] = Field(default=None, alias="COPART_API_COOKIE")
     copart_api_site_code: str = Field(default="CPRTUS", alias="COPART_API_SITECODE", min_length=1)
+    vapid_public_key: Optional[str] = Field(default=None, alias="VAPID_PUBLIC_KEY")
+    vapid_private_key: Optional[str] = Field(default=None, alias="VAPID_PRIVATE_KEY")
+    vapid_subject: Optional[str] = Field(default=None, alias="VAPID_SUBJECT")
 
     @property
     def cors_origins(self) -> List[str]:
