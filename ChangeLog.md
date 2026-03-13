@@ -245,3 +245,29 @@
 ## [2026-03-13 13:11] Include drive filter in saved-search external Copart URL
 - Уточнено `backend/src/cartrap/modules/search/schemas.py`: `external_url` для saved searches тепер додає `searchCriteria.filter.DRIV` із канонічним Copart значенням, якщо обрано `Drive train`, щоб зовнішній `lotSearchResults` URL відповідав web-format payload.
 - Оновлено `backend/tests/search/test_search_api.py` і `frontend/tests/app.test.tsx` для перевірки `DRIV` у generated external URL.
+
+## [2026-03-13 13:42] Add more search filters from saved mobile Copart API tree
+- Переглянуто збережені mobile API dumps у `Temp/mmember.copart.com`, зокрема `srch/index*.html`, `mcs/v2/public/data/search/keywords` і `api/v2/reference-data/sale-highlights`, та виділено додаткові фільтри, які реально присутні в Copart payload/facets: `title_group_code`, `fuel_type_desc`, `lot_condition_code`, `odometer_reading_received`.
+- Оновлено `backend/src/cartrap/modules/search/{schemas.py,service.py}`: manual search і saved searches тепер підтримують `title_type`, `fuel_type`, `lot_condition`, `odometer_range`; критерії мапляться в Copart `filter[]`, серіалізуються в saved searches і додаються в generated external Copart URL разом із `primary_damage`.
+- Оновлено frontend UX у `frontend/src/{App.tsx,types.ts,lib/api.ts,styles.css}` та `frontend/src/features/search/{SearchPanel.tsx,SearchFiltersModal.tsx,searchFilters.ts}`: modal `Filters` тепер дозволяє вибирати `Title type`, `Fuel type`, `Sale highlight`, `Odometer`, а активні значення відображаються під формою й у списку saved searches.
+- Розширено regression coverage в `backend/tests/search/test_search_api.py` і `frontend/tests/app.test.tsx`; verification: `./.venv/bin/pytest backend/tests/search/test_search_api.py` -> `17 passed`, `npm run test --prefix frontend -- app.test.tsx` -> `10 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 14:00] Add typed make/model filtering for search panel dropdowns
+- Оновлено `frontend/src/features/search/SearchPanel.tsx`: для `Make` і `Model` додано поля `Find make` / `Find model`, які в реальному часі фільтрують відповідні dropdown-и без ручного скролу по всьому каталогу.
+- Для make використано prefix-match по початку назви (`F` -> `FORD`, `FIAT`), а для model реалізовано word-prefix search по токенах, щоб `MAC` знаходив `MUSTANG MACH-E`, а не лише збіги з початку всього рядка.
+- Розширено frontend regression coverage в `frontend/tests/app.test.tsx` окремим сценарієм live-фільтрації списків і перевірено, що існуючі search/save flows не зламалися; verification: `npm run test --prefix frontend -- app.test.tsx` -> `11 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 14:09] Merge make/model search into single searchable selectors
+- Перероблено `frontend/src/features/search/SearchPanel.tsx`: окремі поля `Find make` / `Find model` прибрано, а `Make` і `Model` тепер працюють як один searchable control кожне: ввід відбувається прямо в поле, а нижче відкривається live-filtered dropdown з відповідними варіантами.
+- Збережено попередню логіку матчингу: для make це prefix-search по початку назви, для model це word-prefix search по токенах, тож `MAC` і далі знаходить `MUSTANG MACH-E`; додано стилі dropdown-а в `frontend/src/styles.css`.
+- Оновлено frontend regression coverage в `frontend/tests/app.test.tsx` під нову взаємодію з single-field selectors; verification: `npm run test --prefix frontend -- app.test.tsx` -> `11 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 14:17] Reduce width of year inputs in search panel
+- Оновлено `frontend/src/features/search/SearchPanel.tsx`: поля `Year From` і `Year To` отримали локальний class, `inputMode="numeric"` і `maxLength={4}`, щоб краще відповідати фактичному формату значення.
+- Оновлено `frontend/src/styles.css`: для `.search-grid__year-field` додано вузьку ширину, щоб year inputs не розтягувалися як повноширинні поля в search panel.
+- Verification: `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-13 14:20] Keep year inputs paired in one row
+- Оновлено `frontend/src/features/search/SearchPanel.tsx`: `Year From` і `Year To` згруповано в окремий `search-grid__year-group`, щоб ці два поля рендерилися як зв’язана пара.
+- Оновлено `frontend/src/styles.css`: для `search-grid__year-group` додано внутрішню двоколонну grid-розкладку, тож year inputs залишаються поруч один біля одного навіть коли основна search-grid переходить у вузький layout.
+- Verification: `npm run build --prefix frontend` -> успішно.

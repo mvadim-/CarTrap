@@ -49,6 +49,10 @@ export type SavedSearchCriteria = {
   model_filter?: string;
   drive_type?: string;
   primary_damage?: string;
+  title_type?: string;
+  fuel_type?: string;
+  lot_condition?: string;
+  odometer_range?: string;
   year_from?: number;
   year_to?: number;
   lot_number?: string;

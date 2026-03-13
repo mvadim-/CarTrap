@@ -25,6 +25,10 @@ describe("CarTrap app", () => {
         model_filter?: string;
         drive_type?: string;
         primary_damage?: string;
+        title_type?: string;
+        fuel_type?: string;
+        lot_condition?: string;
+        odometer_range?: string;
         year_from?: number;
         year_to?: number;
       };
@@ -137,10 +141,29 @@ describe("CarTrap app", () => {
                   search_filter: 'lot_make_desc:"FORD" OR manufacturer_make_desc:"FORD"',
                   models: [
                     {
+                      slug: "broncosport",
+                      name: "BRONCO SPORT",
+                      search_filter:
+                        'lot_model_desc:"BRONCO SPORT" OR manufacturer_model_desc:"BRONCO SPORT"',
+                    },
+                    {
                       slug: "mustangmache",
                       name: "MUSTANG MACH-E",
                       search_filter:
                         'lot_model_desc:"MUSTANG MACH-E" OR manufacturer_model_desc:"MUSTANG MACH-E"',
+                    },
+                  ],
+                },
+                {
+                  slug: "fiat",
+                  name: "FIAT",
+                  aliases: [],
+                  search_filter: 'lot_make_desc:"FIAT" OR manufacturer_make_desc:"FIAT"',
+                  models: [
+                    {
+                      slug: "500x",
+                      name: "500X",
+                      search_filter: 'lot_model_desc:"500X" OR manufacturer_model_desc:"500X"',
                     },
                   ],
                 },
@@ -183,6 +206,10 @@ describe("CarTrap app", () => {
                   model_filter: body.model_filter,
                   drive_type: body.drive_type,
                   primary_damage: body.primary_damage,
+                  title_type: body.title_type,
+                  fuel_type: body.fuel_type,
+                  lot_condition: body.lot_condition,
+                  odometer_range: body.odometer_range,
                   year_from: body.year_from,
                   year_to: body.year_to,
                 }),
@@ -200,6 +227,10 @@ describe("CarTrap app", () => {
                 model_filter: body.model_filter,
                 drive_type: body.drive_type,
                 primary_damage: body.primary_damage,
+                title_type: body.title_type,
+                fuel_type: body.fuel_type,
+                lot_condition: body.lot_condition,
+                odometer_range: body.odometer_range,
                 year_from: body.year_from,
                 year_to: body.year_to,
               },
@@ -346,6 +377,26 @@ describe("CarTrap app", () => {
     expect(screen.getAllByAltText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);
   });
 
+  it("filters make and model lists while typing", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+
+    fireEvent.focus(screen.getByLabelText("Make"));
+    fireEvent.change(screen.getByLabelText("Make"), { target: { value: "F" } });
+
+    expect(screen.getByRole("button", { name: "FORD" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "FIAT" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "TOYOTA" })).toBeNull();
+
+    fireEvent.focus(screen.getByLabelText("Model"));
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "MAC" } });
+
+    expect(screen.getByRole("button", { name: "MUSTANG MACH-E" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "BRONCO SPORT" })).toBeNull();
+  });
+
   it("applies modal filters before running search", async () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
@@ -356,14 +407,22 @@ describe("CarTrap app", () => {
 
     fireEvent.change(screen.getByLabelText(/drive train/i), { target: { value: "all_wheel_drive" } });
     fireEvent.change(screen.getByLabelText(/primary damage/i), { target: { value: "hail" } });
+    fireEvent.change(screen.getByLabelText(/title type/i), { target: { value: "salvage_title" } });
+    fireEvent.change(screen.getByLabelText(/fuel type/i), { target: { value: "electric" } });
+    fireEvent.change(screen.getByLabelText(/sale highlight/i), { target: { value: "run_and_drive" } });
+    fireEvent.change(screen.getByLabelText(/odometer/i), { target: { value: "under_25000" } });
     fireEvent.click(screen.getByRole("button", { name: /apply filters/i }));
 
-    await screen.findByText(/active filters: all wheel drive · hail/i);
+    await screen.findByText(/active filters: all wheel drive · hail · salvage title · electric · run and drive · under 25,000 mi/i);
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
     await screen.findByRole("dialog", { name: /search results/i });
 
     expect(lastSearchPayload?.drive_type).toBe("all_wheel_drive");
     expect(lastSearchPayload?.primary_damage).toBe("hail");
+    expect(lastSearchPayload?.title_type).toBe("salvage_title");
+    expect(lastSearchPayload?.fuel_type).toBe("electric");
+    expect(lastSearchPayload?.lot_condition).toBe("run_and_drive");
+    expect(lastSearchPayload?.odometer_range).toBe("under_25000");
   });
 
   it("saves a search and reruns it from the saved searches list", async () => {

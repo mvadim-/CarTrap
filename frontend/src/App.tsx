@@ -115,6 +115,10 @@ export function App() {
     modelFilter?: string;
     driveType?: string;
     primaryDamage?: string;
+    titleType?: string;
+    fuelType?: string;
+    lotCondition?: string;
+    odometerRange?: string;
     yearFrom?: string;
     yearTo?: string;
   }) {
@@ -131,6 +135,10 @@ export function App() {
           model_filter: payload.modelFilter,
           drive_type: payload.driveType,
           primary_damage: payload.primaryDamage,
+          title_type: payload.titleType,
+          fuel_type: payload.fuelType,
+          lot_condition: payload.lotCondition,
+          odometer_range: payload.odometerRange,
           year_from: payload.yearFrom ? Number(payload.yearFrom) : undefined,
           year_to: payload.yearTo ? Number(payload.yearTo) : undefined,
         },
@@ -153,6 +161,10 @@ export function App() {
     modelFilter?: string;
     driveType?: string;
     primaryDamage?: string;
+    titleType?: string;
+    fuelType?: string;
+    lotCondition?: string;
+    odometerRange?: string;
     yearFrom?: string;
     yearTo?: string;
   }) {
@@ -169,6 +181,10 @@ export function App() {
           model_filter: payload.modelFilter,
           drive_type: payload.driveType,
           primary_damage: payload.primaryDamage,
+          title_type: payload.titleType,
+          fuel_type: payload.fuelType,
+          lot_condition: payload.lotCondition,
+          odometer_range: payload.odometerRange,
           year_from: payload.yearFrom ? Number(payload.yearFrom) : undefined,
           year_to: payload.yearTo ? Number(payload.yearTo) : undefined,
           result_count: searchTotalResults,

@@ -296,6 +296,10 @@ def test_user_can_save_and_list_saved_searches(client: TestClient) -> None:
                 "model": "Mustang Mach-E",
                 "drive_type": "all_wheel_drive",
                 "primary_damage": "hail",
+                "title_type": "salvage_title",
+                "fuel_type": "electric",
+                "lot_condition": "enhanced_vehicles",
+                "odometer_range": "under_25000",
                 "year_from": 2025,
                 "year_to": 2027,
                 "result_count": 21,
@@ -312,12 +316,20 @@ def test_user_can_save_and_list_saved_searches(client: TestClient) -> None:
     assert create_response.json()["saved_search"]["criteria"]["make"] == "FORD"
     assert create_response.json()["saved_search"]["criteria"]["drive_type"] == "all_wheel_drive"
     assert create_response.json()["saved_search"]["criteria"]["primary_damage"] == "hail"
+    assert create_response.json()["saved_search"]["criteria"]["title_type"] == "salvage_title"
+    assert create_response.json()["saved_search"]["criteria"]["fuel_type"] == "electric"
+    assert create_response.json()["saved_search"]["criteria"]["lot_condition"] == "enhanced_vehicles"
+    assert create_response.json()["saved_search"]["criteria"]["odometer_range"] == "under_25000"
     assert create_response.json()["saved_search"]["external_url"].startswith("https://www.copart.com/lotSearchResults?")
     assert create_response.json()["saved_search"]["result_count"] == 21
     assert list_response.status_code == 200
     assert len(list_response.json()["items"]) == 1
     assert list_response.json()["items"][0]["criteria"]["model"] == "MUSTANG MACH-E"
     assert list_response.json()["items"][0]["criteria"]["drive_type"] == "all_wheel_drive"
+    assert list_response.json()["items"][0]["criteria"]["title_type"] == "salvage_title"
+    assert list_response.json()["items"][0]["criteria"]["fuel_type"] == "electric"
+    assert list_response.json()["items"][0]["criteria"]["lot_condition"] == "enhanced_vehicles"
+    assert list_response.json()["items"][0]["criteria"]["odometer_range"] == "under_25000"
     assert list_response.json()["items"][0]["external_url"].startswith("https://www.copart.com/lotSearchResults?")
     assert list_response.json()["items"][0]["result_count"] == 21
 
@@ -449,6 +461,10 @@ def test_search_request_builds_structured_filters_payload() -> None:
         model="Mustang Mach-E",
         drive_type="all_wheel_drive",
         primary_damage="hail",
+        title_type="salvage_title",
+        fuel_type="electric",
+        lot_condition="enhanced_vehicles",
+        odometer_range="under_25000",
     )
 
     payload = request.to_api_request(datetime(2026, 3, 12, 15, 45, tzinfo=timezone.utc)).to_payload()
@@ -456,6 +472,10 @@ def test_search_request_builds_structured_filters_payload() -> None:
     assert payload["filter"] == [
         '(drive:"ALL WHEEL DRIVE" OR drive:"All Wheel Drive")',
         "(damage_type_code:DAMAGECODE_HL)",
+        "(title_group_code:TITLEGROUP_S)",
+        '(fuel_type_desc:"ELECTRIC" OR fuel_type_desc:"Electric")',
+        "(lot_condition_code:CERT-E)",
+        "(odometer_reading_received:[* TO 25000])",
     ]
 
 
@@ -483,6 +503,11 @@ def test_search_request_builds_external_copart_url() -> None:
         year_from=2025,
         year_to=2027,
         drive_type="all_wheel_drive",
+        primary_damage="hail",
+        title_type="salvage_title",
+        fuel_type="electric",
+        lot_condition="run_and_drive",
+        odometer_range="under_25000",
     )
 
     url = request.to_external_url()
@@ -499,6 +524,11 @@ def test_search_request_builds_external_copart_url() -> None:
         "MAKE": ['lot_make_desc:"FORD"'],
         "MODL": ['lot_model_desc:"MUSTANG MACH-E"'],
         "DRIV": ['drive:"ALL WHEEL DRIVE"'],
+        "DMG": ["damage_type_code:DAMAGECODE_HL"],
+        "TITL": ["title_group_code:TITLEGROUP_S"],
+        "FUEL": ['fuel_type_desc:"ELECTRIC"'],
+        "COND": ["lot_condition_code:CERT-D"],
+        "ODM": ["odometer_reading_received:[* TO 25000]"],
     }
 
 

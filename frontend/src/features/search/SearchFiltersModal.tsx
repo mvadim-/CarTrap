@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 
 import {
   DRIVE_TYPE_OPTIONS,
+  FUEL_TYPE_OPTIONS,
+  LOT_CONDITION_OPTIONS,
+  ODOMETER_RANGE_OPTIONS,
   PRIMARY_DAMAGE_OPTIONS,
+  SearchFilterValues,
+  TITLE_TYPE_OPTIONS,
 } from "./searchFilters";
-
-type SearchFilterValues = {
-  driveType?: string;
-  primaryDamage?: string;
-};
 
 type Props = {
   isOpen: boolean;
@@ -20,6 +20,10 @@ type Props = {
 export function SearchFiltersModal({ isOpen, filters, onApply, onClose }: Props) {
   const [draftDriveType, setDraftDriveType] = useState(filters.driveType ?? "");
   const [draftPrimaryDamage, setDraftPrimaryDamage] = useState(filters.primaryDamage ?? "");
+  const [draftTitleType, setDraftTitleType] = useState(filters.titleType ?? "");
+  const [draftFuelType, setDraftFuelType] = useState(filters.fuelType ?? "");
+  const [draftLotCondition, setDraftLotCondition] = useState(filters.lotCondition ?? "");
+  const [draftOdometerRange, setDraftOdometerRange] = useState(filters.odometerRange ?? "");
 
   useEffect(() => {
     if (!isOpen) {
@@ -27,7 +31,19 @@ export function SearchFiltersModal({ isOpen, filters, onApply, onClose }: Props)
     }
     setDraftDriveType(filters.driveType ?? "");
     setDraftPrimaryDamage(filters.primaryDamage ?? "");
-  }, [filters.driveType, filters.primaryDamage, isOpen]);
+    setDraftTitleType(filters.titleType ?? "");
+    setDraftFuelType(filters.fuelType ?? "");
+    setDraftLotCondition(filters.lotCondition ?? "");
+    setDraftOdometerRange(filters.odometerRange ?? "");
+  }, [
+    filters.driveType,
+    filters.primaryDamage,
+    filters.titleType,
+    filters.fuelType,
+    filters.lotCondition,
+    filters.odometerRange,
+    isOpen,
+  ]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -89,6 +105,50 @@ export function SearchFiltersModal({ isOpen, filters, onApply, onClose }: Props)
               ))}
             </select>
           </label>
+          <label>
+            Title type
+            <select value={draftTitleType} onChange={(event) => setDraftTitleType(event.target.value)}>
+              <option value="">Any title type</option>
+              {TITLE_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Fuel type
+            <select value={draftFuelType} onChange={(event) => setDraftFuelType(event.target.value)}>
+              <option value="">Any fuel type</option>
+              {FUEL_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Sale highlight
+            <select value={draftLotCondition} onChange={(event) => setDraftLotCondition(event.target.value)}>
+              <option value="">Any highlight</option>
+              {LOT_CONDITION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Odometer
+            <select value={draftOdometerRange} onChange={(event) => setDraftOdometerRange(event.target.value)}>
+              <option value="">Any odometer</option>
+              {ODOMETER_RANGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         <div className="modal-header filter-modal__actions">
           <button
@@ -97,6 +157,10 @@ export function SearchFiltersModal({ isOpen, filters, onApply, onClose }: Props)
             onClick={() => {
               setDraftDriveType("");
               setDraftPrimaryDamage("");
+              setDraftTitleType("");
+              setDraftFuelType("");
+              setDraftLotCondition("");
+              setDraftOdometerRange("");
             }}
           >
             Clear
@@ -107,6 +171,10 @@ export function SearchFiltersModal({ isOpen, filters, onApply, onClose }: Props)
               onApply({
                 driveType: draftDriveType || undefined,
                 primaryDamage: draftPrimaryDamage || undefined,
+                titleType: draftTitleType || undefined,
+                fuelType: draftFuelType || undefined,
+                lotCondition: draftLotCondition || undefined,
+                odometerRange: draftOdometerRange || undefined,
               });
               onClose();
             }}

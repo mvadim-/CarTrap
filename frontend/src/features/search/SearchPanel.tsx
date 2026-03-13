@@ -9,7 +9,114 @@ import type {
 } from "../../types";
 import { SearchFiltersModal } from "./SearchFiltersModal";
 import { SearchResultsModal } from "./SearchResultsModal";
-import { getDriveTypeLabel, getPrimaryDamageLabel } from "./searchFilters";
+import { getSearchFilterLabels, SearchFilterValues } from "./searchFilters";
+
+type SearchableOption = {
+  slug: string;
+  name: string;
+};
+
+function normalizeSearchValue(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+function tokenizeSearchValue(value: string): string[] {
+  return normalizeSearchValue(value)
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean);
+}
+
+function matchesMakeQuery(name: string, query: string): boolean {
+  const normalizedQuery = normalizeSearchValue(query);
+  if (!normalizedQuery) {
+    return true;
+  }
+  return normalizeSearchValue(name).startsWith(normalizedQuery);
+}
+
+function matchesModelQuery(name: string, query: string): boolean {
+  const queryTokens = tokenizeSearchValue(query);
+  if (queryTokens.length === 0) {
+    return true;
+  }
+  const nameTokens = tokenizeSearchValue(name);
+  return queryTokens.every((queryToken) => nameTokens.some((nameToken) => nameToken.startsWith(queryToken)));
+}
+
+type SearchableSelectorProps = {
+  label: string;
+  ariaLabel: string;
+  placeholder: string;
+  query: string;
+  selectedLabel?: string;
+  options: SearchableOption[];
+  emptyMessage: string;
+  disabled?: boolean;
+  onQueryChange: (value: string) => void;
+  onSelect: (option: SearchableOption) => void;
+};
+
+function SearchableSelector({
+  label,
+  ariaLabel,
+  placeholder,
+  query,
+  selectedLabel,
+  options,
+  emptyMessage,
+  disabled = false,
+  onQueryChange,
+  onSelect,
+}: SearchableSelectorProps) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const displayValue = isOpen ? query : query || selectedLabel || "";
+
+  return (
+    <label className="searchable-select">
+      {label}
+      <div className="searchable-select__field">
+        <input
+          aria-label={ariaLabel}
+          autoComplete="off"
+          disabled={disabled}
+          placeholder={placeholder}
+          value={displayValue}
+          onChange={(event) => {
+            if (!isOpen) {
+              setIsOpen(true);
+            }
+            onQueryChange(event.target.value);
+          }}
+          onFocus={() => setIsOpen(true)}
+          onBlur={() => window.setTimeout(() => setIsOpen(false), 120)}
+        />
+        {isOpen ? (
+          <div className="searchable-select__menu" role="listbox" aria-label={`${label} options`}>
+            {options.length === 0 ? (
+              <p className="searchable-select__empty muted">{emptyMessage}</p>
+            ) : (
+              options.map((option) => (
+                <button
+                  key={option.slug}
+                  type="button"
+                  className="searchable-select__option"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    onSelect(option);
+                    setIsOpen(false);
+                  }}
+                >
+                  {option.name}
+                </button>
+              ))
+            )}
+          </div>
+        ) : null}
+      </div>
+    </label>
+  );
+}
 
 type SearchPayload = {
   make?: string;
@@ -18,6 +125,10 @@ type SearchPayload = {
   modelFilter?: string;
   driveType?: string;
   primaryDamage?: string;
+  titleType?: string;
+  fuelType?: string;
+  lotCondition?: string;
+  odometerRange?: string;
   yearFrom?: string;
   yearTo?: string;
 };
@@ -47,15 +158,23 @@ export function SearchPanel({
 }: Props) {
   const [selectedMakeSlug, setSelectedMakeSlug] = useState("");
   const [selectedModelSlug, setSelectedModelSlug] = useState("");
+  const [makeQuery, setMakeQuery] = useState("");
+  const [modelQuery, setModelQuery] = useState("");
   const [yearFrom, setYearFrom] = useState("2025");
   const [yearTo, setYearTo] = useState("2027");
   const [isResultsOpen, setIsResultsOpen] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [driveType, setDriveType] = useState<string | undefined>(undefined);
   const [primaryDamage, setPrimaryDamage] = useState<string | undefined>(undefined);
+  const [titleType, setTitleType] = useState<string | undefined>(undefined);
+  const [fuelType, setFuelType] = useState<string | undefined>(undefined);
+  const [lotCondition, setLotCondition] = useState<string | undefined>(undefined);
+  const [odometerRange, setOdometerRange] = useState<string | undefined>(undefined);
   const [lastSubmittedPayload, setLastSubmittedPayload] = useState<SearchPayload | null>(null);
 
+  const filteredMakes = catalog?.makes.filter((item) => matchesMakeQuery(item.name, makeQuery)) ?? [];
   const selectedMake: SearchCatalogMake | null = catalog?.makes.find((item) => item.slug === selectedMakeSlug) ?? null;
+  const filteredModels = selectedMake?.models.filter((item) => matchesModelQuery(item.name, modelQuery)) ?? [];
   const selectedModel: SearchCatalogModel | null = selectedMake?.models.find((item) => item.slug === selectedModelSlug) ?? null;
 
   useEffect(() => {
@@ -72,6 +191,25 @@ export function SearchPanel({
   }, [catalog, selectedMakeSlug]);
 
   useEffect(() => {
+    if (!catalog) {
+      return;
+    }
+    if (!makeQuery.trim()) {
+      return;
+    }
+    if (filteredMakes.length === 0) {
+      setSelectedMakeSlug("");
+      setSelectedModelSlug("");
+      return;
+    }
+    if (filteredMakes.some((item) => item.slug === selectedMakeSlug)) {
+      return;
+    }
+    setSelectedMakeSlug(filteredMakes[0].slug);
+    setSelectedModelSlug("");
+  }, [catalog, filteredMakes, selectedMakeSlug]);
+
+  useEffect(() => {
     if (!selectedMake) {
       setSelectedModelSlug("");
       return;
@@ -81,6 +219,23 @@ export function SearchPanel({
     }
     setSelectedModelSlug(selectedMake.models[0]?.slug ?? "");
   }, [selectedMake, selectedModelSlug]);
+
+  useEffect(() => {
+    if (!selectedMake) {
+      return;
+    }
+    if (!modelQuery.trim()) {
+      return;
+    }
+    if (filteredModels.length === 0) {
+      setSelectedModelSlug("");
+      return;
+    }
+    if (filteredModels.some((item) => item.slug === selectedModelSlug)) {
+      return;
+    }
+    setSelectedModelSlug(filteredModels[0].slug);
+  }, [filteredModels, selectedMake, selectedModelSlug]);
 
   function buildPayload(makeOverride?: SearchCatalogMake | null, modelOverride?: SearchCatalogModel | null): SearchPayload {
     const resolvedMake = makeOverride ?? selectedMake;
@@ -92,6 +247,10 @@ export function SearchPanel({
       modelFilter: resolvedModel?.search_filter,
       driveType,
       primaryDamage,
+      titleType,
+      fuelType,
+      lotCondition,
+      odometerRange,
       yearFrom,
       yearTo,
     };
@@ -124,10 +283,16 @@ export function SearchPanel({
       setSelectedMakeSlug(matchedMake.slug);
       setSelectedModelSlug(matchedModel?.slug ?? "");
     }
+    setMakeQuery("");
+    setModelQuery("");
     setYearFrom(savedSearch.criteria.year_from?.toString() ?? "");
     setYearTo(savedSearch.criteria.year_to?.toString() ?? "");
     setDriveType(savedSearch.criteria.drive_type);
     setPrimaryDamage(savedSearch.criteria.primary_damage);
+    setTitleType(savedSearch.criteria.title_type);
+    setFuelType(savedSearch.criteria.fuel_type);
+    setLotCondition(savedSearch.criteria.lot_condition);
+    setOdometerRange(savedSearch.criteria.odometer_range);
 
     try {
       await runSearch({
@@ -137,6 +302,10 @@ export function SearchPanel({
         modelFilter: savedSearch.criteria.model_filter,
         driveType: savedSearch.criteria.drive_type,
         primaryDamage: savedSearch.criteria.primary_damage,
+        titleType: savedSearch.criteria.title_type,
+        fuelType: savedSearch.criteria.fuel_type,
+        lotCondition: savedSearch.criteria.lot_condition,
+        odometerRange: savedSearch.criteria.odometer_range,
         yearFrom: savedSearch.criteria.year_from?.toString(),
         yearTo: savedSearch.criteria.year_to?.toString(),
       });
@@ -163,9 +332,14 @@ export function SearchPanel({
     return `${count} ${count === 1 ? "lot" : "lots"} found`;
   }
 
-  const activeFilterLabels = [getDriveTypeLabel(driveType), getPrimaryDamageLabel(primaryDamage)].filter(
-    (value): value is string => Boolean(value),
-  );
+  const activeFilterLabels = getSearchFilterLabels({
+    driveType,
+    primaryDamage,
+    titleType,
+    fuelType,
+    lotCondition,
+    odometerRange,
+  });
 
   return (
     <section className="panel">
@@ -179,50 +353,63 @@ export function SearchPanel({
         </button>
       </div>
       <form className="search-grid" onSubmit={handleSubmit}>
-        <label>
-          Make
-          <select
-            aria-label="Make"
-            value={selectedMakeSlug}
-            onChange={(event) => {
-              setSelectedMakeSlug(event.target.value);
-              setSelectedModelSlug("");
-            }}
-            disabled={isLoadingCatalog || !catalog}
-          >
-            {!catalog ? <option value="">Loading catalog...</option> : null}
-            {catalog?.makes.map((make) => (
-              <option key={make.slug} value={make.slug}>
-                {make.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Model
-          <select
-            aria-label="Model"
-            value={selectedModelSlug}
-            onChange={(event) => setSelectedModelSlug(event.target.value)}
-            disabled={!selectedMake || selectedMake.models.length === 0}
-          >
-            {!selectedMake ? <option value="">Select make first</option> : null}
-            {selectedMake && selectedMake.models.length === 0 ? <option value="">No cataloged models</option> : null}
-            {selectedMake?.models.map((model) => (
-              <option key={model.slug} value={model.slug}>
-                {model.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Year From
-          <input value={yearFrom} onChange={(event) => setYearFrom(event.target.value)} placeholder="2025" />
-        </label>
-        <label>
-          Year To
-          <input value={yearTo} onChange={(event) => setYearTo(event.target.value)} placeholder="2027" />
-        </label>
+        <SearchableSelector
+          label="Make"
+          ariaLabel="Make"
+          query={makeQuery}
+          selectedLabel={selectedMake?.name}
+          placeholder="Type make prefix"
+          options={filteredMakes}
+          emptyMessage={catalog ? "No makes found." : "Loading catalog..."}
+          disabled={isLoadingCatalog || !catalog}
+          onQueryChange={(value) => {
+            setMakeQuery(value);
+            setModelQuery("");
+          }}
+          onSelect={(option) => {
+            setSelectedMakeSlug(option.slug);
+            setMakeQuery("");
+            setSelectedModelSlug("");
+            setModelQuery("");
+          }}
+        />
+        <SearchableSelector
+          label="Model"
+          ariaLabel="Model"
+          query={modelQuery}
+          selectedLabel={selectedModel?.name}
+          placeholder="Type model word"
+          options={filteredModels}
+          emptyMessage={selectedMake ? "No models found." : "Select make first."}
+          disabled={!selectedMake || selectedMake.models.length === 0}
+          onQueryChange={(value) => setModelQuery(value)}
+          onSelect={(option) => {
+            setSelectedModelSlug(option.slug);
+            setModelQuery("");
+          }}
+        />
+        <div className="search-grid__year-group">
+          <label className="search-grid__year-field">
+            Year From
+            <input
+              inputMode="numeric"
+              maxLength={4}
+              value={yearFrom}
+              onChange={(event) => setYearFrom(event.target.value)}
+              placeholder="2025"
+            />
+          </label>
+          <label className="search-grid__year-field">
+            Year To
+            <input
+              inputMode="numeric"
+              maxLength={4}
+              value={yearTo}
+              onChange={(event) => setYearTo(event.target.value)}
+              placeholder="2027"
+            />
+          </label>
+        </div>
         <button type="submit" disabled={!selectedMake}>
           Search Lots
         </button>
@@ -254,12 +441,24 @@ export function SearchPanel({
                       ? ` · ${item.criteria.year_from ?? item.criteria.year_to}-${item.criteria.year_to ?? item.criteria.year_from}`
                       : ""}
                   </p>
-                  {[getDriveTypeLabel(item.criteria.drive_type), getPrimaryDamageLabel(item.criteria.primary_damage)].some(Boolean) ? (
+                  {getSearchFilterLabels({
+                    driveType: item.criteria.drive_type,
+                    primaryDamage: item.criteria.primary_damage,
+                    titleType: item.criteria.title_type,
+                    fuelType: item.criteria.fuel_type,
+                    lotCondition: item.criteria.lot_condition,
+                    odometerRange: item.criteria.odometer_range,
+                  }).length > 0 ? (
                     <p className="muted">
                       Filters:{" "}
-                      {[getDriveTypeLabel(item.criteria.drive_type), getPrimaryDamageLabel(item.criteria.primary_damage)]
-                        .filter((value): value is string => Boolean(value))
-                        .join(" · ")}
+                      {getSearchFilterLabels({
+                        driveType: item.criteria.drive_type,
+                        primaryDamage: item.criteria.primary_damage,
+                        titleType: item.criteria.title_type,
+                        fuelType: item.criteria.fuel_type,
+                        lotCondition: item.criteria.lot_condition,
+                        odometerRange: item.criteria.odometer_range,
+                      }).join(" · ")}
                     </p>
                   ) : null}
                   <p className="muted saved-search-count">{formatLotCount(item.result_count)}</p>
@@ -292,10 +491,21 @@ export function SearchPanel({
       />
       <SearchFiltersModal
         isOpen={isFiltersOpen}
-        filters={{ driveType, primaryDamage }}
-        onApply={({ driveType: nextDriveType, primaryDamage: nextPrimaryDamage }) => {
+        filters={{ driveType, primaryDamage, titleType, fuelType, lotCondition, odometerRange }}
+        onApply={({
+          driveType: nextDriveType,
+          primaryDamage: nextPrimaryDamage,
+          titleType: nextTitleType,
+          fuelType: nextFuelType,
+          lotCondition: nextLotCondition,
+          odometerRange: nextOdometerRange,
+        }: SearchFilterValues) => {
           setDriveType(nextDriveType);
           setPrimaryDamage(nextPrimaryDamage);
+          setTitleType(nextTitleType);
+          setFuelType(nextFuelType);
+          setLotCondition(nextLotCondition);
+          setOdometerRange(nextOdometerRange);
         }}
         onClose={() => setIsFiltersOpen(false)}
       />

@@ -34,6 +34,32 @@ PRIMARY_DAMAGE_CODES = {
     "normal_wear": "DAMAGECODE_NW",
 }
 
+TITLE_TYPE_CODES = {
+    "clean_title": "TITLEGROUP_C",
+    "salvage_title": "TITLEGROUP_S",
+    "non_repairable": "TITLEGROUP_J",
+}
+
+FUEL_TYPE_FILTER_VARIANTS = {
+    "electric": ["ELECTRIC", "Electric"],
+}
+
+LOT_CONDITION_CODES = {
+    "run_and_drive": "CERT-D",
+    "enhanced_vehicles": "CERT-E",
+    "engine_start_program": "CERT-S",
+}
+
+ODOMETER_RANGE_QUERIES = {
+    "under_25000": "odometer_reading_received:[* TO 25000]",
+    "25000_to_50000": "odometer_reading_received:[25000 TO 50000]",
+    "50001_to_75000": "odometer_reading_received:[50001 TO 75000]",
+    "75001_to_100000": "odometer_reading_received:[75001 TO 100000]",
+    "100001_to_150000": "odometer_reading_received:[100001 TO 150000]",
+    "150001_to_200000": "odometer_reading_received:[150001 TO 200000]",
+    "over_200000": "odometer_reading_received:[200000 TO *]",
+}
+
 
 class SearchRequest(BaseModel):
     make: Optional[str] = Field(default=None, min_length=1, max_length=80)
@@ -42,6 +68,10 @@ class SearchRequest(BaseModel):
     model_filter: Optional[str] = Field(default=None, min_length=1, max_length=500)
     drive_type: Optional[str] = Field(default=None, min_length=1, max_length=40)
     primary_damage: Optional[str] = Field(default=None, min_length=1, max_length=40)
+    title_type: Optional[str] = Field(default=None, min_length=1, max_length=40)
+    fuel_type: Optional[str] = Field(default=None, min_length=1, max_length=40)
+    lot_condition: Optional[str] = Field(default=None, min_length=1, max_length=40)
+    odometer_range: Optional[str] = Field(default=None, min_length=1, max_length=40)
     year_from: Optional[int] = Field(default=None, ge=1900, le=2100)
     year_to: Optional[int] = Field(default=None, ge=1900, le=2100)
     lot_number: Optional[str] = Field(default=None, min_length=1, max_length=32)
@@ -99,6 +129,14 @@ class SearchRequest(BaseModel):
             payload["drive_type"] = str(payload["drive_type"]).strip().lower()
         if "primary_damage" in payload:
             payload["primary_damage"] = str(payload["primary_damage"]).strip().lower()
+        if "title_type" in payload:
+            payload["title_type"] = str(payload["title_type"]).strip().lower()
+        if "fuel_type" in payload:
+            payload["fuel_type"] = str(payload["fuel_type"]).strip().lower()
+        if "lot_condition" in payload:
+            payload["lot_condition"] = str(payload["lot_condition"]).strip().lower()
+        if "odometer_range" in payload:
+            payload["odometer_range"] = str(payload["odometer_range"]).strip().lower()
         if "lot_number" in payload:
             payload["lot_number"] = "".join(char for char in str(payload["lot_number"]) if char.isdigit())
         return payload
@@ -128,6 +166,23 @@ class SearchRequest(BaseModel):
             damage_code = PRIMARY_DAMAGE_CODES.get(self.primary_damage.strip().lower())
             if damage_code:
                 filters.append(f"(damage_type_code:{damage_code})")
+        if self.title_type:
+            title_code = TITLE_TYPE_CODES.get(self.title_type.strip().lower())
+            if title_code:
+                filters.append(f"(title_group_code:{title_code})")
+        if self.fuel_type:
+            fuel_variants = FUEL_TYPE_FILTER_VARIANTS.get(self.fuel_type.strip().lower())
+            if fuel_variants:
+                fuel_filters = " OR ".join([f'fuel_type_desc:"{variant}"' for variant in fuel_variants])
+                filters.append(f"({fuel_filters})")
+        if self.lot_condition:
+            condition_code = LOT_CONDITION_CODES.get(self.lot_condition.strip().lower())
+            if condition_code:
+                filters.append(f"(lot_condition_code:{condition_code})")
+        if self.odometer_range:
+            odometer_query = ODOMETER_RANGE_QUERIES.get(self.odometer_range.strip().lower())
+            if odometer_query:
+                filters.append(f"({odometer_query})")
         return filters
 
     def to_external_url(self) -> str:
@@ -154,6 +209,26 @@ class SearchRequest(BaseModel):
             drive_variants = DRIVE_TYPE_FILTER_VARIANTS.get(self.drive_type.strip().lower())
             if drive_variants:
                 search_filters["DRIV"] = [f'drive:"{drive_variants[0]}"']
+        if self.primary_damage:
+            damage_code = PRIMARY_DAMAGE_CODES.get(self.primary_damage.strip().lower())
+            if damage_code:
+                search_filters["DMG"] = [f"damage_type_code:{damage_code}"]
+        if self.title_type:
+            title_code = TITLE_TYPE_CODES.get(self.title_type.strip().lower())
+            if title_code:
+                search_filters["TITL"] = [f"title_group_code:{title_code}"]
+        if self.fuel_type:
+            fuel_variants = FUEL_TYPE_FILTER_VARIANTS.get(self.fuel_type.strip().lower())
+            if fuel_variants:
+                search_filters["FUEL"] = [f'fuel_type_desc:"{fuel_variants[0]}"']
+        if self.lot_condition:
+            condition_code = LOT_CONDITION_CODES.get(self.lot_condition.strip().lower())
+            if condition_code:
+                search_filters["COND"] = [f"lot_condition_code:{condition_code}"]
+        if self.odometer_range:
+            odometer_query = ODOMETER_RANGE_QUERIES.get(self.odometer_range.strip().lower())
+            if odometer_query:
+                search_filters["ODM"] = [odometer_query]
 
         search_criteria = {
             "query": [query_text] if query_text else ["*"],
