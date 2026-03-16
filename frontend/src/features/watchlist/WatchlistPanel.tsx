@@ -48,6 +48,19 @@ export function WatchlistPanel({ items, onAddByLotNumber, onRemove }: Props) {
     }).format(value)} ${currency}`;
   }
 
+  function formatLocalAuctionStart(value: string | null): string {
+    if (!value) {
+      return "—";
+    }
+    return new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  }
+
   function getTrackedLotDetails(item: WatchlistItem) {
     return [
       { label: "Odometer", value: formatDetailValue(item.odometer) },
@@ -82,7 +95,7 @@ export function WatchlistPanel({ items, onAddByLotNumber, onRemove }: Props) {
       },
       {
         label: "Sale",
-        value: item.sale_date ? new Date(item.sale_date).toLocaleDateString() : "—",
+        value: formatLocalAuctionStart(item.sale_date),
       },
     ];
   }

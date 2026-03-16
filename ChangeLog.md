@@ -1,5 +1,19 @@
 # Change Log
 
+## [2026-03-13 18:24] Show tracked lot auction start time in local browser timezone
+- Оновлено `frontend/src/features/watchlist/WatchlistPanel.tsx`: поле `Sale` у `Tracked Lots` тепер показує не лише дату, а локальний `date + time` старту аукціону через browser `Intl.DateTimeFormat`, використовуючи вже наявний `sale_date` timestamp.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression check, що tracked lot card рендерить локальний час старту аукціону для lot із заповненим `sale_date`.
+
+## [2026-03-13 18:14] Add ETag-based conditional polling for lot details and saved searches
+- Оновлено `backend/src/cartrap/modules/copart_provider/{client.py,models.py,service.py}`: додано conditional fetch через `If-None-Match` для `search` і `lot_details`, з підтримкою `304 Not Modified` та поверненням актуального `ETag`.
+- Оновлено `backend/src/cartrap/modules/{watchlist/service.py,monitoring/service.py,search/{repository.py,service.py}}`: `tracked_lots` тепер кешують `detail_etag`, `saved_searches` кешують `search_etag`, а worker-side polling використовує `ETag`, щоб не обробляти важкий payload, коли Copart повертає `304`.
+- Оновлено `backend/tests/{copart/test_http_client.py,monitoring/test_change_detection.py,search/test_saved_search_monitoring.py,test_search_api.py,notifications/test_push_delivery.py,notifications/test_push_subscriptions.py}`: додано покриття для `If-None-Match`, `304` flow і збереження/оновлення `ETag`; verification: `./.venv/bin/pytest backend/tests/copart/test_http_client.py backend/tests/monitoring/test_change_detection.py backend/tests/search/test_saved_search_monitoring.py backend/tests/search/test_search_api.py backend/tests/notifications/test_push_delivery.py backend/tests/notifications/test_push_subscriptions.py` -> `40 passed` (є лише `urllib3` warning про локальний LibreSSL), `npm run test --prefix frontend -- app.test.tsx` -> `13 passed`.
+
+## [2026-03-13 18:03] Add saved-search match-growth push notifications
+- Оновлено `backend/src/cartrap/modules/search/{repository.py,service.py}` і `backend/src/cartrap/worker/main.py`: для `saved_searches` додано `last_checked_at`, фоновий due-poll раз на 15 хвилин і lightweight refresh тільки по `numFound`, без завантаження всіх search result pages.
+- Оновлено `backend/src/cartrap/modules/notifications/service.py`: додано окремий push payload для росту `Matches` у saved searches з текстом `З'явилось <n> нових лотів для пошуку машини <search>`, який відправляється лише коли новий `result_count` більший за збережений.
+- Додано `backend/tests/search/test_saved_search_monitoring.py` і розширено `backend/tests/search/test_search_api.py`: покрито increase/decrease/recent-check flows для saved-search polling і перевірку, що нові `saved_searches` отримують `last_checked_at`; verification: `./.venv/bin/pytest backend/tests/search/test_saved_search_monitoring.py backend/tests/search/test_search_api.py backend/tests/notifications/test_push_delivery.py backend/tests/notifications/test_push_subscriptions.py` -> `29 passed` (є лише `urllib3` warning про локальний LibreSSL), `npm run test --prefix frontend -- app.test.tsx` -> `13 passed`.
+
 ## [2026-03-13 17:39] Move push notifications UI into user settings modal
 - Оновлено `frontend/src/{App.tsx,styles.css}` і `frontend/src/features/{dashboard/DashboardShell.tsx,push/PushSettingsModal.tsx}`: окрема hero-панель `Browser Notifications` прибрана, hero повернуто до двоколонного layout, а весь push UX перенесено в modal `Settings`, який відкривається з кнопки `Settings` на `User` panel.
 - Видалено `frontend/src/features/push/PushPanel.tsx`: старий inline panel більше не рендериться, тому не ламає dashboard layout після розширення push functionality.
@@ -339,3 +353,16 @@
 - Оновлено `frontend/src/features/search/SearchPanel.tsx`: `Saved Searches` тепер рендеряться через той самий shared label/value layout (`Make`, `Model`, `Years`, `Filters`, `Matches`), що й інші informational блоки dashboard.
 - Оновлено `frontend/src/styles.css`: для search form додано явний нижній відступ під `Search Lots`, а saved-search details отримали власний compact detail-grid з тим самим шрифтовим контрактом.
 - Verification: `npm run test --prefix frontend -- app.test.tsx` -> `12 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-16 12:04] Add implementation plan for NAS-backed Copart gateway split
+- Додано `docs/plans/20260316-nas-copart-gateway-split.md` з покроковим планом розділення інтеграції Copart: AWS лишається primary backend + Mongo, а локальний NAS стає окремим `copart-gateway`, який виконує сирі Copart-запити з локальної IP.
+- У плані зафіксовано рекомендовану архітектуру без fallback на direct Copart mode: backend деградує в `offline/live-sync unavailable` режим, worker пропускає sync cycles без падіння process, frontend показує banner про доступність лише локально збережених даних.
+- Окремо винесено rollout-частину для NAS deployment: TLS, bearer auth, IP allowlist, gzip compression, health endpoint і зовнішні кроки з DNS/router/firewall.
+
+## [2026-03-16 12:09] Refine NAS gateway split plan after technical review
+- Оновлено `docs/plans/20260316-nas-copart-gateway-split.md` після review: додано покриття для `saved_search` polling у worker, явну вимогу до shared persisted `live_sync` status між web app і worker, а також окремий акцент на reusable HTTP client/keep-alive між AWS і NAS.
+- Скориговано frontend scope в degraded mode: замість широкого disable live actions перша ітерація фокусується на banner + зрозумілих повідомленнях про live-sync недоступність при збереженні Mongo-backed даних у UI.
+
+## [2026-03-16 12:13] Add private AWS server administration runbook
+- Оновлено `.gitignore`: каталог `docs/private/` додано до ignore, щоб приватна ops-документація не потрапляла в git.
+- Додано `docs/private/aws-server-admin.md` з детальним runbook для AWS/Lightsail сервера: SSH та робочі шляхи, перевірка стану stack, перегляд логів Docker/Caddy, оновлення Docker Engine, тягнення останніх source changes, rebuild/restart compose stack, базові health checks, cleanup і recovery notes.

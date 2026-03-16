@@ -61,9 +61,29 @@ class MonitoringService:
     def _poll_single_lot(self, tracked_lot: dict, now: datetime) -> dict | None:
         provider = self._provider_factory()
         try:
-            fresh_snapshot = provider.fetch_lot(tracked_lot["url"])
+            if hasattr(provider, "fetch_lot_conditional"):
+                fetch_result = provider.fetch_lot_conditional(tracked_lot["url"], etag=tracked_lot.get("detail_etag"))
+            else:
+                fetch_result = None
+                fresh_snapshot = provider.fetch_lot(tracked_lot["url"])
         finally:
             provider.close()
+
+        if fetch_result is not None and fetch_result.not_modified:
+            payload = {"last_checked_at": now}
+            if fetch_result.etag is not None:
+                payload["detail_etag"] = fetch_result.etag
+            self.repository.update_tracked_lot_state(str(tracked_lot["_id"]), payload, updated_at=now)
+            return None
+
+        if fetch_result is not None:
+            fresh_snapshot = fetch_result.snapshot
+            detail_etag = fetch_result.etag
+        else:
+            detail_etag = None
+
+        if fresh_snapshot is None:
+            raise RuntimeError("Conditional lot fetch returned no snapshot.")
 
         latest_snapshot = self.repository.get_latest_snapshot_for_tracked_lot(str(tracked_lot["_id"]))
         next_snapshot = self._snapshot_document(tracked_lot, fresh_snapshot, now)
@@ -72,7 +92,7 @@ class MonitoringService:
         self.repository.update_tracked_lot_state(
             str(tracked_lot["_id"]),
             {
-                **WatchlistService._tracked_lot_state_from_snapshot(fresh_snapshot),
+                **WatchlistService._tracked_lot_state_from_snapshot(fresh_snapshot, detail_etag=detail_etag),
                 "last_checked_at": now,
             },
             updated_at=now,

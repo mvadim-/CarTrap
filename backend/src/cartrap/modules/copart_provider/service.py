@@ -6,7 +6,12 @@ import re
 from typing import Optional
 
 from cartrap.modules.copart_provider.client import CopartHttpClient
-from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSearchPage
+from cartrap.modules.copart_provider.models import (
+    CopartLotFetchResult,
+    CopartLotSnapshot,
+    CopartSearchCountFetchResult,
+    CopartSearchPage,
+)
 from cartrap.modules.copart_provider.normalizer import (
     extract_lot_details,
     extract_search_documents,
@@ -24,15 +29,37 @@ class CopartProvider:
         self._client = client or CopartHttpClient()
 
     def fetch_lot(self, lot_reference: str) -> CopartLotSnapshot:
+        result = self.fetch_lot_conditional(lot_reference)
+        if result.not_modified or result.snapshot is None:
+            raise RuntimeError("Lot snapshot is not available for a 304 response.")
+        return result.snapshot
+
+    def fetch_lot_conditional(self, lot_reference: str, etag: Optional[str] = None) -> CopartLotFetchResult:
         lot_number = self._extract_lot_number(lot_reference)
-        response = self._client.lot_details(lot_number)
-        return normalize_lot_details_payload(extract_lot_details(response))
+        response = self._client.lot_details_with_metadata(lot_number, etag=etag)
+        if response.not_modified:
+            return CopartLotFetchResult(snapshot=None, etag=response.etag, not_modified=True)
+        return CopartLotFetchResult(
+            snapshot=normalize_lot_details_payload(extract_lot_details(response.payload)),
+            etag=response.etag,
+            not_modified=False,
+        )
 
     def search_lots(self, payload: dict) -> CopartSearchPage:
         response = self._client.search(payload)
         return CopartSearchPage(
             results=normalize_search_results(extract_search_documents(response)),
             num_found=extract_search_num_found(response),
+        )
+
+    def fetch_search_count_conditional(self, payload: dict, etag: Optional[str] = None) -> CopartSearchCountFetchResult:
+        response = self._client.search_with_metadata(payload, etag=etag)
+        if response.not_modified:
+            return CopartSearchCountFetchResult(num_found=None, etag=response.etag, not_modified=True)
+        return CopartSearchCountFetchResult(
+            num_found=extract_search_num_found(response.payload),
+            etag=response.etag,
+            not_modified=False,
         )
 
     def fetch_search_keywords(self) -> dict:

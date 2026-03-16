@@ -39,6 +39,16 @@ function buildTrackedLot(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function formatExpectedLocalAuctionStart(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 describe("CarTrap app", () => {
   let lastSearchPayload: Record<string, unknown> | null;
 
@@ -129,6 +139,7 @@ describe("CarTrap app", () => {
                           "https://img.copart.com/99251295-detail.jpg",
                           "https://img.copart.com/99251295-detail-2.jpg",
                         ],
+                        sale_date: "2026-03-13T18:30:00Z",
                         vin: "3FMTK3SU5SMA00001",
                       })
                     : body.lot_number === "87654321"
@@ -534,6 +545,7 @@ describe("CarTrap app", () => {
   });
 
   it("adds lot to watchlist by lot number", async () => {
+    const localAuctionStart = formatExpectedLocalAuctionStart("2026-03-13T18:30:00Z");
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
@@ -550,6 +562,8 @@ describe("CarTrap app", () => {
     expect(screen.getByText(/36,500 USD/i)).toBeTruthy();
     expect(screen.getByText(/Has Key:/i)).toBeTruthy();
     expect(screen.getByText(/^Yes$/i)).toBeTruthy();
+    expect(screen.getByText(/Sale:/i)).toBeTruthy();
+    expect(screen.getByText(localAuctionStart)).toBeTruthy();
     expect(screen.getByText(/Drivetrain:/i)).toBeTruthy();
     expect(screen.getByText(/^AWD$/i)).toBeTruthy();
     expect(screen.getByText(/Highlights:/i)).toBeTruthy();

@@ -152,6 +152,16 @@ class NotificationService:
         }
         return self._send_payload_to_owner(owner_user["id"], payload)
 
+    def send_saved_search_match_notification(self, event: dict) -> dict:
+        payload = {
+            "title": "CarTrap",
+            "body": f"З'явилось {event['new_matches']} нових лотів для пошуку машини {event['search_title']}",
+            "saved_search_id": event["saved_search_id"],
+            "result_count": event["result_count"],
+            "new_matches": event["new_matches"],
+        }
+        return self._send_payload_to_owner(event["owner_user_id"], payload)
+
     def send_lot_change_notification(self, event: dict) -> dict:
         payload = {
             "title": f"Lot {event['lot_number']} updated",

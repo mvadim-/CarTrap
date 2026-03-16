@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
 import httpx
@@ -13,6 +14,13 @@ DEFAULT_HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "User-Agent": "/4.5.4 (Macintosh; OS X/26.3.1) GCDHTTPRequest",
 }
+
+
+@dataclass
+class CopartHttpPayloadResponse:
+    payload: Optional[dict]
+    etag: Optional[str]
+    not_modified: bool = False
 
 
 class CopartHttpClient:
@@ -54,18 +62,22 @@ class CopartHttpClient:
         self._site_code = settings.copart_api_site_code if site_code is None else site_code
 
     def search(self, payload: dict) -> dict:
-        response = self._client.post(self._search_path, json=payload, headers=self._auth_headers())
-        response.raise_for_status()
-        return response.json()
+        response = self.search_with_metadata(payload)
+        if response.not_modified or response.payload is None:
+            raise RuntimeError("Search payload is not available for a 304 response.")
+        return response.payload
+
+    def search_with_metadata(self, payload: dict, etag: Optional[str] = None) -> CopartHttpPayloadResponse:
+        return self._request_json("POST", self._search_path, json=payload, etag=etag)
 
     def lot_details(self, lot_number: str) -> dict:
-        response = self._client.post(
-            self._lot_details_path,
-            json={"lotNumber": int(lot_number)},
-            headers=self._auth_headers(),
-        )
-        response.raise_for_status()
-        return response.json()
+        response = self.lot_details_with_metadata(lot_number)
+        if response.not_modified or response.payload is None:
+            raise RuntimeError("Lot details payload is not available for a 304 response.")
+        return response.payload
+
+    def lot_details_with_metadata(self, lot_number: str, etag: Optional[str] = None) -> CopartHttpPayloadResponse:
+        return self._request_json("POST", self._lot_details_path, json={"lotNumber": int(lot_number)}, etag=etag)
 
     def search_keywords(self) -> dict:
         response = self._client.get(self._search_keywords_path, headers=self._auth_headers())
@@ -84,3 +96,20 @@ class CopartHttpClient:
             "Cookie": self._cookie,
             "sitecode": self._site_code,
         }
+
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Optional[dict] = None,
+        etag: Optional[str] = None,
+    ) -> CopartHttpPayloadResponse:
+        headers = self._auth_headers()
+        if etag:
+            headers["If-None-Match"] = etag
+        response = self._client.request(method, path, json=json, headers=headers)
+        if response.status_code == httpx.codes.NOT_MODIFIED:
+            return CopartHttpPayloadResponse(payload=None, etag=response.headers.get("etag") or etag, not_modified=True)
+        response.raise_for_status()
+        return CopartHttpPayloadResponse(payload=response.json(), etag=response.headers.get("etag"), not_modified=False)

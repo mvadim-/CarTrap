@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -14,6 +14,7 @@ from pymongo.database import Database
 
 from cartrap.modules.copart_provider.models import CopartSearchResult
 from cartrap.modules.copart_provider.service import CopartProvider
+from cartrap.modules.notifications.service import NotificationService
 from cartrap.modules.search.catalog_refresh import SearchCatalogRefreshJob
 from cartrap.modules.search.repository import SavedSearchRepository, SearchCatalogRepository
 from cartrap.modules.search.schemas import SavedSearchCreateRequest, SearchRequest
@@ -25,6 +26,7 @@ CATALOG_DATA_DIR = Path(__file__).with_name("data")
 CATALOG_JSON_PATH = CATALOG_DATA_DIR / "copart_make_model_catalog.json"
 CATALOG_OVERRIDES_PATH = CATALOG_DATA_DIR / "copart_make_model_overrides.json"
 SEARCH_PAGE_SIZE = 20
+SAVED_SEARCH_POLL_INTERVAL_MINUTES = 15
 
 
 class SearchService:
@@ -35,6 +37,7 @@ class SearchService:
         watchlist_service_factory: Optional[Callable[[], WatchlistService]] = None,
         catalog_refresh_factory: Optional[Callable[[], SearchCatalogRefreshJob]] = None,
         catalog_seed_path: Optional[Path] = None,
+        notification_service: Optional[NotificationService] = None,
     ) -> None:
         self._database = database
         self._provider_factory = provider_factory or CopartProvider
@@ -43,6 +46,7 @@ class SearchService:
         self._catalog_repository = SearchCatalogRepository(database)
         self._saved_search_repository = SavedSearchRepository(database)
         self._saved_search_repository.ensure_indexes()
+        self._notification_service = notification_service
         self._catalog_refresh_factory = catalog_refresh_factory or (
             lambda: SearchCatalogRefreshJob(provider_factory=self._provider_factory, overrides_path=CATALOG_OVERRIDES_PATH)
         )
@@ -94,7 +98,9 @@ class SearchService:
                 "label": payload.label.strip() if payload.label else payload.display_title(),
                 "criteria": criteria,
                 "result_count": payload.result_count,
+                "search_etag": None,
                 "criteria_key": criteria_key,
+                "last_checked_at": now,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -143,6 +149,103 @@ class SearchService:
         if stored_catalog is None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Search catalog refresh failed.")
         return self.serialize_catalog(stored_catalog)
+
+    def poll_due_saved_searches(self, now: datetime | None = None) -> dict:
+        current_time = now or datetime.now(timezone.utc)
+        due_before = current_time - timedelta(minutes=SAVED_SEARCH_POLL_INTERVAL_MINUTES)
+        processed = 0
+        updated = 0
+        failed = 0
+        notified = 0
+        events: list[dict] = []
+
+        for saved_search in self._saved_search_repository.list_due_saved_searches(due_before):
+            processed += 1
+            try:
+                event = self._poll_single_saved_search(saved_search, current_time)
+            except Exception:
+                failed += 1
+                logger.exception("Saved search polling failed for saved_search_id=%s", saved_search.get("_id"))
+                continue
+
+            if event is None:
+                continue
+
+            updated += 1
+            events.append(event)
+
+            if event["new_matches"] > 0 and self._notification_service is not None:
+                delivery = self._notification_service.send_saved_search_match_notification(event)
+                notified += delivery["delivered"]
+
+        return {
+            "processed": processed,
+            "updated": updated,
+            "failed": failed,
+            "notified": notified,
+            "events": events,
+        }
+
+    def _poll_single_saved_search(self, saved_search: dict, now: datetime) -> dict | None:
+        criteria = SearchRequest(**saved_search["criteria"])
+        fetch_result = self.fetch_result_count(criteria, etag=saved_search.get("search_etag"))
+        if fetch_result["not_modified"]:
+            self._saved_search_repository.update_saved_search_poll_state(
+                str(saved_search["_id"]),
+                result_count=int(saved_search.get("result_count") or 0),
+                last_checked_at=now,
+                updated_at=now,
+                search_etag=fetch_result.get("etag"),
+            )
+            return None
+
+        next_result_count = fetch_result["result_count"]
+        previous_result_count = saved_search.get("result_count")
+        self._saved_search_repository.update_saved_search_poll_state(
+            str(saved_search["_id"]),
+            result_count=next_result_count,
+            last_checked_at=now,
+            updated_at=now,
+            search_etag=fetch_result.get("etag"),
+        )
+
+        if previous_result_count == next_result_count:
+            return None
+
+        display_title = criteria.display_title() or saved_search.get("label") or "Saved Search"
+        new_matches = 0
+        if previous_result_count is not None and next_result_count > previous_result_count:
+            new_matches = next_result_count - previous_result_count
+
+        return {
+            "saved_search_id": str(saved_search["_id"]),
+            "owner_user_id": saved_search["owner_user_id"],
+            "search_label": saved_search.get("label") or display_title,
+            "search_title": display_title,
+            "previous_result_count": previous_result_count,
+            "result_count": next_result_count,
+            "new_matches": new_matches,
+        }
+
+    def fetch_result_count(self, payload: SearchRequest, etag: str | None = None) -> dict:
+        source_request = payload.to_api_request().to_payload()
+        provider = self._provider_factory()
+        try:
+            if hasattr(provider, "fetch_search_count_conditional"):
+                result = provider.fetch_search_count_conditional(source_request, etag=etag)
+                if result.not_modified:
+                    return {"result_count": None, "etag": result.etag, "not_modified": True}
+                return {"result_count": int(result.num_found or 0), "etag": result.etag, "not_modified": False}
+            first_page = provider.search_lots(source_request)
+        except Exception as exc:
+            logger.exception("Copart result-count fetch failed for source_request=%s", source_request)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to fetch search results from Copart.",
+            ) from exc
+        finally:
+            provider.close()
+        return {"result_count": first_page.num_found, "etag": None, "not_modified": False}
 
     @staticmethod
     def serialize_result(item: CopartSearchResult) -> dict:

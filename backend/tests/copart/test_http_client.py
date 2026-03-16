@@ -50,6 +50,33 @@ def test_client_posts_json_payload_with_required_headers() -> None:
     assert captured_body == {"MISC": ["lot_number:12345678"], "pageNumber": 1}
 
 
+def test_client_search_with_metadata_uses_if_none_match_and_handles_304() -> None:
+    captured_headers: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_headers.update(dict(request.headers))
+        return httpx.Response(304, headers={"etag": "\"search-etag-2\""})
+
+    client = CopartHttpClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://mmember.copart.com",
+        search_path="/srch/?services=bidIncrementsBySiteV2",
+        search_keywords_path="/mcs/v2/public/data/search/keywords",
+        lot_details_path="/lots-api/v1/lot-details?services=bidIncrementsBySiteV2",
+        device_name="iPhone 15 Pro Max",
+        d_token="token-123",
+        cookie="SessionID=abc",
+        site_code="CPRTUS",
+    )
+
+    response = client.search_with_metadata({"MISC": ["lot_number:12345678"], "pageNumber": 1}, etag="\"search-etag-1\"")
+
+    assert response.not_modified is True
+    assert response.payload is None
+    assert response.etag == "\"search-etag-2\""
+    assert captured_headers["if-none-match"] == "\"search-etag-1\""
+
+
 def test_client_posts_lot_details_payload_with_required_headers() -> None:
     requested_urls: list[str] = []
     captured_body: dict = {}
@@ -76,6 +103,33 @@ def test_client_posts_lot_details_payload_with_required_headers() -> None:
     assert response["lotDetails"]["lotNumber"] == 76880725
     assert requested_urls == ["https://mmember.copart.com/lots-api/v1/lot-details?services=bidIncrementsBySiteV2"]
     assert captured_body == {"lotNumber": 76880725}
+
+
+def test_client_lot_details_with_metadata_uses_if_none_match_and_handles_304() -> None:
+    captured_headers: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_headers.update(dict(request.headers))
+        return httpx.Response(304, headers={"etag": "\"lot-etag-2\""})
+
+    client = CopartHttpClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://mmember.copart.com",
+        search_path="/srch/?services=bidIncrementsBySiteV2",
+        search_keywords_path="/mcs/v2/public/data/search/keywords",
+        lot_details_path="/lots-api/v1/lot-details?services=bidIncrementsBySiteV2",
+        device_name="iPhone 15 Pro Max",
+        d_token="token-123",
+        cookie="SessionID=abc",
+        site_code="CPRTUS",
+    )
+
+    response = client.lot_details_with_metadata("76880725", etag="\"lot-etag-1\"")
+
+    assert response.not_modified is True
+    assert response.payload is None
+    assert response.etag == "\"lot-etag-2\""
+    assert captured_headers["if-none-match"] == "\"lot-etag-1\""
 
 
 def test_client_fetches_search_keywords_with_required_headers() -> None:

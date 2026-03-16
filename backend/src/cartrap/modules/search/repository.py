@@ -38,6 +38,7 @@ class SavedSearchRepository:
     def ensure_indexes(self) -> None:
         self.saved_searches.create_index([("owner_user_id", 1), ("criteria_key", 1)], unique=True)
         self.saved_searches.create_index([("owner_user_id", 1), ("created_at", -1)])
+        self.saved_searches.create_index("last_checked_at")
 
     def create_saved_search(self, payload: dict) -> dict:
         document = dict(payload)
@@ -60,3 +61,39 @@ class SavedSearchRepository:
 
     def delete_saved_search(self, saved_search_id: str) -> None:
         self.saved_searches.delete_one({"_id": ObjectId(saved_search_id)})
+
+    def list_due_saved_searches(self, due_before: datetime) -> list[dict]:
+        return list(
+            self.saved_searches.find(
+                {
+                    "$or": [
+                        {"last_checked_at": {"$exists": False}},
+                        {"last_checked_at": None},
+                        {"last_checked_at": {"$lte": due_before}},
+                    ]
+                }
+            ).sort("created_at", 1)
+        )
+
+    def update_saved_search_poll_state(
+        self,
+        saved_search_id: str,
+        *,
+        result_count: int,
+        last_checked_at: datetime,
+        updated_at: datetime,
+        search_etag: Optional[str] = None,
+    ) -> dict:
+        object_id = ObjectId(saved_search_id)
+        self.saved_searches.update_one(
+            {"_id": object_id},
+            {
+                "$set": {
+                    "result_count": result_count,
+                    "last_checked_at": last_checked_at,
+                    "search_etag": search_etag,
+                    "updated_at": updated_at,
+                }
+            },
+        )
+        return self.saved_searches.find_one({"_id": object_id})

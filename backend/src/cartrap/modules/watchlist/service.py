@@ -38,7 +38,7 @@ class WatchlistService:
         self._provider_factory = provider_factory or CopartProvider
 
     def add_tracked_lot(self, owner_user: dict, lot_url: str) -> dict:
-        snapshot = self._fetch_snapshot(lot_url)
+        snapshot, detail_etag = self._fetch_snapshot(lot_url)
         existing = self.repository.find_tracked_lot_by_owner_and_lot_number(owner_user["id"], snapshot.lot_number)
         if existing is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Lot is already in watchlist.")
@@ -50,7 +50,7 @@ class WatchlistService:
                 "lot_number": snapshot.lot_number,
                 "url": str(snapshot.url),
                 "title": snapshot.title,
-                **self._tracked_lot_state_from_snapshot(snapshot),
+                **self._tracked_lot_state_from_snapshot(snapshot, detail_etag=detail_etag),
                 "last_checked_at": now,
                 "active": True,
                 "created_at": now,
@@ -91,10 +91,15 @@ class WatchlistService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked lot not found.")
         self.repository.delete_tracked_lot(tracked_lot_id)
 
-    def _fetch_snapshot(self, lot_url: str) -> CopartLotSnapshot:
+    def _fetch_snapshot(self, lot_url: str) -> tuple[CopartLotSnapshot, str | None]:
         provider = self._provider_factory()
         try:
-            return provider.fetch_lot(lot_url)
+            if hasattr(provider, "fetch_lot_conditional"):
+                result = provider.fetch_lot_conditional(lot_url)
+                if result.snapshot is None:
+                    raise RuntimeError("Conditional lot fetch returned no snapshot.")
+                return result.snapshot, result.etag
+            return provider.fetch_lot(lot_url), None
         except HTTPException:
             raise
         except Exception as exc:
@@ -114,12 +119,12 @@ class WatchlistService:
             return tracked_lot
 
         try:
-            snapshot = self._fetch_snapshot(tracked_lot["url"])
+            snapshot, detail_etag = self._fetch_snapshot(tracked_lot["url"])
         except HTTPException:
             logger.warning("Skipping watchlist state backfill for tracked_lot_id=%s", tracked_lot.get("_id"))
             return tracked_lot
 
-        payload = self._tracked_lot_state_from_snapshot(snapshot)
+        payload = self._tracked_lot_state_from_snapshot(snapshot, detail_etag=detail_etag)
         if not needs_media_backfill:
             payload.pop("thumbnail_url", None)
             payload.pop("image_urls", None)
@@ -133,8 +138,8 @@ class WatchlistService:
         return {**tracked_lot, **payload}
 
     @staticmethod
-    def _tracked_lot_state_from_snapshot(snapshot: CopartLotSnapshot) -> dict:
-        return {
+    def _tracked_lot_state_from_snapshot(snapshot: CopartLotSnapshot, detail_etag: str | None = None) -> dict:
+        payload = {
             "thumbnail_url": str(snapshot.thumbnail_url) if snapshot.thumbnail_url else None,
             "image_urls": [str(url) for url in snapshot.image_urls],
             "odometer": snapshot.odometer,
@@ -151,6 +156,9 @@ class WatchlistService:
             "buy_now_price": snapshot.buy_now_price,
             "currency": snapshot.currency,
         }
+        if detail_etag is not None:
+            payload["detail_etag"] = detail_etag
+        return payload
 
     @staticmethod
     def serialize_tracked_lot(document: dict) -> dict:

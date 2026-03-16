@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sys
 
+from bson import ObjectId
 import mongomock
 
 
@@ -31,6 +32,25 @@ class FakeProvider:
         snapshot = self._snapshots[min(self._index, len(self._snapshots) - 1)]
         self._index += 1
         return snapshot
+
+    def close(self) -> None:
+        return None
+
+
+class EtagAwareProvider:
+    def __init__(self, snapshot: CopartLotSnapshot | None, *, not_modified: bool, etag: str | None) -> None:
+        self._snapshot = snapshot
+        self._not_modified = not_modified
+        self._etag = etag
+
+    def fetch_lot_conditional(self, url: str, etag: str | None = None):
+        del url
+        del etag
+        return type(
+            "FetchResult",
+            (),
+            {"snapshot": self._snapshot, "etag": self._etag, "not_modified": self._not_modified},
+        )()
 
     def close(self) -> None:
         return None
@@ -164,4 +184,48 @@ def test_monitoring_service_counts_failures_without_overwriting_state() -> None:
     assert result["updated"] == 0
     assert result["failed"] == 1
     assert tracked_lot["status"] == "upcoming"
+    assert database["lot_snapshots"].count_documents({"tracked_lot_id": created["tracked_lot"]["id"]}) == 1
+
+
+def test_monitoring_service_skips_snapshot_creation_when_lot_etag_is_not_modified() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    initial_snapshot = CopartLotSnapshot(
+        lot_number="12345678",
+        title="2020 TOYOTA CAMRY SE",
+        url="https://www.copart.com/lot/12345678",
+        thumbnail_url=None,
+        image_urls=[],
+        odometer="10,000 ACTUAL",
+        primary_damage="FRONT END",
+        estimated_retail_value=35500.0,
+        has_key=False,
+        drivetrain="FWD",
+        highlights=["Run and Drive"],
+        vin="1FA6P8TH0J5100001",
+        status="upcoming",
+        raw_status="Upcoming",
+        sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+        current_bid=1000.0,
+        buy_now_price=None,
+        currency="USD",
+    )
+    watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
+    created = watchlist_service.add_tracked_lot({"id": "user-4"}, "https://www.copart.com/lot/12345678")
+    database["tracked_lots"].update_one(
+        {"_id": ObjectId(created["tracked_lot"]["id"])},
+        {"$set": {"detail_etag": "\"lot-etag-1\""}},
+    )
+    monitoring = MonitoringService(
+        database,
+        provider_factory=lambda: EtagAwareProvider(None, not_modified=True, etag="\"lot-etag-2\""),
+    )
+
+    result = monitoring.poll_due_lots(now=datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc))
+
+    assert result["processed"] == 1
+    assert result["updated"] == 0
+    assert result["failed"] == 0
+    tracked_lot = database["tracked_lots"].find_one({"_id": ObjectId(created["tracked_lot"]["id"])})
+    assert tracked_lot["detail_etag"] == "\"lot-etag-2\""
+    assert tracked_lot["last_checked_at"] == datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc)
     assert database["lot_snapshots"].count_documents({"tracked_lot_id": created["tracked_lot"]["id"]}) == 1

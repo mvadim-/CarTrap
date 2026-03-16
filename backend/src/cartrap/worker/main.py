@@ -9,6 +9,7 @@ from cartrap.config import get_settings
 from cartrap.db.mongo import MongoManager
 from cartrap.modules.monitoring.service import MonitoringService
 from cartrap.modules.notifications.service import NotificationService, build_web_push_sender
+from cartrap.modules.search.service import SearchService
 
 
 LOGGER = logging.getLogger(__name__)
@@ -27,16 +28,22 @@ def run_polling_loop(sleep_seconds: int = 30) -> None:
         vapid_subject=settings.vapid_subject,
     )
     monitoring_service = MonitoringService(mongo.database, notification_service=notification_service)
+    search_service = SearchService(mongo.database, notification_service=notification_service)
 
     try:
         while True:
             result = monitoring_service.poll_due_lots()
+            saved_search_result = search_service.poll_due_saved_searches()
             LOGGER.info(
                 "Worker poll cycle complete",
                 extra={
-                    "processed": result["processed"],
-                    "updated": result["updated"],
-                    "failed": result["failed"],
+                    "watchlist_processed": result["processed"],
+                    "watchlist_updated": result["updated"],
+                    "watchlist_failed": result["failed"],
+                    "saved_search_processed": saved_search_result["processed"],
+                    "saved_search_updated": saved_search_result["updated"],
+                    "saved_search_failed": saved_search_result["failed"],
+                    "saved_search_notified": saved_search_result["notified"],
                 },
             )
             time.sleep(sleep_seconds)

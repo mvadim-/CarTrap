@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
@@ -65,3 +66,17 @@ class CopartSearchResult(BaseModel):
 class CopartSearchPage(BaseModel):
     results: list[CopartSearchResult]
     num_found: int = 0
+
+
+@dataclass
+class CopartLotFetchResult:
+    snapshot: Optional[CopartLotSnapshot]
+    etag: Optional[str]
+    not_modified: bool = False
+
+
+@dataclass
+class CopartSearchCountFetchResult:
+    num_found: Optional[int]
+    etag: Optional[str]
+    not_modified: bool = False

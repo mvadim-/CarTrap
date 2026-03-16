@@ -310,6 +310,9 @@ def test_user_can_save_and_list_saved_searches(client: TestClient) -> None:
             "/api/search/saved",
             headers={"Authorization": f"Bearer {user_token}"},
         )
+        stored_saved_search = client.app.state.mongo.database["saved_searches"].find_one(
+            {"label": "FORD MUSTANG MACH-E 2025-2027"}
+        )
 
     assert create_response.status_code == 201
     assert create_response.json()["saved_search"]["label"] == "FORD MUSTANG MACH-E 2025-2027"
@@ -324,6 +327,7 @@ def test_user_can_save_and_list_saved_searches(client: TestClient) -> None:
     assert create_response.json()["saved_search"]["result_count"] == 21
     assert list_response.status_code == 200
     assert len(list_response.json()["items"]) == 1
+    assert stored_saved_search["last_checked_at"] is not None
     assert list_response.json()["items"][0]["criteria"]["model"] == "MUSTANG MACH-E"
     assert list_response.json()["items"][0]["criteria"]["drive_type"] == "all_wheel_drive"
     assert list_response.json()["items"][0]["criteria"]["title_type"] == "salvage_title"
