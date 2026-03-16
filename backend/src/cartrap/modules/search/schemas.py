@@ -259,6 +259,10 @@ class SearchResponse(BaseModel):
     source_request: dict
 
 
+class SavedSearchCachedResultResponse(SearchResultResponse):
+    is_new: bool = False
+
+
 class SearchCatalogModelResponse(BaseModel):
     slug: str
     name: str
@@ -295,6 +299,7 @@ class SearchCatalogResponse(BaseModel):
 class SavedSearchCreateRequest(SearchRequest):
     label: Optional[str] = Field(default=None, min_length=1, max_length=120)
     result_count: Optional[int] = Field(default=None, ge=0)
+    seed_results: list[SearchResultResponse] = Field(default_factory=list)
 
 
 class SavedSearchResponse(BaseModel):
@@ -303,6 +308,9 @@ class SavedSearchResponse(BaseModel):
     criteria: SearchRequest
     external_url: HttpUrl
     result_count: Optional[int] = None
+    cached_result_count: Optional[int] = None
+    new_count: int = 0
+    last_synced_at: Optional[datetime] = None
     created_at: datetime
 
 
@@ -312,6 +320,15 @@ class SavedSearchListResponse(BaseModel):
 
 class SavedSearchCreateResponse(BaseModel):
     saved_search: SavedSearchResponse
+
+
+class SavedSearchViewResponse(BaseModel):
+    saved_search: SavedSearchResponse
+    results: list[SavedSearchCachedResultResponse] = Field(default_factory=list)
+    cached_result_count: int = 0
+    new_count: int = 0
+    last_synced_at: Optional[datetime] = None
+    seen_at: Optional[datetime] = None
 
 
 class AddFromSearchRequest(BaseModel):

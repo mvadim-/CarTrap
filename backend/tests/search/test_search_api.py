@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
+from bson import ObjectId
 import mongomock
 from fastapi.testclient import TestClient
 import pytest
@@ -346,6 +347,147 @@ def test_user_can_save_and_list_saved_searches(client: TestClient) -> None:
     assert list_response.json()["items"][0]["criteria"]["odometer_range"] == "under_25000"
     assert list_response.json()["items"][0]["external_url"].startswith("https://www.copart.com/lotSearchResults?")
     assert list_response.json()["items"][0]["result_count"] == 21
+
+
+def test_save_search_seeds_cached_results_without_extra_live_request(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "seed-cache@example.com", "SeedCachePass123")
+        seed_results = [result.model_dump(mode="json") for result in client.app.state.fake_provider._results]
+        create_response = client.post(
+            "/api/search/saved",
+            json={
+                "make": "Ford",
+                "model": "Mustang Mach-E",
+                "result_count": 2,
+                "seed_results": seed_results,
+            },
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        saved_search_id = create_response.json()["saved_search"]["id"]
+        cache_document = client.app.state.mongo.database["saved_search_results_cache"].find_one(
+            {"saved_search_id": ObjectId(saved_search_id)}
+        )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["saved_search"]["cached_result_count"] == 2
+    assert create_response.json()["saved_search"]["new_count"] == 0
+    assert create_response.json()["saved_search"]["last_synced_at"] is not None
+    assert cache_document is not None
+    assert len(cache_document["results"]) == 2
+    assert cache_document["new_lot_numbers"] == []
+    assert cache_document["seen_at"] is not None
+    assert client.app.state.fake_provider.search_payloads == []
+
+
+def test_view_saved_search_returns_cached_results_and_clears_new_markers(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "view-cache@example.com", "ViewCachePass123")
+        seed_results = [result.model_dump(mode="json") for result in client.app.state.fake_provider._results]
+        create_response = client.post(
+            "/api/search/saved",
+            json={
+                "make": "Ford",
+                "model": "Mustang Mach-E",
+                "result_count": 2,
+                "seed_results": seed_results,
+            },
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        saved_search_id = create_response.json()["saved_search"]["id"]
+        client.app.state.mongo.database["saved_search_results_cache"].update_one(
+            {"saved_search_id": ObjectId(saved_search_id)},
+            {"$set": {"new_lot_numbers": ["87654321"], "seen_at": None}},
+        )
+
+        view_response = client.post(
+            f"/api/search/saved/{saved_search_id}/view",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        cache_document = client.app.state.mongo.database["saved_search_results_cache"].find_one(
+            {"saved_search_id": ObjectId(saved_search_id)}
+        )
+
+    assert view_response.status_code == 200
+    assert view_response.json()["cached_result_count"] == 2
+    assert view_response.json()["new_count"] == 1
+    assert view_response.json()["results"][0]["is_new"] is False
+    assert view_response.json()["results"][1]["is_new"] is True
+    assert view_response.json()["saved_search"]["new_count"] == 0
+    assert cache_document is not None
+    assert cache_document["new_lot_numbers"] == []
+    assert cache_document["seen_at"] is not None
+
+
+def test_refresh_saved_search_live_updates_cache_and_saved_search_metadata(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "refresh-cache@example.com", "RefreshCachePass123")
+        create_response = client.post(
+            "/api/search/saved",
+            json={"make": "Ford", "model": "Mustang Mach-E"},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        saved_search_id = create_response.json()["saved_search"]["id"]
+
+        refresh_response = client.post(
+            f"/api/search/saved/{saved_search_id}/refresh-live",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        cache_document = client.app.state.mongo.database["saved_search_results_cache"].find_one(
+            {"saved_search_id": ObjectId(saved_search_id)}
+        )
+        saved_search_document = client.app.state.mongo.database["saved_searches"].find_one({"_id": ObjectId(saved_search_id)})
+
+    assert refresh_response.status_code == 200
+    assert refresh_response.json()["cached_result_count"] == 2
+    assert refresh_response.json()["new_count"] == 0
+    assert len(refresh_response.json()["results"]) == 2
+    assert refresh_response.json()["saved_search"]["cached_result_count"] == 2
+    assert refresh_response.json()["saved_search"]["result_count"] == 2
+    assert cache_document is not None
+    assert cache_document["result_count"] == 2
+    assert cache_document["seen_at"] is not None
+    assert saved_search_document is not None
+    assert saved_search_document["result_count"] == 2
+    assert len(client.app.state.fake_provider.search_payloads) == 1
+
+
+def test_saved_search_view_and_refresh_are_owner_scoped_and_return_not_found(client: TestClient) -> None:
+    with client:
+        owner_token = _create_user(client, "saved-owner@example.com", "SavedOwnerPass123")
+        other_token = _create_user(client, "saved-other@example.com", "SavedOtherPass123")
+        create_response = client.post(
+            "/api/search/saved",
+            json={"make": "Ford", "model": "Mustang Mach-E"},
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        saved_search_id = create_response.json()["saved_search"]["id"]
+        missing_id = str(ObjectId())
+
+        other_view_response = client.post(
+            f"/api/search/saved/{saved_search_id}/view",
+            headers={"Authorization": f"Bearer {other_token}"},
+        )
+        other_refresh_response = client.post(
+            f"/api/search/saved/{saved_search_id}/refresh-live",
+            headers={"Authorization": f"Bearer {other_token}"},
+        )
+        missing_view_response = client.post(
+            f"/api/search/saved/{missing_id}/view",
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        missing_refresh_response = client.post(
+            f"/api/search/saved/{missing_id}/refresh-live",
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+
+    assert other_view_response.status_code == 404
+    assert other_view_response.json()["detail"] == "Saved search not found."
+    assert other_refresh_response.status_code == 404
+    assert other_refresh_response.json()["detail"] == "Saved search not found."
+    assert missing_view_response.status_code == 404
+    assert missing_view_response.json()["detail"] == "Saved search not found."
+    assert missing_refresh_response.status_code == 404
+    assert missing_refresh_response.json()["detail"] == "Saved search not found."
 
 
 def test_user_can_delete_saved_search(client: TestClient) -> None:

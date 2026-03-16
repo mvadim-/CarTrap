@@ -6,6 +6,7 @@ import type {
   SearchCatalogMake,
   SearchCatalogModel,
   SearchResult,
+  SavedSearchResultsResponse,
 } from "../../types";
 import { SearchFiltersModal } from "./SearchFiltersModal";
 import { SearchResultsModal } from "./SearchResultsModal";
@@ -136,23 +137,35 @@ type SearchPayload = {
 type Props = {
   catalog: SearchCatalog | null;
   isLoadingCatalog: boolean;
-  results: SearchResult[];
-  totalResults: number;
   savedSearches: SavedSearch[];
-  onSearch: (payload: SearchPayload) => Promise<void>;
-  onSaveSearch: (payload: SearchPayload) => Promise<void>;
+  onSearch: (payload: SearchPayload) => Promise<{ results: SearchResult[]; total_results: number }>;
+  onSaveSearch: (payload: SearchPayload & { seedResults?: SearchResult[]; totalResults?: number }) => Promise<SavedSearch>;
+  onViewSavedSearch: (id: string) => Promise<SavedSearchResultsResponse>;
+  onRefreshSavedSearch: (id: string) => Promise<SavedSearchResultsResponse>;
   onDeleteSavedSearch: (id: string) => Promise<void>;
   onAddFromSearch: (lotUrl: string) => Promise<void>;
+};
+
+type SearchModalState = {
+  isOpen: boolean;
+  mode: "manual" | "saved";
+  title: string;
+  results: SearchResult[];
+  totalResults: number;
+  canSave: boolean;
+  savedSearchId: string | null;
+  lastSyncedAt: string | null;
+  refreshError: string | null;
 };
 
 export function SearchPanel({
   catalog,
   isLoadingCatalog,
-  results,
-  totalResults,
   savedSearches,
   onSearch,
   onSaveSearch,
+  onViewSavedSearch,
+  onRefreshSavedSearch,
   onDeleteSavedSearch,
   onAddFromSearch,
 }: Props) {
@@ -171,6 +184,17 @@ export function SearchPanel({
   const [lotCondition, setLotCondition] = useState<string | undefined>(undefined);
   const [odometerRange, setOdometerRange] = useState<string | undefined>(undefined);
   const [lastSubmittedPayload, setLastSubmittedPayload] = useState<SearchPayload | null>(null);
+  const [searchModal, setSearchModal] = useState<SearchModalState>({
+    isOpen: false,
+    mode: "manual",
+    title: "Copart Search Results",
+    results: [],
+    totalResults: 0,
+    canSave: false,
+    savedSearchId: null,
+    lastSyncedAt: null,
+    refreshError: null,
+  });
 
   const filteredMakes = catalog?.makes.filter((item) => matchesMakeQuery(item.name, makeQuery)) ?? [];
   const selectedMake: SearchCatalogMake | null = catalog?.makes.find((item) => item.slug === selectedMakeSlug) ?? null;
@@ -257,8 +281,19 @@ export function SearchPanel({
   }
 
   async function runSearch(payload: SearchPayload) {
-    await onSearch(payload);
+    const response = await onSearch(payload);
     setLastSubmittedPayload(payload);
+    setSearchModal({
+      isOpen: true,
+      mode: "manual",
+      title: "Copart Search Results",
+      results: response.results,
+      totalResults: response.total_results,
+      canSave: true,
+      savedSearchId: null,
+      lastSyncedAt: null,
+      refreshError: null,
+    });
     setIsResultsOpen(true);
   }
 
@@ -270,6 +305,7 @@ export function SearchPanel({
     try {
       await runSearch(buildPayload());
     } catch {
+      setSearchModal((current) => ({ ...current, isOpen: false }));
       setIsResultsOpen(false);
     }
   }
@@ -295,21 +331,21 @@ export function SearchPanel({
     setOdometerRange(savedSearch.criteria.odometer_range);
 
     try {
-      await runSearch({
-        make: savedSearch.criteria.make,
-        model: savedSearch.criteria.model,
-        makeFilter: savedSearch.criteria.make_filter,
-        modelFilter: savedSearch.criteria.model_filter,
-        driveType: savedSearch.criteria.drive_type,
-        primaryDamage: savedSearch.criteria.primary_damage,
-        titleType: savedSearch.criteria.title_type,
-        fuelType: savedSearch.criteria.fuel_type,
-        lotCondition: savedSearch.criteria.lot_condition,
-        odometerRange: savedSearch.criteria.odometer_range,
-        yearFrom: savedSearch.criteria.year_from?.toString(),
-        yearTo: savedSearch.criteria.year_to?.toString(),
+      const response = await onViewSavedSearch(savedSearch.id);
+      setSearchModal({
+        isOpen: true,
+        mode: "saved",
+        title: response.saved_search.label,
+        results: response.results,
+        totalResults: response.cached_result_count,
+        canSave: false,
+        savedSearchId: savedSearch.id,
+        lastSyncedAt: response.last_synced_at,
+        refreshError: null,
       });
+      setIsResultsOpen(true);
     } catch {
+      setSearchModal((current) => ({ ...current, isOpen: false }));
       setIsResultsOpen(false);
     }
   }
@@ -319,9 +355,38 @@ export function SearchPanel({
       return;
     }
     try {
-      await onSaveSearch(lastSubmittedPayload);
+      await onSaveSearch({
+        ...lastSubmittedPayload,
+        seedResults: searchModal.results,
+        totalResults: searchModal.totalResults,
+      });
     } catch {
       return;
+    }
+  }
+
+  async function handleRefreshCurrentSavedSearch() {
+    if (!searchModal.savedSearchId) {
+      return;
+    }
+    try {
+      const response = await onRefreshSavedSearch(searchModal.savedSearchId);
+      setSearchModal({
+        isOpen: true,
+        mode: "saved",
+        title: response.saved_search.label,
+        results: response.results,
+        totalResults: response.cached_result_count,
+        canSave: false,
+        savedSearchId: response.saved_search.id,
+        lastSyncedAt: response.last_synced_at,
+        refreshError: null,
+      });
+    } catch (error) {
+      setSearchModal((current) => ({
+        ...current,
+        refreshError: error instanceof Error ? error.message : "Could not refresh saved search.",
+      }));
     }
   }
 
@@ -499,7 +564,17 @@ export function SearchPanel({
                     </div>
                     <div className="detail-item saved-search-card__detail--full">
                       <dt className="detail-label">Matches:</dt>
-                      <dd className="detail-value">{formatLotCount(item.result_count)}</dd>
+                      <dd className="detail-value">{formatLotCount(item.cached_result_count ?? item.result_count)}</dd>
+                    </div>
+                    <div className="detail-item">
+                      <dt className="detail-label">New:</dt>
+                      <dd className="detail-value">
+                        {item.new_count > 0 ? <span className="new-badge">{item.new_count} NEW</span> : "0"}
+                      </dd>
+                    </div>
+                    <div className="detail-item saved-search-card__detail--full">
+                      <dt className="detail-label">Synced:</dt>
+                      <dd className="detail-value">{item.last_synced_at ? new Date(item.last_synced_at).toLocaleString() : "Not yet"}</dd>
                     </div>
                   </dl>
                 </div>
@@ -521,13 +596,21 @@ export function SearchPanel({
       </div>
 
       <SearchResultsModal
-        isOpen={isResultsOpen}
-        results={results}
-        totalResults={totalResults}
-        onClose={() => setIsResultsOpen(false)}
+        isOpen={isResultsOpen && searchModal.isOpen}
+        title={searchModal.title}
+        results={searchModal.results}
+        totalResults={searchModal.totalResults}
+        onClose={() => {
+          setSearchModal((current) => ({ ...current, isOpen: false, refreshError: null }));
+          setIsResultsOpen(false);
+        }}
         onAddFromSearch={onAddFromSearch}
         onSaveSearch={handleSaveCurrentSearch}
-        canSave={lastSubmittedPayload !== null}
+        canSave={searchModal.canSave && lastSubmittedPayload !== null}
+        canRefreshLive={searchModal.mode === "saved" && searchModal.savedSearchId !== null}
+        onRefreshLive={handleRefreshCurrentSavedSearch}
+        lastSyncedAt={searchModal.lastSyncedAt}
+        refreshError={searchModal.refreshError}
       />
       <SearchFiltersModal
         isOpen={isFiltersOpen}

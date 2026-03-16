@@ -25,11 +25,13 @@ import {
   listWatchlist,
   login,
   removeWatchlistItem,
+  refreshSavedSearchLive,
   refreshSearchCatalog,
   saveSearch,
   searchLots,
   subscribeToPush,
   unsubscribeFromPush,
+  viewSavedSearch,
 } from "./lib/api";
 import type {
   Invite,
@@ -39,6 +41,7 @@ import type {
   SavedSearch,
   SearchCatalog,
   SearchResult,
+  SavedSearchResultsResponse,
   WatchlistItem,
 } from "./types";
 
@@ -209,6 +212,10 @@ export function App() {
     }
   }
 
+  function mergeSavedSearch(savedSearch: SavedSearch) {
+    setSavedSearches((current) => [savedSearch, ...current.filter((item) => item.id !== savedSearch.id)]);
+  }
+
   async function handleSearch(payload: {
     make?: string;
     model?: string;
@@ -222,7 +229,7 @@ export function App() {
     odometerRange?: string;
     yearFrom?: string;
     yearTo?: string;
-  }) {
+  }): Promise<{ results: SearchResult[]; total_results: number }> {
     if (!session.accessToken) {
       throw new Error("Missing session");
     }
@@ -248,7 +255,7 @@ export function App() {
       await refreshLiveSyncStatus(session.accessToken);
       setSearchResults(response.results);
       setSearchTotalResults(response.total_results);
-      return;
+      return response;
     } catch (caught) {
       const status = await refreshLiveSyncStatus(session.accessToken);
       const fallbackMessage = caught instanceof Error ? caught.message : "Search failed";
@@ -271,7 +278,9 @@ export function App() {
     odometerRange?: string;
     yearFrom?: string;
     yearTo?: string;
-  }) {
+    seedResults?: SearchResult[];
+    totalResults?: number;
+  }): Promise<SavedSearch> {
     if (!session.accessToken) {
       throw new Error("Missing session");
     }
@@ -291,14 +300,50 @@ export function App() {
           odometer_range: payload.odometerRange,
           year_from: payload.yearFrom ? Number(payload.yearFrom) : undefined,
           year_to: payload.yearTo ? Number(payload.yearTo) : undefined,
-          result_count: searchTotalResults,
+          result_count: payload.totalResults ?? searchTotalResults,
+          seed_results: payload.seedResults ?? searchResults,
         },
         session.accessToken,
       );
-      setSavedSearches((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
-      return;
+      mergeSavedSearch(saved);
+      return saved;
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Could not save search";
+      setError(message);
+      throw new Error(message);
+    }
+  }
+
+  async function handleViewSavedSearch(id: string): Promise<SavedSearchResultsResponse> {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    try {
+      setError(null);
+      const response = await viewSavedSearch(id, session.accessToken);
+      mergeSavedSearch(response.saved_search);
+      return response;
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Could not open saved search";
+      setError(message);
+      throw new Error(message);
+    }
+  }
+
+  async function handleRefreshSavedSearch(id: string): Promise<SavedSearchResultsResponse> {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    try {
+      setError(null);
+      const response = await refreshSavedSearchLive(id, session.accessToken);
+      await refreshLiveSyncStatus(session.accessToken);
+      mergeSavedSearch(response.saved_search);
+      return response;
+    } catch (caught) {
+      const status = await refreshLiveSyncStatus(session.accessToken);
+      const fallbackMessage = caught instanceof Error ? caught.message : "Could not refresh saved search";
+      const message = formatLiveSyncActionError("Saved-search refresh", fallbackMessage, status);
       setError(message);
       throw new Error(message);
     }
@@ -499,11 +544,11 @@ export function App() {
         <SearchPanel
           catalog={searchCatalog}
           isLoadingCatalog={isLoadingSearchCatalog}
-          results={searchResults}
-          totalResults={searchTotalResults}
           savedSearches={savedSearches}
           onSearch={handleSearch}
           onSaveSearch={handleSaveSearch}
+          onViewSavedSearch={handleViewSavedSearch}
+          onRefreshSavedSearch={handleRefreshSavedSearch}
           onDeleteSavedSearch={handleDeleteSavedSearch}
           onAddFromSearch={handleAddFromSearch}
         />

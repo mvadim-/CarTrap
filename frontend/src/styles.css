@@ -172,6 +172,21 @@ select {
   grid-column: 1 / -1;
 }
 
+.new-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(155, 61, 18, 0.12);
+  color: #9b3d12;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .filter-summary {
   margin-top: 0.75rem;
 }
@@ -543,6 +558,7 @@ select {
   border-top: 1px solid rgba(19, 38, 47, 0.08);
   border-bottom: 1px solid rgba(19, 38, 47, 0.08);
   background: rgba(19, 38, 47, 0.03);
+  flex-wrap: wrap;
 }
 
 .modal-body {

@@ -54,11 +54,14 @@ class SearchService:
         )
 
     def search(self, payload: SearchRequest) -> dict:
+        return self._execute_search(payload, live_sync_source="manual_search")
+
+    def _execute_search(self, payload: SearchRequest, *, live_sync_source: str) -> dict:
         source_request = payload.to_api_request().to_payload()
         provider = self._provider_factory()
         try:
             first_page = provider.search_lots(source_request)
-            self._system_status_service.mark_live_sync_available("manual_search")
+            self._system_status_service.mark_live_sync_available(live_sync_source)
             total_results = first_page.num_found
             results_by_lot_number = {item.lot_number: item for item in first_page.results}
             total_pages = max(1, math.ceil(total_results / SEARCH_PAGE_SIZE)) if total_results else 1
@@ -70,7 +73,7 @@ class SearchService:
                 for item in page.results:
                     results_by_lot_number[item.lot_number] = item
         except Exception as exc:
-            self._system_status_service.mark_live_sync_degraded("manual_search", exc)
+            self._system_status_service.mark_live_sync_degraded(live_sync_source, exc)
             logger.exception("Copart search failed for source_request=%s", source_request)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -90,18 +93,22 @@ class SearchService:
 
     def save_search(self, owner_user: dict, payload: SavedSearchCreateRequest) -> dict:
         criteria = payload.normalized_criteria()
+        criteria.pop("seed_results", None)
         criteria_key = json.dumps(criteria, sort_keys=True)
         existing = self._saved_search_repository.find_saved_search_by_owner_and_key(owner_user["id"], criteria_key)
         if existing is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Search is already saved.")
 
         now = datetime.now(timezone.utc)
+        stored_result_count = payload.result_count
+        if stored_result_count is None and payload.seed_results:
+            stored_result_count = len(payload.seed_results)
         document = self._saved_search_repository.create_saved_search(
             {
                 "owner_user_id": owner_user["id"],
                 "label": payload.label.strip() if payload.label else payload.display_title(),
                 "criteria": criteria,
-                "result_count": payload.result_count,
+                "result_count": stored_result_count,
                 "search_etag": None,
                 "criteria_key": criteria_key,
                 "last_checked_at": now,
@@ -109,17 +116,76 @@ class SearchService:
                 "updated_at": now,
             }
         )
-        return {"saved_search": self.serialize_saved_search(document)}
+        cache_document = None
+        if payload.seed_results:
+            cache_document = self._saved_search_repository.upsert_saved_search_cache(
+                str(document["_id"]),
+                owner_user["id"],
+                results=[item.model_dump(mode="json") for item in payload.seed_results],
+                result_count=stored_result_count,
+                new_lot_numbers=[],
+                last_synced_at=now,
+                seen_at=now,
+                updated_at=now,
+            )
+        return {"saved_search": self.serialize_saved_search(document, cache_document=cache_document)}
 
     def list_saved_searches(self, owner_user: dict) -> dict:
-        items = [self.serialize_saved_search(item) for item in self._saved_search_repository.list_saved_searches_for_owner(owner_user["id"])]
+        documents = self._saved_search_repository.list_saved_searches_for_owner(owner_user["id"])
+        cache_documents = self._saved_search_repository.list_saved_search_caches_for_owner(
+            owner_user["id"],
+            [str(item["_id"]) for item in documents],
+        )
+        cache_by_saved_search_id = {str(item["saved_search_id"]): item for item in cache_documents}
+        items = [self.serialize_saved_search(item, cache_document=cache_by_saved_search_id.get(str(item["_id"]))) for item in documents]
         return {"items": items}
 
     def remove_saved_search(self, owner_user: dict, saved_search_id: str) -> None:
-        saved_search = self._saved_search_repository.find_saved_search_by_id_for_owner(saved_search_id, owner_user["id"])
-        if saved_search is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved search not found.")
+        self._get_saved_search_or_404(owner_user, saved_search_id)
         self._saved_search_repository.delete_saved_search(saved_search_id)
+
+    def view_saved_search(self, owner_user: dict, saved_search_id: str) -> dict:
+        saved_search = self._get_saved_search_or_404(owner_user, saved_search_id)
+        viewed_at = datetime.now(timezone.utc)
+        viewed_cache = self._saved_search_repository.mark_saved_search_cache_viewed(
+            saved_search_id,
+            owner_user["id"],
+            seen_at=viewed_at,
+            updated_at=viewed_at,
+        )
+        response = self.serialize_saved_search_cache_view(saved_search, viewed_cache)
+        if viewed_cache is not None:
+            cleared_cache = dict(viewed_cache)
+            cleared_cache["new_lot_numbers"] = []
+            cleared_cache["seen_at"] = viewed_at
+            response["saved_search"] = self.serialize_saved_search(saved_search, cache_document=cleared_cache)
+        return response
+
+    def refresh_saved_search_live(self, owner_user: dict, saved_search_id: str) -> dict:
+        saved_search = self._get_saved_search_or_404(owner_user, saved_search_id)
+        criteria = SearchRequest(**saved_search["criteria"])
+        refreshed_at = datetime.now(timezone.utc)
+        search_response = self._execute_search(criteria, live_sync_source="saved_search_refresh")
+        cache_document = self._saved_search_repository.upsert_saved_search_cache(
+            saved_search_id,
+            owner_user["id"],
+            results=search_response["results"],
+            result_count=search_response["total_results"],
+            new_lot_numbers=[],
+            last_synced_at=refreshed_at,
+            seen_at=refreshed_at,
+            updated_at=refreshed_at,
+        )
+        updated_saved_search = self._saved_search_repository.update_saved_search_poll_state(
+            saved_search_id,
+            result_count=search_response["total_results"],
+            last_checked_at=refreshed_at,
+            updated_at=refreshed_at,
+            search_etag=saved_search.get("search_etag"),
+        )
+        if updated_saved_search is None:
+            updated_saved_search = saved_search
+        return self.serialize_saved_search_cache_view(updated_saved_search, cache_document)
 
     def ensure_catalog_seeded(self) -> None:
         self._catalog_repository.ensure_indexes()
@@ -195,10 +261,15 @@ class SearchService:
 
     def _poll_single_saved_search(self, saved_search: dict, now: datetime) -> dict | None:
         criteria = SearchRequest(**saved_search["criteria"])
+        saved_search_id = str(saved_search["_id"])
+        cache_document = self._saved_search_repository.find_saved_search_cache_by_id_for_owner(
+            saved_search_id,
+            saved_search["owner_user_id"],
+        )
         fetch_result = self.fetch_result_count(criteria, etag=saved_search.get("search_etag"), checked_at=now)
-        if fetch_result["not_modified"]:
+        if fetch_result["not_modified"] and cache_document is not None:
             self._saved_search_repository.update_saved_search_poll_state(
-                str(saved_search["_id"]),
+                saved_search_id,
                 result_count=int(saved_search.get("result_count") or 0),
                 last_checked_at=now,
                 updated_at=now,
@@ -206,32 +277,43 @@ class SearchService:
             )
             return None
 
-        next_result_count = fetch_result["result_count"]
+        search_response = self._execute_search(criteria, live_sync_source="saved_search_poll")
+        next_result_count = search_response["total_results"]
         previous_result_count = saved_search.get("result_count")
+        current_lot_numbers = self._ordered_unique_lot_numbers(search_response["results"])
+        merged_new_lot_numbers, truly_new_lot_numbers = self._compute_saved_search_new_lot_numbers(
+            cache_document,
+            current_lot_numbers=current_lot_numbers,
+        )
+        refreshed_cache = self._saved_search_repository.upsert_saved_search_cache(
+            saved_search_id,
+            saved_search["owner_user_id"],
+            results=search_response["results"],
+            result_count=next_result_count,
+            new_lot_numbers=merged_new_lot_numbers,
+            last_synced_at=now,
+            seen_at=cache_document.get("seen_at") if cache_document is not None else None,
+            updated_at=now,
+        )
         self._saved_search_repository.update_saved_search_poll_state(
-            str(saved_search["_id"]),
+            saved_search_id,
             result_count=next_result_count,
             last_checked_at=now,
             updated_at=now,
             search_etag=fetch_result.get("etag"),
         )
 
-        if previous_result_count == next_result_count:
-            return None
-
         display_title = criteria.display_title() or saved_search.get("label") or "Saved Search"
-        new_matches = 0
-        if previous_result_count is not None and next_result_count > previous_result_count:
-            new_matches = next_result_count - previous_result_count
-
         return {
-            "saved_search_id": str(saved_search["_id"]),
+            "saved_search_id": saved_search_id,
             "owner_user_id": saved_search["owner_user_id"],
             "search_label": saved_search.get("label") or display_title,
             "search_title": display_title,
             "previous_result_count": previous_result_count,
             "result_count": next_result_count,
-            "new_matches": new_matches,
+            "new_matches": len(truly_new_lot_numbers),
+            "new_lot_numbers": truly_new_lot_numbers,
+            "cached_new_count": len(refreshed_cache.get("new_lot_numbers", [])),
         }
 
     def fetch_result_count(self, payload: SearchRequest, etag: str | None = None, checked_at: datetime | None = None) -> dict:
@@ -261,14 +343,51 @@ class SearchService:
             provider.close()
         return {"result_count": first_page.num_found, "etag": None, "not_modified": False}
 
+    def _get_saved_search_or_404(self, owner_user: dict, saved_search_id: str) -> dict:
+        saved_search = self._saved_search_repository.find_saved_search_by_id_for_owner(saved_search_id, owner_user["id"])
+        if saved_search is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved search not found.")
+        return saved_search
+
+    @staticmethod
+    def _ordered_unique_lot_numbers(results: list[dict]) -> list[str]:
+        ordered: list[str] = []
+        for item in results:
+            lot_number = item.get("lot_number")
+            if not lot_number or lot_number in ordered:
+                continue
+            ordered.append(lot_number)
+        return ordered
+
+    @staticmethod
+    def _compute_saved_search_new_lot_numbers(
+        cache_document: dict | None,
+        *,
+        current_lot_numbers: list[str],
+    ) -> tuple[list[str], list[str]]:
+        if cache_document is None:
+            return [], []
+
+        previous_lot_numbers = SearchService._ordered_unique_lot_numbers(cache_document.get("results", []))
+        previous_lot_numbers_set = set(previous_lot_numbers)
+        unseen_lot_numbers_set = set(cache_document.get("new_lot_numbers", []))
+        truly_new_lot_numbers = [lot_number for lot_number in current_lot_numbers if lot_number not in previous_lot_numbers_set]
+        merged_new_lot_numbers = [
+            lot_number
+            for lot_number in current_lot_numbers
+            if lot_number in unseen_lot_numbers_set or lot_number in truly_new_lot_numbers
+        ]
+        return merged_new_lot_numbers, truly_new_lot_numbers
+
     @staticmethod
     def serialize_result(item: CopartSearchResult) -> dict:
         return item.model_dump(mode="json")
 
     @staticmethod
-    def serialize_saved_search(document: dict) -> dict:
+    def serialize_saved_search(document: dict, cache_document: dict | None = None) -> dict:
         criteria = document.get("criteria", {})
         search_request = SearchRequest(**criteria)
+        cache_metadata = SearchService.serialize_saved_search_cache_metadata(cache_document)
         return {
             "id": str(document["_id"]),
             "label": document["label"],
@@ -289,7 +408,53 @@ class SearchService:
             },
             "external_url": search_request.to_external_url(),
             "result_count": document.get("result_count"),
+            "cached_result_count": cache_metadata["cached_result_count"],
+            "new_count": cache_metadata["new_count"],
+            "last_synced_at": cache_metadata["last_synced_at"],
             "created_at": document["created_at"],
+        }
+
+    @staticmethod
+    def serialize_saved_search_cache_metadata(cache_document: dict | None) -> dict:
+        if cache_document is None:
+            return {
+                "cached_result_count": None,
+                "new_count": 0,
+                "last_synced_at": None,
+            }
+        return {
+            "cached_result_count": cache_document.get("result_count"),
+            "new_count": len(cache_document.get("new_lot_numbers", [])),
+            "last_synced_at": cache_document.get("last_synced_at"),
+        }
+
+    @staticmethod
+    def serialize_saved_search_cache_view(document: dict, cache_document: dict | None) -> dict:
+        serialized_saved_search = SearchService.serialize_saved_search(document, cache_document=cache_document)
+        if cache_document is None:
+            return {
+                "saved_search": serialized_saved_search,
+                "results": [],
+                "cached_result_count": 0,
+                "new_count": 0,
+                "last_synced_at": None,
+                "seen_at": None,
+            }
+
+        new_lot_numbers = set(cache_document.get("new_lot_numbers", []))
+        return {
+            "saved_search": serialized_saved_search,
+            "results": [
+                {
+                    **item,
+                    "is_new": item.get("lot_number") in new_lot_numbers,
+                }
+                for item in cache_document.get("results", [])
+            ],
+            "cached_result_count": int(cache_document.get("result_count") or 0),
+            "new_count": len(new_lot_numbers),
+            "last_synced_at": cache_document.get("last_synced_at"),
+            "seen_at": cache_document.get("seen_at"),
         }
 
     @staticmethod

@@ -47,6 +47,7 @@ export type SearchResult = {
   current_bid: number | null;
   currency: string;
   status: string;
+  is_new?: boolean;
 };
 
 export type SavedSearchCriteria = {
@@ -71,12 +72,24 @@ export type SavedSearch = {
   criteria: SavedSearchCriteria;
   external_url: string;
   result_count: number | null;
+  cached_result_count: number | null;
+  new_count: number;
+  last_synced_at: string | null;
   created_at: string;
 };
 
 export type SearchResultsResponse = {
   results: SearchResult[];
   total_results: number;
+};
+
+export type SavedSearchResultsResponse = {
+  saved_search: SavedSearch;
+  results: SearchResult[];
+  cached_result_count: number;
+  new_count: number;
+  last_synced_at: string | null;
+  seen_at: string | null;
 };
 
 export type SearchCatalogModel = {

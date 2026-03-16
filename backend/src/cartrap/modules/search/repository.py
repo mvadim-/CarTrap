@@ -9,8 +9,14 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from pymongo.collection import Collection
 from pymongo.database import Database
+from pymongo import ReturnDocument
 
-from cartrap.modules.search.models import SAVED_SEARCHES_COLLECTION, SEARCH_CATALOG_COLLECTION, SEARCH_CATALOG_DOCUMENT_ID
+from cartrap.modules.search.models import (
+    SAVED_SEARCHES_COLLECTION,
+    SAVED_SEARCH_RESULTS_CACHE_COLLECTION,
+    SEARCH_CATALOG_COLLECTION,
+    SEARCH_CATALOG_DOCUMENT_ID,
+)
 
 
 class SearchCatalogRepository:
@@ -34,11 +40,14 @@ class SearchCatalogRepository:
 class SavedSearchRepository:
     def __init__(self, database: Database) -> None:
         self.saved_searches: Collection = database[SAVED_SEARCHES_COLLECTION]
+        self.saved_search_results_cache: Collection = database[SAVED_SEARCH_RESULTS_CACHE_COLLECTION]
 
     def ensure_indexes(self) -> None:
         self.saved_searches.create_index([("owner_user_id", 1), ("criteria_key", 1)], unique=True)
         self.saved_searches.create_index([("owner_user_id", 1), ("created_at", -1)])
         self.saved_searches.create_index("last_checked_at")
+        self.saved_search_results_cache.create_index("saved_search_id", unique=True)
+        self.saved_search_results_cache.create_index([("owner_user_id", 1), ("last_synced_at", -1)])
 
     def create_saved_search(self, payload: dict) -> dict:
         document = dict(payload)
@@ -60,7 +69,9 @@ class SavedSearchRepository:
         return self.saved_searches.find_one({"_id": object_id, "owner_user_id": owner_user_id})
 
     def delete_saved_search(self, saved_search_id: str) -> None:
-        self.saved_searches.delete_one({"_id": ObjectId(saved_search_id)})
+        object_id = ObjectId(saved_search_id)
+        self.saved_searches.delete_one({"_id": object_id})
+        self.saved_search_results_cache.delete_one({"saved_search_id": object_id})
 
     def list_due_saved_searches(self, due_before: datetime) -> list[dict]:
         return list(
@@ -97,3 +108,83 @@ class SavedSearchRepository:
             },
         )
         return self.saved_searches.find_one({"_id": object_id})
+
+    def find_saved_search_cache_by_id_for_owner(self, saved_search_id: str, owner_user_id: str) -> Optional[dict]:
+        try:
+            object_id = ObjectId(saved_search_id)
+        except (InvalidId, TypeError):
+            return None
+        return self.saved_search_results_cache.find_one({"saved_search_id": object_id, "owner_user_id": owner_user_id})
+
+    def list_saved_search_caches_for_owner(self, owner_user_id: str, saved_search_ids: list[str] | None = None) -> list[dict]:
+        query: dict = {"owner_user_id": owner_user_id}
+        if saved_search_ids is not None:
+            object_ids = []
+            for saved_search_id in saved_search_ids:
+                try:
+                    object_ids.append(ObjectId(saved_search_id))
+                except (InvalidId, TypeError):
+                    continue
+            if not object_ids:
+                return []
+            query["saved_search_id"] = {"$in": object_ids}
+        return list(self.saved_search_results_cache.find(query))
+
+    def upsert_saved_search_cache(
+        self,
+        saved_search_id: str,
+        owner_user_id: str,
+        *,
+        results: list[dict],
+        result_count: int,
+        new_lot_numbers: list[str],
+        last_synced_at: datetime,
+        seen_at: datetime | None = None,
+        updated_at: datetime | None = None,
+    ) -> dict:
+        object_id = ObjectId(saved_search_id)
+        write_time = updated_at or last_synced_at
+        return self.saved_search_results_cache.find_one_and_update(
+            {"saved_search_id": object_id, "owner_user_id": owner_user_id},
+            {
+                "$set": {
+                    "owner_user_id": owner_user_id,
+                    "results": list(results),
+                    "result_count": result_count,
+                    "new_lot_numbers": list(dict.fromkeys(new_lot_numbers)),
+                    "last_synced_at": last_synced_at,
+                    "seen_at": seen_at,
+                    "updated_at": write_time,
+                },
+                "$setOnInsert": {
+                    "saved_search_id": object_id,
+                    "created_at": write_time,
+                },
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+
+    def mark_saved_search_cache_viewed(
+        self,
+        saved_search_id: str,
+        owner_user_id: str,
+        *,
+        seen_at: datetime,
+        updated_at: datetime | None = None,
+    ) -> Optional[dict]:
+        try:
+            object_id = ObjectId(saved_search_id)
+        except (InvalidId, TypeError):
+            return None
+        return self.saved_search_results_cache.find_one_and_update(
+            {"saved_search_id": object_id, "owner_user_id": owner_user_id},
+            {
+                "$set": {
+                    "seen_at": seen_at,
+                    "updated_at": updated_at or seen_at,
+                    "new_lot_numbers": [],
+                }
+            },
+            return_document=ReturnDocument.BEFORE,
+        )

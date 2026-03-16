@@ -1,5 +1,9 @@
 # Change Log
 
+## [2026-03-16 18:42] Add plan for cached saved-search run flow
+- Додано `docs/plans/20260316-saved-search-cache-run-search.md` з планом переходу saved searches на Mongo-backed results cache: seed cache під час `Save Search`, cached `Run Search`, `Refresh Live` всередині modal і `NEW` badge для лотів, що з’явилися після останнього перегляду.
+- У плані окремо розписано backend cache persistence, worker diff logic для `new_lot_numbers`, нові API endpoints для `view`/`refresh-live`, frontend modal/list UX і обов’язкове тестове покриття для backend та frontend flows.
+
 ## [2026-03-16 17:39] Add push delivery diagnostics and worker logging bootstrap
 - Оновлено `backend/src/cartrap/modules/notifications/service.py`: додано явні structured logs для push delivery path, включно з warning при відсутньому sender, логами успішної доставки, причиною `PushDeliveryError`, а також повідомленням про автоматичне видалення subscription після unrecoverable failure.
 - Оновлено `backend/src/cartrap/worker/main.py`: worker тепер викликає `configure_logging(settings.log_level)` на старті, тож результати polling cycle і push delivery failures більше не губляться в порожніх `docker compose logs worker`.
@@ -416,3 +420,34 @@
 - Оновлено `ChangeLog.md`: зафіксовано встановлення зовнішнього skill `write` із репозиторію `ryanthedev/oberskills`.
 - Під час інсталяції виявлено, що `skills/write` у вихідному репозиторії не містить `SKILL.md`, тому штатний `skill-installer` не міг встановити його напряму.
 - У `~/.codex/skills/write` створено Codex-сумісний wrapper `SKILL.md` і підтягнуто вихідні reference-файли `elements-of-style.md` та `references/ai-writing-patterns.md`.
+
+## [2026-03-16 18:56] Add saved-search results cache persistence primitives
+- Оновлено `backend/src/cartrap/modules/search/{models.py,repository.py,schemas.py,service.py}`: додано окрему Mongo collection для cached saved-search results, ownership-scoped repository methods, atomic `view-and-clear` flow для `NEW`, а також backend response shape для cached modal і list metadata (`cached_result_count`, `new_count`, `last_synced_at`).
+- Додано `backend/tests/search/test_saved_search_cache_repository.py` з покриттям upsert/read/list/view/delete flow для cache-документів і schema/serialization contract для майбутнього cached modal response.
+- Оновлено `docs/plans/20260316-saved-search-cache-run-search.md`: Task 1 позначено завершеним після успішної верифікації.
+- Verification: `./.venv/bin/pytest backend/tests/search/test_saved_search_cache_repository.py` -> `4 passed`, `./.venv/bin/pytest backend/tests/search/test_search_api.py` -> `18 passed`, `./.venv/bin/pytest backend/tests/search/test_saved_search_monitoring.py` -> `5 passed`.
+
+## [2026-03-16 19:01] Seed saved-search cache on save and add cached view endpoints
+- Оновлено `backend/src/cartrap/modules/search/{router.py,schemas.py,service.py}`: `SavedSearchCreateRequest` тепер приймає `seed_results`, save flow seed-ить Mongo cache без додаткового live Copart request, а нові endpoint-и `POST /api/search/saved/{id}/view` і `POST /api/search/saved/{id}/refresh-live` повертають cached modal payload та оновлюють persisted seen/cache state.
+- Уточнено `backend/src/cartrap/modules/search/repository.py`: `view` path тепер atomically очищає `new_lot_numbers`, але повертає pre-clear snapshot, щоб modal міг показати lot-level `NEW`, поки list metadata вже скинута.
+- Розширено `backend/tests/search/test_search_api.py` новими API сценаріями для cache seed, cached view, refresh-live і owner/not-found access control; `backend/tests/search/test_saved_search_cache_repository.py` синхронізовано з pre-clear semantics.
+- Оновлено `docs/plans/20260316-saved-search-cache-run-search.md`: Task 2 позначено завершеним після повторної backend verification.
+- Verification: `./.venv/bin/pytest backend/tests/search/test_saved_search_cache_repository.py` -> `4 passed`, `./.venv/bin/pytest backend/tests/search/test_search_api.py` -> `22 passed`, `./.venv/bin/pytest backend/tests/search/test_saved_search_monitoring.py` -> `5 passed`.
+
+## [2026-03-16 19:07] Move saved-search worker polling to cache diff semantics
+- Оновлено `backend/src/cartrap/modules/search/service.py`: worker polling тепер використовує cheap `etag/result_count` check лише як gate, робить full search при change або відсутньому cache, дифить `lot_number` проти попереднього cached result set, зберігає union unseen `new_lot_numbers` і рахує push `new_matches` лише з truly-new lot numbers поточного циклу.
+- Оновлено `backend/tests/search/test_saved_search_monitoring.py`: додано покриття для changed cache with new lots, changed cache without truly new lots, legacy cache backfill when upstream reports `not_modified`, і збережено сценарії skip/failure для polling loop.
+- Оновлено `docs/plans/20260316-saved-search-cache-run-search.md`: Task 3 позначено завершеним після backend verification.
+- Verification: `./.venv/bin/pytest backend/tests/search/test_saved_search_monitoring.py` -> `6 passed`, `./.venv/bin/pytest backend/tests/search/test_search_api.py` -> `22 passed`, `./.venv/bin/pytest backend/tests/search/test_saved_search_cache_repository.py` -> `4 passed`.
+
+## [2026-03-16 19:14] Switch saved-search UI to cached modal flow
+- Оновлено `frontend/src/{types.ts,lib/api.ts,App.tsx}`: додано типи й API client для cached saved-search `view` / `refresh-live`, `Save Search` тепер передає `seed_results`, а App синхронізує list metadata з backend responses замість повторного live `/search`.
+- Оновлено `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx}` і `frontend/src/styles.css`: `Run Search` відкриває cached modal, saved-search cards показують `new_count` / `last_synced_at`, lot-level `NEW` badge очищається після view, а всередині modal з’явився `Refresh Live`, який лишає cached results видимими навіть при помилці refresh.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression scenarios для cache-seeded save flow, cached rerun без generic live search, `NEW` clearing semantics і modal `Refresh Live`; на тестовому mock API введено cached saved-search endpoints.
+- Оновлено `docs/plans/20260316-saved-search-cache-run-search.md`: Task 4 позначено завершеним після frontend verification.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `18 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-16 19:15] Complete saved-search cache rollout verification
+- Оновлено `docs/plans/completed/20260316-saved-search-cache-run-search.md`: Task 5/6 позначено завершеними, додано примітку що `README.md`/`backend/README.md` не змінювались у цьому циклі, і план перенесено в `docs/plans/completed/`.
+- Проведено повний regression прогін після backend/frontend реалізації cached saved-search flow.
+- Verification: `./.venv/bin/pytest backend/tests` -> `133 passed`, `npm run test --prefix frontend` -> `18 passed`, `npm run build --prefix frontend` -> успішно.

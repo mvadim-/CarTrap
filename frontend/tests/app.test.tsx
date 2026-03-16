@@ -39,6 +39,21 @@ function buildTrackedLot(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function buildSearchResult(overrides: Record<string, unknown> = {}) {
+  return {
+    lot_number: "12345678",
+    title: "2020 TOYOTA CAMRY SE",
+    url: "https://www.copart.com/lot/12345678",
+    thumbnail_url: "https://img.copart.com/12345678.jpg",
+    location: "CA - SACRAMENTO",
+    sale_date: null,
+    current_bid: 4200,
+    currency: "USD",
+    status: "live",
+    ...overrides,
+  };
+}
+
 function formatExpectedLocalAuctionStart(value: string) {
   return new Intl.DateTimeFormat(undefined, {
     year: "numeric",
@@ -67,6 +82,10 @@ describe("CarTrap app", () => {
   let liveSyncStatus: Record<string, unknown>;
   let searchShouldFail: boolean;
   let watchlistAddShouldFail: boolean;
+  let liveSearchCallCount: number;
+  let savedSearchViewCallCount: number;
+  let savedSearchRefreshCallCount: number;
+  let nextSavedSearchSeedNewLotNumbers: string[];
 
   beforeEach(() => {
     const storage = new Map<string, string>();
@@ -78,6 +97,10 @@ describe("CarTrap app", () => {
       updated_at: string;
     }> = [];
     lastSearchPayload = null;
+    liveSearchCallCount = 0;
+    savedSearchViewCallCount = 0;
+    savedSearchRefreshCallCount = 0;
+    nextSavedSearchSeedNewLotNumbers = [];
     const savedSearches: Array<{
       id: string;
       label: string;
@@ -97,8 +120,21 @@ describe("CarTrap app", () => {
       };
       external_url: string;
       result_count: number | null;
+      cached_result_count: number | null;
+      new_count: number;
+      last_synced_at: string | null;
       created_at: string;
     }> = [];
+    const savedSearchCaches = new Map<
+      string,
+      {
+        results: Array<Record<string, unknown>>;
+        new_lot_numbers: string[];
+        cached_result_count: number;
+        last_synced_at: string | null;
+        seen_at: string | null;
+      }
+    >();
     liveSyncStatus = buildLiveSyncStatus();
     searchShouldFail = false;
     watchlistAddShouldFail = false;
@@ -294,6 +330,86 @@ describe("CarTrap app", () => {
             { status: 200 },
           );
         }
+        if (url.includes("/search/saved/") && url.endsWith("/view")) {
+          savedSearchViewCallCount += 1;
+          const id = url.split("/search/saved/")[1]?.replace("/view", "") ?? "";
+          const savedSearch = savedSearches.find((item) => item.id === id);
+          if (!savedSearch) {
+            return new Response(JSON.stringify({ detail: "Saved search not found." }), { status: 404 });
+          }
+          const cache = savedSearchCaches.get(id) ?? {
+            results: [],
+            new_lot_numbers: [],
+            cached_result_count: 0,
+            last_synced_at: null,
+            seen_at: null,
+          };
+          const response = {
+            saved_search: { ...savedSearch, new_count: 0 },
+            results: cache.results.map((result) => ({
+              ...result,
+              is_new: cache.new_lot_numbers.includes(String(result.lot_number)),
+            })),
+            cached_result_count: cache.cached_result_count,
+            new_count: cache.new_lot_numbers.length,
+            last_synced_at: cache.last_synced_at,
+            seen_at: cache.seen_at,
+          };
+          savedSearch.new_count = 0;
+          savedSearchCaches.set(id, {
+            ...cache,
+            new_lot_numbers: [],
+            seen_at: "2026-03-16T12:10:00Z",
+          });
+          return new Response(JSON.stringify(response), { status: 200 });
+        }
+        if (url.includes("/search/saved/") && url.endsWith("/refresh-live")) {
+          savedSearchRefreshCallCount += 1;
+          const id = url.split("/search/saved/")[1]?.replace("/refresh-live", "") ?? "";
+          const savedSearch = savedSearches.find((item) => item.id === id);
+          if (!savedSearch) {
+            return new Response(JSON.stringify({ detail: "Saved search not found." }), { status: 404 });
+          }
+          const refreshedResults = [
+            buildSearchResult(),
+            buildSearchResult({
+              lot_number: "87654321",
+              title: "2018 HONDA CIVIC EX",
+              url: "https://www.copart.com/lot/87654321",
+              thumbnail_url: null,
+              location: "TX - DALLAS",
+              current_bid: 1800,
+              status: "upcoming",
+            }),
+          ];
+          const refreshedSavedSearch = {
+            ...savedSearch,
+            result_count: refreshedResults.length,
+            cached_result_count: refreshedResults.length,
+            new_count: 0,
+            last_synced_at: "2026-03-16T12:15:00Z",
+          };
+          const index = savedSearches.findIndex((item) => item.id === id);
+          savedSearches.splice(index, 1, refreshedSavedSearch);
+          savedSearchCaches.set(id, {
+            results: refreshedResults,
+            new_lot_numbers: [],
+            cached_result_count: refreshedResults.length,
+            last_synced_at: "2026-03-16T12:15:00Z",
+            seen_at: "2026-03-16T12:15:00Z",
+          });
+          return new Response(
+            JSON.stringify({
+              saved_search: refreshedSavedSearch,
+              results: refreshedResults.map((result) => ({ ...result, is_new: false })),
+              cached_result_count: refreshedResults.length,
+              new_count: 0,
+              last_synced_at: "2026-03-16T12:15:00Z",
+              seen_at: "2026-03-16T12:15:00Z",
+            }),
+            { status: 200 },
+          );
+        }
         if (url.includes("/search/saved")) {
           if ((init?.method ?? "GET") === "DELETE") {
             const id = url.split("/").pop() ?? "";
@@ -301,6 +417,7 @@ describe("CarTrap app", () => {
             if (index >= 0) {
               savedSearches.splice(index, 1);
             }
+            savedSearchCaches.delete(id);
             return new Response(null, { status: 204 });
           }
           if ((init?.method ?? "GET") === "POST") {
@@ -326,6 +443,7 @@ describe("CarTrap app", () => {
             if (duplicate) {
               return new Response("Search is already saved.", { status: 409 });
             }
+            const seedResults = Array.isArray(body.seed_results) ? body.seed_results : [];
             const savedSearch = {
               id: `saved-${savedSearches.length + 1}`,
               label: body.label ?? `${body.make ?? ""} ${body.model ?? ""} ${body.year_from ?? ""}-${body.year_to ?? ""}`.trim(),
@@ -345,10 +463,21 @@ describe("CarTrap app", () => {
               },
               external_url:
                 "https://www.copart.com/lotSearchResults?free=true&displayStr=FORD%20MUSTANG%20MACH-E%202025-2027&from=%2FvehicleFinder&fromSource=widget&qId=test-qid-1&searchCriteria=%7B%22query%22%3A%5B%22FORD%20MUSTANG%20MACH-E%202025-2027%22%5D%2C%22filter%22%3A%7B%22YEAR%22%3A%5B%22lot_year%3A%5B2025%20TO%202027%5D%22%5D%2C%22MAKE%22%3A%5B%22lot_make_desc%3A%5C%22FORD%5C%22%22%5D%2C%22MODL%22%3A%5B%22lot_model_desc%3A%5C%22MUSTANG%20MACH-E%5C%22%22%5D%2C%22DRIV%22%3A%5B%22drive%3A%5C%22ALL%20WHEEL%20DRIVE%5C%22%22%5D%7D%2C%22searchName%22%3A%22%22%2C%22watchListOnly%22%3Afalse%2C%22freeFormSearch%22%3Atrue%7D",
-              result_count: body.result_count ?? null,
+              result_count: body.result_count ?? seedResults.length ?? null,
+              cached_result_count: seedResults.length,
+              new_count: nextSavedSearchSeedNewLotNumbers.length,
+              last_synced_at: seedResults.length > 0 ? "2026-03-16T12:00:00Z" : null,
               created_at: "2026-03-12T18:00:00Z",
             };
             savedSearches.unshift(savedSearch);
+            savedSearchCaches.set(savedSearch.id, {
+              results: seedResults,
+              new_lot_numbers: nextSavedSearchSeedNewLotNumbers,
+              cached_result_count: seedResults.length,
+              last_synced_at: savedSearch.last_synced_at,
+              seen_at: seedResults.length > 0 ? "2026-03-16T12:00:00Z" : null,
+            });
+            nextSavedSearchSeedNewLotNumbers = [];
             return new Response(JSON.stringify({ saved_search: savedSearch }), { status: 201 });
           }
           return new Response(JSON.stringify({ items: savedSearches }), { status: 200 });
@@ -386,6 +515,7 @@ describe("CarTrap app", () => {
           );
         }
         if (url.endsWith("/search")) {
+          liveSearchCallCount += 1;
           const body = init?.body ? JSON.parse(String(init.body)) : {};
           lastSearchPayload = body;
           if (searchShouldFail) {
@@ -397,19 +527,7 @@ describe("CarTrap app", () => {
           return new Response(
             JSON.stringify({
               total_results: 1,
-              results: [
-                {
-                  lot_number: "12345678",
-                  title: "2020 TOYOTA CAMRY SE",
-                  url: "https://www.copart.com/lot/12345678",
-                  thumbnail_url: "https://img.copart.com/12345678.jpg",
-                  location: "CA - SACRAMENTO",
-                  sale_date: null,
-                  current_bid: 4200,
-                  currency: "USD",
-                  status: "live",
-                },
-              ],
+              results: [buildSearchResult()],
             }),
             { status: 200 },
           );
@@ -531,7 +649,7 @@ describe("CarTrap app", () => {
     expect(lastSearchPayload?.odometer_range).toBe("under_25000");
   });
 
-  it("saves a search and reruns it from the saved searches list", async () => {
+  it("saves a search, seeds cached results, and reruns it from the saved searches list without live search", async () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
@@ -543,10 +661,55 @@ describe("CarTrap app", () => {
 
     await screen.findByText(/FORD MUSTANG MACH-E 2025-2027/i);
     expect(await screen.findAllByText(/1 lot found/i)).toHaveLength(2);
+    expect(liveSearchCallCount).toBe(1);
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
     fireEvent.click(screen.getByRole("button", { name: /run search/i }));
 
     await screen.findByRole("dialog", { name: /search results/i });
+    expect(savedSearchViewCallCount).toBe(1);
+    expect(liveSearchCallCount).toBe(1);
+    expect(screen.getByText(/last synced/i)).toBeTruthy();
+  });
+
+  it("shows NEW badges for cached saved-search results and clears list-level new count after opening", async () => {
+    nextSavedSearchSeedNewLotNumbers = ["12345678"];
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+    await screen.findByRole("dialog", { name: /search results/i });
+    fireEvent.click(screen.getByRole("button", { name: /save search/i }));
+
+    expect(await screen.findByText(/1 NEW/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /close/i }));
+    fireEvent.click(screen.getByRole("button", { name: /run search/i }));
+
+    await screen.findByRole("dialog", { name: /search results/i });
+    expect(screen.getByText(/^NEW$/i)).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.queryByText(/1 NEW/i)).toBeNull();
+    });
+  });
+
+  it("refreshes a saved search from inside the cached modal", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+    await screen.findByRole("dialog", { name: /search results/i });
+    fireEvent.click(screen.getByRole("button", { name: /save search/i }));
+    await screen.findByText(/FORD MUSTANG MACH-E 2025-2027/i);
+    fireEvent.click(screen.getByRole("button", { name: /close/i }));
+    fireEvent.click(screen.getByRole("button", { name: /run search/i }));
+
+    await screen.findByRole("dialog", { name: /search results/i });
+    fireEvent.click(screen.getByRole("button", { name: /refresh live/i }));
+
+    await screen.findByText(/2018 HONDA CIVIC EX/i);
+    expect(savedSearchRefreshCallCount).toBe(1);
+    expect(screen.getAllByText(/2 lots found/i).length).toBeGreaterThan(0);
   });
 
   it("renders external url link for saved search", async () => {

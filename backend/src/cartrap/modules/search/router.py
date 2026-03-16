@@ -11,6 +11,7 @@ from cartrap.modules.search.schemas import (
     SavedSearchCreateRequest,
     SavedSearchCreateResponse,
     SavedSearchListResponse,
+    SavedSearchViewResponse,
     SearchCatalogResponse,
     SearchRequest,
     SearchResponse,
@@ -59,6 +60,24 @@ def save_search(
     search_service: SearchService = Depends(get_search_service),
 ) -> dict:
     return search_service.save_search(current_user, payload)
+
+
+@router.post("/saved/{saved_search_id}/view", response_model=SavedSearchViewResponse)
+def view_saved_search(
+    saved_search_id: str,
+    current_user: dict = Depends(get_current_user),
+    search_service: SearchService = Depends(get_search_service),
+) -> dict:
+    return search_service.view_saved_search(current_user, saved_search_id)
+
+
+@router.post("/saved/{saved_search_id}/refresh-live", response_model=SavedSearchViewResponse)
+def refresh_saved_search_live(
+    saved_search_id: str,
+    current_user: dict = Depends(get_current_user),
+    search_service: SearchService = Depends(get_search_service),
+) -> dict:
+    return search_service.refresh_saved_search_live(current_user, saved_search_id)
 
 
 @router.delete("/saved/{saved_search_id}", status_code=status.HTTP_204_NO_CONTENT)

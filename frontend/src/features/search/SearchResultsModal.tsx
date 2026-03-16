@@ -5,15 +5,33 @@ import { LotThumbnail } from "../shared/LotThumbnail";
 
 type Props = {
   isOpen: boolean;
+  title: string;
   results: SearchResult[];
   totalResults: number;
   onClose: () => void;
   onAddFromSearch: (lotUrl: string) => Promise<void>;
   onSaveSearch: () => Promise<void>;
   canSave: boolean;
+  canRefreshLive?: boolean;
+  onRefreshLive?: () => Promise<void>;
+  lastSyncedAt?: string | null;
+  refreshError?: string | null;
 };
 
-export function SearchResultsModal({ isOpen, results, totalResults, onClose, onAddFromSearch, onSaveSearch, canSave }: Props) {
+export function SearchResultsModal({
+  isOpen,
+  title,
+  results,
+  totalResults,
+  onClose,
+  onAddFromSearch,
+  onSaveSearch,
+  canSave,
+  canRefreshLive = false,
+  onRefreshLive,
+  lastSyncedAt = null,
+  refreshError = null,
+}: Props) {
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -45,12 +63,19 @@ export function SearchResultsModal({ isOpen, results, totalResults, onClose, onA
         <div className="modal-header">
           <div>
             <p className="eyebrow">Results</p>
-            <h3>Copart Search Results</h3>
+            <h3>{title}</h3>
           </div>
           <div className="modal-toolbar">
-            <button type="button" className="ghost-button" onClick={() => void onSaveSearch()} disabled={!canSave}>
-              Save Search
-            </button>
+            {canSave ? (
+              <button type="button" className="ghost-button" onClick={() => void onSaveSearch()} disabled={!canSave}>
+                Save Search
+              </button>
+            ) : null}
+            {canRefreshLive ? (
+              <button type="button" className="ghost-button" onClick={() => void onRefreshLive?.()}>
+                Refresh Live
+              </button>
+            ) : null}
             <button type="button" className="ghost-button" onClick={onClose}>
               Close
             </button>
@@ -60,7 +85,9 @@ export function SearchResultsModal({ isOpen, results, totalResults, onClose, onA
           <span className="muted">
             {totalResults} {totalResults === 1 ? "lot" : "lots"} found. Current result set stays reopenable until you close it.
           </span>
+          {lastSyncedAt ? <span className="muted">Last synced {new Date(lastSyncedAt).toLocaleString()}</span> : null}
         </div>
+        {refreshError ? <p className="error">{refreshError}</p> : null}
         <div className="modal-body result-list">
           {results.length === 0 ? (
             <p className="muted">No lots matched this search.</p>
@@ -75,6 +102,7 @@ export function SearchResultsModal({ isOpen, results, totalResults, onClose, onA
                   </p>
                 </div>
                 <div className="result-actions">
+                  {result.is_new ? <span className="new-badge">NEW</span> : null}
                   <span className="status-pill">{result.status}</span>
                   <button type="button" onClick={() => void onAddFromSearch(result.url)}>
                     Add to Watchlist

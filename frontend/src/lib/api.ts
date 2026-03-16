@@ -4,6 +4,7 @@ import type {
   PushSubscriptionItem,
   PushSubscriptionPayload,
   SavedSearch,
+  SavedSearchResultsResponse,
   SearchCatalog,
   SearchResult,
   SearchResultsResponse,
@@ -208,6 +209,7 @@ export async function saveSearch(
     lot_number?: string;
     label?: string;
     result_count?: number;
+    seed_results?: SearchResult[];
   },
   token: string,
 ): Promise<SavedSearch> {
@@ -221,6 +223,14 @@ export async function saveSearch(
 
 export async function deleteSavedSearch(id: string, token: string): Promise<void> {
   await request<void>(`/search/saved/${id}`, { method: "DELETE", token });
+}
+
+export async function viewSavedSearch(id: string, token: string): Promise<SavedSearchResultsResponse> {
+  return request<SavedSearchResultsResponse>(`/search/saved/${id}/view`, { method: "POST", token });
+}
+
+export async function refreshSavedSearchLive(id: string, token: string): Promise<SavedSearchResultsResponse> {
+  return request<SavedSearchResultsResponse>(`/search/saved/${id}/refresh-live`, { method: "POST", token });
 }
 
 export async function refreshSearchCatalog(token: string): Promise<SearchCatalog> {
