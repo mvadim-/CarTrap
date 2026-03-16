@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 import cartrap.app as app_module
 from cartrap.config import Settings
+from cartrap.modules.copart_provider.errors import CopartGatewayUnavailableError
 from cartrap.modules.copart_provider.models import CopartLotSnapshot
 
 
@@ -46,6 +47,15 @@ class FakeProvider:
         if self._should_fail:
             raise RuntimeError("upstream failed")
         return self._snapshots[url]
+
+    def close(self) -> None:
+        return None
+
+
+class GatewayUnavailableProvider:
+    def fetch_lot(self, url: str) -> CopartLotSnapshot:
+        del url
+        raise CopartGatewayUnavailableError("gateway unavailable")
 
     def close(self) -> None:
         return None
@@ -239,6 +249,21 @@ def test_watchlist_returns_upstream_error_on_invalid_lot_source(client: TestClie
 
     assert response.status_code == 502
     assert response.json()["detail"] == "Failed to fetch lot details from Copart: upstream failed"
+
+
+def test_watchlist_returns_gateway_unavailable_error_without_direct_fallback(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "gateway-watchlist@example.com", "GatewayWatchPass123")
+        client.app.state.copart_provider_factory = lambda: GatewayUnavailableProvider()
+
+        response = client.post(
+            "/api/watchlist",
+            json={"lot_url": "https://www.copart.com/lot/12345678"},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Failed to fetch lot details from Copart: gateway unavailable"
 
 
 def test_watchlist_delete_is_scoped_to_owner(client: TestClient) -> None:

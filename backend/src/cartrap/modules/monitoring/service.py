@@ -12,6 +12,7 @@ from cartrap.modules.copart_provider.service import CopartProvider
 from cartrap.modules.monitoring.change_detection import detect_significant_changes
 from cartrap.modules.monitoring.polling_policy import is_due_for_poll
 from cartrap.modules.notifications.service import NotificationService
+from cartrap.modules.system_status.service import SystemStatusService
 from cartrap.modules.watchlist.repository import WatchlistRepository
 from cartrap.modules.watchlist.service import WatchlistService
 
@@ -27,6 +28,7 @@ class MonitoringService:
         self.repository.ensure_indexes()
         self._provider_factory = provider_factory or CopartProvider
         self._notification_service = notification_service
+        self._system_status_service = SystemStatusService(database)
 
     def poll_due_lots(self, now: datetime | None = None) -> dict:
         current_time = now or self._now()
@@ -41,8 +43,9 @@ class MonitoringService:
             processed += 1
             try:
                 event = self._poll_single_lot(tracked_lot, current_time)
-            except Exception:
+            except Exception as exc:
                 failed += 1
+                self._system_status_service.mark_live_sync_degraded("watchlist_poll", exc, checked_at=current_time)
                 continue
 
             if event is not None:
@@ -74,6 +77,7 @@ class MonitoringService:
             if fetch_result.etag is not None:
                 payload["detail_etag"] = fetch_result.etag
             self.repository.update_tracked_lot_state(str(tracked_lot["_id"]), payload, updated_at=now)
+            self._system_status_service.mark_live_sync_available("watchlist_poll", checked_at=now)
             return None
 
         if fetch_result is not None:
@@ -97,6 +101,7 @@ class MonitoringService:
             },
             updated_at=now,
         )
+        self._system_status_service.mark_live_sync_available("watchlist_poll", checked_at=now)
 
         if not changes:
             return None

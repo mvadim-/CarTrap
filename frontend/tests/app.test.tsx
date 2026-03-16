@@ -49,8 +49,24 @@ function formatExpectedLocalAuctionStart(value: string) {
   }).format(new Date(value));
 }
 
+function buildLiveSyncStatus(overrides: Record<string, unknown> = {}) {
+  return {
+    status: "available",
+    last_success_at: "2026-03-16T11:00:00Z",
+    last_success_source: "manual_search",
+    last_failure_at: null,
+    last_failure_source: null,
+    last_error_message: null,
+    stale: false,
+    ...overrides,
+  };
+}
+
 describe("CarTrap app", () => {
   let lastSearchPayload: Record<string, unknown> | null;
+  let liveSyncStatus: Record<string, unknown>;
+  let searchShouldFail: boolean;
+  let watchlistAddShouldFail: boolean;
 
   beforeEach(() => {
     const storage = new Map<string, string>();
@@ -83,6 +99,9 @@ describe("CarTrap app", () => {
       result_count: number | null;
       created_at: string;
     }> = [];
+    liveSyncStatus = buildLiveSyncStatus();
+    searchShouldFail = false;
+    watchlistAddShouldFail = false;
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => void storage.set(key, value),
@@ -124,6 +143,11 @@ describe("CarTrap app", () => {
             return new Response(JSON.stringify({ detail: "Invalid access token." }), { status: 401 });
           }
           if ((init?.method ?? "GET") === "POST") {
+            if (watchlistAddShouldFail) {
+              return new Response(JSON.stringify({ detail: "Failed to fetch lot details from Copart: gateway unavailable" }), {
+                status: 502,
+              });
+            }
             const body = init?.body ? JSON.parse(String(init.body)) : {};
             return new Response(
               JSON.stringify({
@@ -350,9 +374,23 @@ describe("CarTrap app", () => {
             { status: 200 },
           );
         }
+        if (url.includes("/system/status")) {
+          return new Response(
+            JSON.stringify({
+              status: "ok",
+              service: "CarTrap API",
+              environment: "test",
+              live_sync: liveSyncStatus,
+            }),
+            { status: 200 },
+          );
+        }
         if (url.endsWith("/search")) {
           const body = init?.body ? JSON.parse(String(init.body)) : {};
           lastSearchPayload = body;
+          if (searchShouldFail) {
+            return new Response(JSON.stringify({ detail: "Failed to fetch search results from Copart." }), { status: 502 });
+          }
           if (body.make !== "FORD" || body.model !== "MUSTANG MACH-E") {
             return new Response(JSON.stringify({ total_results: 0, results: [] }), { status: 200 });
           }
@@ -665,5 +703,75 @@ describe("CarTrap app", () => {
     await waitFor(() => {
       expect(localStorage.getItem("cartrap.tokens")).toContain("refresh-token-next");
     });
+  });
+
+  it("shows offline banner when live sync is degraded and clears it after recovery", async () => {
+    liveSyncStatus = buildLiveSyncStatus({
+      status: "degraded",
+      last_failure_at: "2026-03-16T11:05:00Z",
+      last_failure_source: "watchlist_poll",
+      last_error_message: "gateway unavailable",
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/live copart sync is temporarily unavailable/i);
+    expect(screen.getByText(/cached mongo-backed data remains available/i)).toBeTruthy();
+    expect(screen.getByText(/gateway unavailable/i)).toBeTruthy();
+
+    liveSyncStatus = buildLiveSyncStatus();
+    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+
+    await screen.findByRole("dialog", { name: /search results/i });
+    await waitFor(() => {
+      expect(screen.queryByText(/live copart sync is temporarily unavailable/i)).toBeNull();
+    });
+  });
+
+  it("shows degraded-mode message when manual search fails while live sync is offline", async () => {
+    liveSyncStatus = buildLiveSyncStatus({
+      status: "degraded",
+      last_failure_at: "2026-03-16T11:05:00Z",
+      last_failure_source: "manual_search",
+      last_error_message: "gateway unavailable",
+    });
+    searchShouldFail = true;
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/live copart sync is temporarily unavailable/i);
+    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+
+    expect(
+      await screen.findByText(
+        /search is unavailable right now because live copart sync is offline\. cached data remains available\./i,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: /search results/i })).toBeNull();
+  });
+
+  it("shows degraded-mode message when adding a lot fails while live sync is offline", async () => {
+    liveSyncStatus = buildLiveSyncStatus({
+      status: "degraded",
+      last_failure_at: "2026-03-16T11:05:00Z",
+      last_failure_source: "watchlist_poll",
+      last_error_message: "gateway unavailable",
+    });
+    watchlistAddShouldFail = true;
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/live copart sync is temporarily unavailable/i);
+    fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "12345678" } });
+    fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
+
+    expect(
+      await screen.findByText(
+        /adding a lot to the watchlist is unavailable right now because live copart sync is offline\. cached data remains available\./i,
+      ),
+    ).toBeTruthy();
   });
 });

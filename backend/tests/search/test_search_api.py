@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 
 import cartrap.app as app_module
 from cartrap.config import Settings
+from cartrap.modules.copart_provider.errors import CopartGatewayUnavailableError
 from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSearchPage, CopartSearchResult
 from cartrap.modules.search.schemas import SearchRequest
 from cartrap.modules.search.service import SearchService
@@ -77,6 +78,15 @@ class FakeProvider:
                 "type": "MAKE_MODEL",
             }
         }
+
+    def close(self) -> None:
+        return None
+
+
+class GatewayUnavailableProvider:
+    def search_lots(self, payload: dict) -> CopartSearchPage:
+        del payload
+        raise CopartGatewayUnavailableError("gateway unavailable")
 
     def close(self) -> None:
         return None
@@ -436,6 +446,20 @@ def test_search_handles_provider_failure(client: TestClient) -> None:
         response = client.post(
             "/api/search",
             json={"make": "Ford", "model": "Broken"},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Failed to fetch search results from Copart."
+
+
+def test_search_handles_gateway_unavailable_without_direct_fallback(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "gateway-down@example.com", "GatewayDownPass123")
+        client.app.state.copart_provider_factory = lambda: GatewayUnavailableProvider()
+        response = client.post(
+            "/api/search",
+            json={"make": "Ford"},
             headers={"Authorization": f"Bearer {user_token}"},
         )
 

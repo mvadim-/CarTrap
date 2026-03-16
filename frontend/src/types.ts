@@ -142,3 +142,20 @@ export type PushSubscriptionConfig = {
   public_key: string | null;
   reason: string | null;
 };
+
+export type LiveSyncStatus = {
+  status: "available" | "degraded";
+  last_success_at: string | null;
+  last_success_source: string | null;
+  last_failure_at: string | null;
+  last_failure_source: string | null;
+  last_error_message: string | null;
+  stale: boolean;
+};
+
+export type SystemStatus = {
+  status: string;
+  service: string;
+  environment: string;
+  live_sync: LiveSyncStatus;
+};

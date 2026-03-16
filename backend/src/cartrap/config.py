@@ -5,7 +5,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import List, Optional
 
-from pydantic import Field
+import httpx
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,9 +66,33 @@ class Settings(BaseSettings):
     copart_api_d_token: Optional[str] = Field(default=None, alias="COPART_API_D_TOKEN")
     copart_api_cookie: Optional[str] = Field(default=None, alias="COPART_API_COOKIE")
     copart_api_site_code: str = Field(default="CPRTUS", alias="COPART_API_SITECODE", min_length=1)
+    copart_http_timeout_seconds: float = Field(default=15.0, alias="COPART_HTTP_TIMEOUT_SECONDS", gt=0)
+    copart_http_connect_timeout_seconds: float = Field(default=5.0, alias="COPART_HTTP_CONNECT_TIMEOUT_SECONDS", gt=0)
+    copart_http_keepalive_expiry_seconds: float = Field(
+        default=30.0,
+        alias="COPART_HTTP_KEEPALIVE_EXPIRY_SECONDS",
+        gt=0,
+    )
+    copart_http_max_connections: int = Field(default=20, alias="COPART_HTTP_MAX_CONNECTIONS", ge=1)
+    copart_http_max_keepalive_connections: int = Field(
+        default=10,
+        alias="COPART_HTTP_MAX_KEEPALIVE_CONNECTIONS",
+        ge=1,
+    )
+    copart_gateway_base_url: Optional[str] = Field(default=None, alias="COPART_GATEWAY_BASE_URL")
+    copart_gateway_token: Optional[str] = Field(default=None, alias="COPART_GATEWAY_TOKEN")
+    copart_gateway_enable_gzip: bool = Field(default=True, alias="COPART_GATEWAY_ENABLE_GZIP")
     vapid_public_key: Optional[str] = Field(default=None, alias="VAPID_PUBLIC_KEY")
     vapid_private_key: Optional[str] = Field(default=None, alias="VAPID_PRIVATE_KEY")
     vapid_subject: Optional[str] = Field(default=None, alias="VAPID_SUBJECT")
+
+    def __init__(self, **values):
+        normalized_values = dict(values)
+        for field_name, field_info in type(self).model_fields.items():
+            alias = field_info.alias
+            if alias and field_name in normalized_values and alias not in normalized_values:
+                normalized_values[alias] = normalized_values.pop(field_name)
+        super().__init__(**normalized_values)
 
     @property
     def cors_origins(self) -> List[str]:
@@ -78,6 +103,23 @@ class Settings(BaseSettings):
         if self.environment.strip().lower() == "production":
             return None
         return PRIVATE_NETWORK_CORS_REGEX
+
+    @property
+    def copart_gateway_enabled(self) -> bool:
+        return bool(self.copart_gateway_base_url)
+
+    @model_validator(mode="after")
+    def validate_copart_settings(self) -> "Settings":
+        if self.copart_gateway_base_url:
+            parsed_gateway_url = httpx.URL(self.copart_gateway_base_url)
+            if parsed_gateway_url.scheme not in {"http", "https"}:
+                raise ValueError("COPART_GATEWAY_BASE_URL must use http or https.")
+            if not self.copart_gateway_token:
+                raise ValueError("COPART_GATEWAY_TOKEN is required when COPART_GATEWAY_BASE_URL is set.")
+
+        if self.copart_http_max_keepalive_connections > self.copart_http_max_connections:
+            raise ValueError("COPART_HTTP_MAX_KEEPALIVE_CONNECTIONS cannot exceed COPART_HTTP_MAX_CONNECTIONS.")
+        return self
 
 
 @lru_cache(maxsize=1)

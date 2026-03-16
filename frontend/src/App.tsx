@@ -19,6 +19,7 @@ import {
   deleteSavedSearch,
   getSearchCatalog,
   getPushSubscriptionConfig,
+  getSystemStatus,
   listPushSubscriptions,
   listSavedSearches,
   listWatchlist,
@@ -32,6 +33,7 @@ import {
 } from "./lib/api";
 import type {
   Invite,
+  LiveSyncStatus,
   PushSubscriptionItem,
   PushSubscriptionPayload,
   SavedSearch,
@@ -106,6 +108,7 @@ export function App() {
   const [isLoadingSearchCatalog, setIsLoadingSearchCatalog] = useState(false);
   const [permissionState, setPermissionState] = useState(getNotificationPermission());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [liveSyncStatus, setLiveSyncStatus] = useState<LiveSyncStatus | null>(null);
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -124,6 +127,7 @@ export function App() {
         setWatchlist([]);
         setSubscriptions([]);
         setSearchCatalog(null);
+        setLiveSyncStatus(null);
         setError("Session expired. Please sign in again.");
         navigate("/login");
       },
@@ -134,15 +138,54 @@ export function App() {
     if (!session.accessToken) {
       return;
     }
-    void listWatchlist(session.accessToken).then(setWatchlist).catch(() => undefined);
-    void listSavedSearches(session.accessToken).then(setSavedSearches).catch(() => undefined);
-    void listPushSubscriptions(session.accessToken).then(setSubscriptions).catch(() => undefined);
     setIsLoadingSearchCatalog(true);
-    void getSearchCatalog(session.accessToken)
-      .then(setSearchCatalog)
-      .catch(() => undefined)
-      .finally(() => setIsLoadingSearchCatalog(false));
+    void Promise.allSettled([
+      listWatchlist(session.accessToken),
+      listSavedSearches(session.accessToken),
+      listPushSubscriptions(session.accessToken),
+      getSearchCatalog(session.accessToken),
+      getSystemStatus(session.accessToken),
+    ]).then((results) => {
+      const [watchlistResult, savedSearchesResult, pushResult, catalogResult, systemStatusResult] = results;
+      if (watchlistResult.status === "fulfilled") {
+        setWatchlist(watchlistResult.value);
+      }
+      if (savedSearchesResult.status === "fulfilled") {
+        setSavedSearches(savedSearchesResult.value);
+      }
+      if (pushResult.status === "fulfilled") {
+        setSubscriptions(pushResult.value);
+      }
+      if (catalogResult.status === "fulfilled") {
+        setSearchCatalog(catalogResult.value);
+      }
+      if (systemStatusResult.status === "fulfilled") {
+        setLiveSyncStatus(systemStatusResult.value.live_sync);
+      }
+      setIsLoadingSearchCatalog(false);
+    });
   }, [session.accessToken]);
+
+  async function refreshLiveSyncStatus(token: string): Promise<LiveSyncStatus | null> {
+    try {
+      const status = await getSystemStatus(token);
+      setLiveSyncStatus(status.live_sync);
+      return status.live_sync;
+    } catch {
+      return null;
+    }
+  }
+
+  function isLiveSyncUnavailable(status: LiveSyncStatus | null): boolean {
+    return status?.status === "degraded";
+  }
+
+  function formatLiveSyncActionError(actionLabel: string, fallbackMessage: string, status: LiveSyncStatus | null): string {
+    if (!isLiveSyncUnavailable(status)) {
+      return fallbackMessage;
+    }
+    return `${actionLabel} is unavailable right now because live Copart sync is offline. Cached data remains available.`;
+  }
 
   async function handleLogin(email: string, password: string) {
     try {
@@ -202,11 +245,14 @@ export function App() {
         },
         session.accessToken,
       );
+      await refreshLiveSyncStatus(session.accessToken);
       setSearchResults(response.results);
       setSearchTotalResults(response.total_results);
       return;
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Search failed";
+      const status = await refreshLiveSyncStatus(session.accessToken);
+      const fallbackMessage = caught instanceof Error ? caught.message : "Search failed";
+      const message = formatLiveSyncActionError("Search", fallbackMessage, status);
       setError(message);
       throw new Error(message);
     }
@@ -262,9 +308,17 @@ export function App() {
     if (!session.accessToken) return;
     try {
       const trackedLot = await addFromSearch(lotUrl, session.accessToken);
+      await refreshLiveSyncStatus(session.accessToken);
       setWatchlist((current) => [trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not add lot");
+      const status = await refreshLiveSyncStatus(session.accessToken);
+      setError(
+        formatLiveSyncActionError(
+          "Adding a lot from search",
+          caught instanceof Error ? caught.message : "Could not add lot",
+          status,
+        ),
+      );
     }
   }
 
@@ -292,9 +346,17 @@ export function App() {
     try {
       setError(null);
       const trackedLot = await addLotNumberToWatchlist(lotNumber, session.accessToken);
+      await refreshLiveSyncStatus(session.accessToken);
       setWatchlist((current) => [trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not add lot");
+      const status = await refreshLiveSyncStatus(session.accessToken);
+      setError(
+        formatLiveSyncActionError(
+          "Adding a lot to the watchlist",
+          caught instanceof Error ? caught.message : "Could not add lot",
+          status,
+        ),
+      );
     }
   }
 
@@ -314,9 +376,17 @@ export function App() {
     try {
       setError(null);
       const refreshedCatalog = await refreshSearchCatalog(session.accessToken);
+      await refreshLiveSyncStatus(session.accessToken);
       setSearchCatalog(refreshedCatalog);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not refresh search catalog");
+      const status = await refreshLiveSyncStatus(session.accessToken);
+      setError(
+        formatLiveSyncActionError(
+          "Refreshing the search catalog",
+          caught instanceof Error ? caught.message : "Could not refresh search catalog",
+          status,
+        ),
+      );
     }
   }
 
@@ -392,6 +462,7 @@ export function App() {
     setWatchlist([]);
     setSubscriptions([]);
     setSearchCatalog(null);
+    setLiveSyncStatus(null);
     setIsSettingsOpen(false);
     navigate("/login");
   }
@@ -412,7 +483,12 @@ export function App() {
 
   return (
     <>
-      <DashboardShell user={session.user!} onLogout={handleLogout} onOpenSettings={() => setIsSettingsOpen(true)}>
+      <DashboardShell
+        user={session.user!}
+        liveSyncStatus={liveSyncStatus}
+        onLogout={handleLogout}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+      >
         {error ? <p className="error">{error}</p> : null}
         {session.user?.role === "admin" ? (
           <>

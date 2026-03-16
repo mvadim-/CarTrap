@@ -53,7 +53,7 @@ class CopartProvider:
         )
 
     def fetch_search_count_conditional(self, payload: dict, etag: Optional[str] = None) -> CopartSearchCountFetchResult:
-        response = self._client.search_with_metadata(payload, etag=etag)
+        response = self._client.search_count_with_metadata(payload, etag=etag)
         if response.not_modified:
             return CopartSearchCountFetchResult(num_found=None, etag=response.etag, not_modified=True)
         return CopartSearchCountFetchResult(

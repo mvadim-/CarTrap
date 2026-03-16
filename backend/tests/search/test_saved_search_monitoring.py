@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+from cartrap.modules.copart_provider.errors import CopartGatewayUnavailableError
 from cartrap.modules.copart_provider.models import CopartSearchPage
 from cartrap.modules.search.schemas import SavedSearchCreateRequest
 from cartrap.modules.search.service import SearchService
@@ -51,6 +52,16 @@ class EtagAwareProvider:
             (),
             {"num_found": self._num_found, "etag": self._etag, "not_modified": self._not_modified},
         )()
+
+    def close(self) -> None:
+        return None
+
+
+class GatewayUnavailableProvider:
+    def fetch_search_count_conditional(self, payload: dict, etag: str | None = None):
+        del payload
+        del etag
+        raise CopartGatewayUnavailableError("gateway unavailable")
 
     def close(self) -> None:
         return None
@@ -196,4 +207,37 @@ def test_saved_search_poll_skips_heavy_refresh_when_search_etag_is_not_modified(
     stored = database["saved_searches"].find_one({"_id": ObjectId(saved["id"])})
     assert stored["search_etag"] == "\"search-etag-2\""
     assert stored["result_count"] == 5
+    assert notification_service.events == []
+
+
+def test_saved_search_poll_counts_gateway_failure_without_crashing_loop() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    notification_service = FakeNotificationService()
+    service = SearchService(
+        database,
+        provider_factory=lambda: GatewayUnavailableProvider(),
+        notification_service=notification_service,
+    )
+    current_time = datetime(2026, 3, 13, 12, 0, tzinfo=timezone.utc)
+    saved = service.save_search(
+        {"id": "user-5"},
+        SavedSearchCreateRequest(make="Ford", model="Mustang Mach-E", result_count=5),
+    )["saved_search"]
+    database["saved_searches"].update_one(
+        {"_id": ObjectId(saved["id"])},
+        {"$set": {"last_checked_at": current_time - timedelta(minutes=16)}},
+    )
+
+    result = service.poll_due_saved_searches(now=current_time)
+
+    assert result == {
+        "processed": 1,
+        "updated": 0,
+        "failed": 1,
+        "notified": 0,
+        "events": [],
+    }
+    stored = database["saved_searches"].find_one({"_id": ObjectId(saved["id"])})
+    assert stored["result_count"] == 5
+    assert stored["last_checked_at"] == current_time - timedelta(minutes=16)
     assert notification_service.events == []

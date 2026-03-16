@@ -18,6 +18,7 @@ from cartrap.modules.notifications.service import NotificationService
 from cartrap.modules.search.catalog_refresh import SearchCatalogRefreshJob
 from cartrap.modules.search.repository import SavedSearchRepository, SearchCatalogRepository
 from cartrap.modules.search.schemas import SavedSearchCreateRequest, SearchRequest
+from cartrap.modules.system_status.service import SystemStatusService
 from cartrap.modules.watchlist.service import WatchlistService
 
 
@@ -47,6 +48,7 @@ class SearchService:
         self._saved_search_repository = SavedSearchRepository(database)
         self._saved_search_repository.ensure_indexes()
         self._notification_service = notification_service
+        self._system_status_service = SystemStatusService(database)
         self._catalog_refresh_factory = catalog_refresh_factory or (
             lambda: SearchCatalogRefreshJob(provider_factory=self._provider_factory, overrides_path=CATALOG_OVERRIDES_PATH)
         )
@@ -56,6 +58,7 @@ class SearchService:
         provider = self._provider_factory()
         try:
             first_page = provider.search_lots(source_request)
+            self._system_status_service.mark_live_sync_available("manual_search")
             total_results = first_page.num_found
             results_by_lot_number = {item.lot_number: item for item in first_page.results}
             total_pages = max(1, math.ceil(total_results / SEARCH_PAGE_SIZE)) if total_results else 1
@@ -67,6 +70,7 @@ class SearchService:
                 for item in page.results:
                     results_by_lot_number[item.lot_number] = item
         except Exception as exc:
+            self._system_status_service.mark_live_sync_degraded("manual_search", exc)
             logger.exception("Copart search failed for source_request=%s", source_request)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -138,7 +142,9 @@ class SearchService:
         refresh_job = self._catalog_refresh_factory()
         try:
             catalog = refresh_job.refresh()
+            self._system_status_service.mark_live_sync_available("catalog_refresh")
         except Exception as exc:
+            self._system_status_service.mark_live_sync_degraded("catalog_refresh", exc)
             logger.exception("Search catalog refresh failed.")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -163,8 +169,9 @@ class SearchService:
             processed += 1
             try:
                 event = self._poll_single_saved_search(saved_search, current_time)
-            except Exception:
+            except Exception as exc:
                 failed += 1
+                self._system_status_service.mark_live_sync_degraded("saved_search_poll", exc, checked_at=current_time)
                 logger.exception("Saved search polling failed for saved_search_id=%s", saved_search.get("_id"))
                 continue
 
@@ -188,7 +195,7 @@ class SearchService:
 
     def _poll_single_saved_search(self, saved_search: dict, now: datetime) -> dict | None:
         criteria = SearchRequest(**saved_search["criteria"])
-        fetch_result = self.fetch_result_count(criteria, etag=saved_search.get("search_etag"))
+        fetch_result = self.fetch_result_count(criteria, etag=saved_search.get("search_etag"), checked_at=now)
         if fetch_result["not_modified"]:
             self._saved_search_repository.update_saved_search_poll_state(
                 str(saved_search["_id"]),
@@ -227,17 +234,24 @@ class SearchService:
             "new_matches": new_matches,
         }
 
-    def fetch_result_count(self, payload: SearchRequest, etag: str | None = None) -> dict:
+    def fetch_result_count(self, payload: SearchRequest, etag: str | None = None, checked_at: datetime | None = None) -> dict:
         source_request = payload.to_api_request().to_payload()
         provider = self._provider_factory()
         try:
             if hasattr(provider, "fetch_search_count_conditional"):
                 result = provider.fetch_search_count_conditional(source_request, etag=etag)
                 if result.not_modified:
+                    self._system_status_service.mark_live_sync_available(
+                        "saved_search_poll",
+                        checked_at=checked_at,
+                    )
                     return {"result_count": None, "etag": result.etag, "not_modified": True}
+                self._system_status_service.mark_live_sync_available("saved_search_poll", checked_at=checked_at)
                 return {"result_count": int(result.num_found or 0), "etag": result.etag, "not_modified": False}
             first_page = provider.search_lots(source_request)
+            self._system_status_service.mark_live_sync_available("saved_search_poll", checked_at=checked_at)
         except Exception as exc:
+            self._system_status_service.mark_live_sync_degraded("saved_search_poll", exc, checked_at=checked_at)
             logger.exception("Copart result-count fetch failed for source_request=%s", source_request)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,

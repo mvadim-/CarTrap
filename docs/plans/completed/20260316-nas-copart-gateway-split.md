@@ -86,13 +86,13 @@
 - Create: `backend/src/cartrap/modules/copart_provider/errors.py`
 - Create: `backend/tests/copart/test_gateway_client_config.py`
 
-- [ ] add gateway-related settings such as `COPART_GATEWAY_BASE_URL`, `COPART_GATEWAY_TOKEN`, timeout settings, and optional compression flags in `backend/src/cartrap/config.py`
-- [ ] refactor `backend/src/cartrap/modules/copart_provider/client.py` into a transport-friendly shape where direct Copart HTTP logic and NAS gateway HTTP logic can share a stable interface returning raw payloads plus metadata
-- [ ] ensure the AWS-to-NAS transport uses reusable long-lived HTTP clients/connections instead of per-request client recreation, so keep-alive actually improves latency
-- [ ] define explicit gateway error types for unavailable gateway, upstream Copart rejection, and malformed gateway responses
-- [ ] write tests for configuration parsing and client selection success cases
-- [ ] write tests for missing/invalid gateway configuration, error mapping, and repeated-call connection reuse edge cases
-- [ ] run tests - must pass before next task
+- [x] add gateway-related settings such as `COPART_GATEWAY_BASE_URL`, `COPART_GATEWAY_TOKEN`, timeout settings, and optional compression flags in `backend/src/cartrap/config.py`
+- [x] refactor `backend/src/cartrap/modules/copart_provider/client.py` into a transport-friendly shape where direct Copart HTTP logic and NAS gateway HTTP logic can share a stable interface returning raw payloads plus metadata
+- [x] ensure the AWS-to-NAS transport uses reusable long-lived HTTP clients/connections instead of per-request client recreation, so keep-alive actually improves latency
+- [x] define explicit gateway error types for unavailable gateway, upstream Copart rejection, and malformed gateway responses
+- [x] write tests for configuration parsing and client selection success cases
+- [x] write tests for missing/invalid gateway configuration, error mapping, and repeated-call connection reuse edge cases
+- [x] run tests - must pass before next task
 
 ### Task 2: Add NAS gateway service skeleton and raw Copart proxy endpoints
 
@@ -104,12 +104,12 @@
 - Create: `backend/tests/copart/test_gateway_router.py`
 - Modify: `backend/Dockerfile`
 
-- [ ] add a minimal FastAPI gateway entrypoint for NAS deployment that exposes `POST /v1/search`, `POST /v1/lot-details`, `POST /v1/search-count`, and `GET /v1/search-keywords`
-- [ ] protect gateway endpoints with bearer-token authentication and keep responses as raw Copart payloads with optional metadata like `etag`
-- [ ] ensure gateway responses support efficient payload delivery for large search results, preferring HTTP gzip over manual JSON wrapping
-- [ ] write tests for gateway endpoint success paths and raw payload passthrough
-- [ ] write tests for auth failures, upstream Copart errors, and malformed request payloads
-- [ ] run tests - must pass before next task
+- [x] add a minimal FastAPI gateway entrypoint for NAS deployment that exposes `POST /v1/search`, `POST /v1/lot-details`, `POST /v1/search-count`, and `GET /v1/search-keywords`
+- [x] protect gateway endpoints with bearer-token authentication and keep responses as raw Copart payloads with optional metadata like `etag`
+- [x] ensure gateway responses support efficient payload delivery for large search results, preferring HTTP gzip over manual JSON wrapping
+- [x] write tests for gateway endpoint success paths and raw payload passthrough
+- [x] write tests for auth failures, upstream Copart errors, and malformed request payloads
+- [x] run tests - must pass before next task
 
 ### Task 3: Route AWS backend Copart traffic through NAS gateway
 
@@ -125,13 +125,13 @@
 - Modify: `backend/tests/watchlist/test_watchlist_api.py`
 - Modify: `backend/tests/monitoring/test_change_detection.py`
 
-- [ ] wire `CopartProvider` to prefer NAS gateway transport when `COPART_GATEWAY_BASE_URL` is configured while preserving the existing raw payload contract expected by normalization code
-- [ ] keep AWS normalization, snapshot comparison, Mongo writes, and notification flows unchanged apart from transport substitution
-- [ ] route all Copart-dependent worker flows through the gateway path, including tracked-lot polling, saved-search polling, and catalog refresh jobs
-- [ ] make worker sync cycles treat gateway outages as transient external failures rather than process-fatal errors
-- [ ] write tests for search/watchlist/monitoring/saved-search success paths using gateway-backed raw responses
-- [ ] write tests for gateway unavailable/error scenarios and verify AWS services degrade predictably without direct Copart fallback
-- [ ] run tests - must pass before next task
+- [x] wire `CopartProvider` to prefer NAS gateway transport when `COPART_GATEWAY_BASE_URL` is configured while preserving the existing raw payload contract expected by normalization code
+- [x] keep AWS normalization, snapshot comparison, Mongo writes, and notification flows unchanged apart from transport substitution
+- [x] route all Copart-dependent worker flows through the gateway path, including tracked-lot polling, saved-search polling, and catalog refresh jobs
+- [x] make worker sync cycles treat gateway outages as transient external failures rather than process-fatal errors
+- [x] write tests for search/watchlist/monitoring/saved-search success paths using gateway-backed raw responses
+- [x] write tests for gateway unavailable/error scenarios and verify AWS services degrade predictably without direct Copart fallback
+- [x] run tests - must pass before next task
 
 ### Task 4: Expose live-sync availability from backend
 
@@ -145,13 +145,13 @@
 - Modify: `backend/src/cartrap/worker/main.py`
 - Create: `backend/tests/test_system_status.py`
 
-- [ ] extend system/status API surface so the frontend can detect whether live Copart sync is currently available via NAS gateway
-- [ ] define a stable response shape that distinguishes `service healthy` from `live_sync degraded`, without breaking existing health checks
-- [ ] persist recent gateway success/failure state in a backend-safe shared store that both web app and worker processes can read/write, rather than relying on in-memory app state
-- [ ] update both request-path failures and worker-path failures to record that shared live-sync status consistently
-- [ ] write tests for healthy status responses and degraded live-sync state exposure
-- [ ] write tests for edge cases such as stale failure markers or partial subsystem availability
-- [ ] run tests - must pass before next task
+- [x] extend system/status API surface so the frontend can detect whether live Copart sync is currently available via NAS gateway
+- [x] define a stable response shape that distinguishes `service healthy` from `live_sync degraded`, without breaking existing health checks
+- [x] persist recent gateway success/failure state in a backend-safe shared store that both web app and worker processes can read/write, rather than relying on in-memory app state
+- [x] update both request-path failures and worker-path failures to record that shared live-sync status consistently
+- [x] write tests for healthy status responses and degraded live-sync state exposure
+- [x] write tests for edge cases such as stale failure markers or partial subsystem availability
+- [x] run tests - must pass before next task
 
 ### Task 5: Add frontend offline-mode UX for live Copart outages
 
@@ -162,12 +162,12 @@
 - Modify: `frontend/src/styles.css`
 - Modify: `frontend/tests/app.test.tsx`
 
-- [ ] fetch backend live-sync status on app bootstrap and after relevant user actions that depend on fresh Copart data
-- [ ] show a clear banner/message that the app is operating with locally stored data only when NAS gateway or live sync is unavailable
-- [ ] keep previously synced Mongo-backed data visible while surfacing actionable failure messaging for live Copart actions, without requiring broad UI disabling as part of the first implementation
-- [ ] write frontend tests for the degraded/offline banner success path and recovery path
-- [ ] write frontend tests for user-visible edge cases when live search/watchlist refresh actions fail during degraded mode
-- [ ] run tests - must pass before next task
+- [x] fetch backend live-sync status on app bootstrap and after relevant user actions that depend on fresh Copart data
+- [x] show a clear banner/message that the app is operating with locally stored data only when NAS gateway or live sync is unavailable
+- [x] keep previously synced Mongo-backed data visible while surfacing actionable failure messaging for live Copart actions, without requiring broad UI disabling as part of the first implementation
+- [x] write frontend tests for the degraded/offline banner success path and recovery path
+- [x] write frontend tests for user-visible edge cases when live search/watchlist refresh actions fail during degraded mode
+- [x] run tests - must pass before next task
 
 ### Task 6: Document NAS deployment and operational workflow
 
@@ -177,23 +177,23 @@
 - Modify: `docker-compose.yml`
 - Modify: `ChangeLog.md`
 
-- [ ] document the split deployment model: AWS primary backend plus NAS-hosted `copart-gateway`
-- [ ] document required environment variables, bearer auth, gzip expectations, and the no-fallback degraded-mode behavior
-- [ ] add a local/docker-friendly way to run the gateway service for development or NAS deployment packaging
-- [ ] write/update tests or verification notes for repository-level deployment commands and config examples where applicable
-- [ ] run relevant verification commands and record results before closing implementation
+- [x] document the split deployment model: AWS primary backend plus NAS-hosted `copart-gateway`
+- [x] document required environment variables, bearer auth, gzip expectations, and the no-fallback degraded-mode behavior
+- [x] add a local/docker-friendly way to run the gateway service for development or NAS deployment packaging
+- [x] write/update tests or verification notes for repository-level deployment commands and config examples where applicable
+- [x] run relevant verification commands and record results before closing implementation
 
 ### Task 7: Verify acceptance criteria
-- [ ] verify all requirements from Overview are implemented
-- [ ] verify edge cases are handled
-- [ ] run full backend test suite: `./.venv/bin/pytest backend/tests`
-- [ ] run frontend tests: `npm --prefix frontend run test`
-- [ ] run frontend production build: `npm --prefix frontend run build`
+- [x] verify all requirements from Overview are implemented
+- [x] verify edge cases are handled
+- [x] run full backend test suite: `./.venv/bin/pytest backend/tests`
+- [x] run frontend tests: `npm --prefix frontend run test`
+- [x] run frontend production build: `npm --prefix frontend run build`
 
 ### Task 8: [Final] Update documentation
-- [ ] update `README.md` if needed
-- [ ] update `AGENTS.md`-adjacent workflow documentation only if new repo-local patterns are discovered
-- [ ] move this plan to `docs/plans/completed/` after implementation stabilizes
+- [x] update `README.md` if needed
+- [x] update `AGENTS.md`-adjacent workflow documentation only if new repo-local patterns are discovered
+- [x] move this plan to `docs/plans/completed/` after implementation stabilizes
 
 ## Technical Details
 - AWS-to-NAS communication should use HTTPS with keep-alive and bearer-token auth; avoid WebSocket complexity because the interaction model is synchronous RPC, not streaming.

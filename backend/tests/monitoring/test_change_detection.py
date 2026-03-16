@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+from cartrap.modules.copart_provider.errors import CopartGatewayUnavailableError
 from cartrap.modules.copart_provider.models import CopartLotSnapshot
 from cartrap.modules.monitoring.change_detection import detect_significant_changes
 from cartrap.modules.monitoring.service import MonitoringService
@@ -51,6 +52,15 @@ class EtagAwareProvider:
             (),
             {"snapshot": self._snapshot, "etag": self._etag, "not_modified": self._not_modified},
         )()
+
+    def close(self) -> None:
+        return None
+
+
+class GatewayUnavailableProvider:
+    def fetch_lot(self, url: str) -> CopartLotSnapshot:
+        del url
+        raise CopartGatewayUnavailableError("gateway unavailable")
 
     def close(self) -> None:
         return None
@@ -228,4 +238,41 @@ def test_monitoring_service_skips_snapshot_creation_when_lot_etag_is_not_modifie
     tracked_lot = database["tracked_lots"].find_one({"_id": ObjectId(created["tracked_lot"]["id"])})
     assert tracked_lot["detail_etag"] == "\"lot-etag-2\""
     assert tracked_lot["last_checked_at"] == datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc)
+    assert database["lot_snapshots"].count_documents({"tracked_lot_id": created["tracked_lot"]["id"]}) == 1
+
+
+def test_monitoring_service_treats_gateway_unavailable_as_transient_failure() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    initial_snapshot = CopartLotSnapshot(
+        lot_number="87654321",
+        title="2018 HONDA CIVIC EX",
+        url="https://www.copart.com/lot/87654321",
+        thumbnail_url=None,
+        image_urls=[],
+        odometer=None,
+        primary_damage=None,
+        estimated_retail_value=None,
+        has_key=None,
+        drivetrain=None,
+        highlights=[],
+        vin=None,
+        status="upcoming",
+        raw_status="Upcoming",
+        sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+        current_bid=1800.0,
+        buy_now_price=None,
+        currency="USD",
+    )
+    watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
+    created = watchlist_service.add_tracked_lot({"id": "user-5"}, "https://www.copart.com/lot/87654321")
+    monitoring = MonitoringService(database, provider_factory=lambda: GatewayUnavailableProvider())
+
+    result = monitoring.poll_due_lots(now=datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc))
+
+    assert result["processed"] == 1
+    assert result["updated"] == 0
+    assert result["failed"] == 1
+    tracked_lot = database["tracked_lots"].find_one({"_id": ObjectId(created["tracked_lot"]["id"])})
+    assert tracked_lot["status"] == "upcoming"
+    assert tracked_lot["last_checked_at"] < datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc)
     assert database["lot_snapshots"].count_documents({"tracked_lot_id": created["tracked_lot"]["id"]}) == 1

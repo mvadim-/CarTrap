@@ -16,6 +16,11 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 - `frontend/` - PWA client and frontend test setup
 - `docs/plans/` - implementation plans and progress tracking
 
+## Deployment Model
+- `backend` on AWS remains the primary API for auth, Mongo-backed state, worker polling, notifications, and frontend traffic.
+- `copart-gateway` on NAS is a narrow raw-JSON proxy to Copart. AWS calls NAS over HTTP(S) with bearer auth and keep-alive.
+- AWS does not fall back to direct Copart access. If NAS sync is degraded, the app serves cached Mongo-backed data and `/api/system/status` exposes `live_sync.status=degraded`.
+
 ## Local Development
 1. Copy `.env.example` to `.env`.
 2. Create a local virtual environment with `python3 -m venv .venv`.
@@ -28,9 +33,33 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 9. If `VITE_API_BASE_URL` is not set, frontend targets `http://<current-host>:8000/api`, so opening the UI via LAN IP also uses the same LAN host for API calls.
 10. If frontend is opened from another origin in production, add it to `BACKEND_CORS_ORIGINS` in `.env`.
 10. Configure Copart API headers in `.env`: `COPART_API_DEVICE_NAME`, `COPART_API_D_TOKEN`, `COPART_API_COOKIE`, and optionally override `COPART_API_BASE_URL`, `COPART_API_SEARCH_PATH`, `COPART_API_SITECODE`.
-11. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
-12. If you use backend-driven catalog refresh, `COPART_API_SEARCH_KEYWORDS_PATH` defaults to `/mcs/v2/public/data/search/keywords`.
-13. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
+11. `COPART_HTTP_TIMEOUT_SECONDS`, `COPART_HTTP_CONNECT_TIMEOUT_SECONDS`, `COPART_HTTP_KEEPALIVE_EXPIRY_SECONDS`, `COPART_HTTP_MAX_CONNECTIONS`, and `COPART_HTTP_MAX_KEEPALIVE_CONNECTIONS` tune reusable HTTP clients for both direct Copart access and NAS gateway transport.
+12. On the primary backend, set `COPART_GATEWAY_BASE_URL` and `COPART_GATEWAY_TOKEN` to route all live Copart traffic through NAS. Leave `COPART_GATEWAY_BASE_URL` empty on the NAS gateway itself.
+13. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
+14. If you use backend-driven catalog refresh, `COPART_API_SEARCH_KEYWORDS_PATH` defaults to `/mcs/v2/public/data/search/keywords`.
+15. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
+
+## NAS Gateway
+
+Runtime expectations:
+
+- `COPART_GATEWAY_TOKEN` is required on both AWS and NAS.
+- `COPART_GATEWAY_BASE_URL` is required only on AWS primary backend.
+- NAS gateway returns raw Copart JSON with standard HTTP `ETag`/`304` behavior and should rely on normal HTTP compression (`gzip`) instead of custom payload wrappers.
+- For production rollout, put the NAS gateway behind HTTPS and restrict inbound traffic to the AWS static IP or another explicit allowlist.
+
+Local gateway run:
+
+```bash
+source .venv/bin/activate
+uvicorn cartrap.gateway_app:app --reload --host 0.0.0.0 --port 8010
+```
+
+Docker Compose gateway profile:
+
+```bash
+docker compose --profile gateway up --build copart-gateway
+```
 
 ## VAPID Keys
 
@@ -50,6 +79,7 @@ Set the printed `Application Server Key` value as `VAPID_PUBLIC_KEY`, point `VAP
 - `mongodb` - primary database
 - `backend` - API container
 - `worker` - background jobs container
+- `copart-gateway` - optional NAS-style raw Copart proxy container, enabled with `docker compose --profile gateway`
 - `frontend` - static PWA served by nginx after a Vite production build
 
 ## Initial Commands
@@ -61,17 +91,19 @@ Set the printed `Application Server Key` value as `VAPID_PUBLIC_KEY`, point `VAP
 
 ## Docker Notes
 - `backend` and `worker` share the same Python image build and differ only by command.
+- `copart-gateway` reuses the same backend image and switches entrypoint via `APP_MODULE=cartrap.gateway_app:app`.
 - `frontend` is built with Vite and served from nginx on port `4173`.
 - `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` seed the first admin user on API startup.
 - `BACKEND_CORS_ORIGINS` controls which browser origins may call the API; local defaults cover `localhost` and `127.0.0.1` on ports `5173` and `4173`, while non-production backend also accepts private LAN IPv4 origins via regex.
 - `VITE_API_BASE_URL` can override the frontend API target; leave it empty to let the frontend derive `http://<current-host>:8000/api` automatically.
 - Copart integration now uses the JSON API on `mmember.copart.com`; HTML scraping and page parsing are no longer used.
+- `COPART_GATEWAY_ENABLE_GZIP=true` tells AWS-side gateway transport to advertise `Accept-Encoding: gzip`; actual compression should be terminated by the NAS gateway/reverse proxy layer.
 - Static make/model catalog generation lives in `scripts/generate_copart_make_model_catalog.py`, with manual fixes in `backend/src/cartrap/modules/search/data/copart_make_model_overrides.json`.
 - At runtime, the current make/model catalog is served from Mongo through `/api/search/catalog`, and admins can force a refresh via `/api/admin/search-catalog/refresh`.
 
 ## Current Status
 - MVP backend flows are implemented: invite auth, roles, Copart API integration, watchlist, search, monitoring, and push subscription management.
-- MVP frontend flows are implemented: login, invite acceptance, admin invite creation, backend-backed manual search catalog, modal search results, saved-search rerun, watchlist thumbnails with gallery modal, and client-side push registration UX.
+- MVP frontend flows are implemented: login, invite acceptance, admin invite creation, backend-backed manual search catalog, modal search results, saved-search rerun, watchlist thumbnails with gallery modal, client-side push registration UX, and degraded/offline live-sync messaging backed by `/api/system/status`.
 - Docker images for `backend`, `worker`, and `frontend` are buildable and the compose stack passes a basic smoke check.
 
 ## Latest Verification

@@ -7,6 +7,7 @@ import type {
   SearchCatalog,
   SearchResult,
   SearchResultsResponse,
+  SystemStatus,
   TokenPair,
   User,
   WatchlistItem,
@@ -46,6 +47,21 @@ let authLifecycleHandlers: AuthLifecycleHandlers = {};
 
 export function configureAuthLifecycle(handlers: AuthLifecycleHandlers): void {
   authLifecycleHandlers = handlers;
+}
+
+function parseErrorMessage(body: string, status: number): string {
+  if (!body) {
+    return `HTTP ${status}`;
+  }
+  try {
+    const parsed = JSON.parse(body) as { detail?: string };
+    if (typeof parsed.detail === "string" && parsed.detail.trim()) {
+      return parsed.detail;
+    }
+  } catch {
+    return body;
+  }
+  return body;
 }
 
 async function refreshTokens(): Promise<TokenPair | null> {
@@ -95,7 +111,7 @@ async function request<T>(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `HTTP ${response.status}`);
+    throw new Error(parseErrorMessage(text, response.status));
   }
 
   if (response.status === 204) {
@@ -164,6 +180,10 @@ export async function searchLots(
 
 export async function getSearchCatalog(token: string): Promise<SearchCatalog> {
   return request<SearchCatalog>("/search/catalog", { token });
+}
+
+export async function getSystemStatus(token: string): Promise<SystemStatus> {
+  return request<SystemStatus>("/system/status", { token });
 }
 
 export async function listSavedSearches(token: string): Promise<SavedSearch[]> {
