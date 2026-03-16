@@ -7,6 +7,7 @@ import time
 from typing import Optional
 
 from cartrap.config import get_settings
+from cartrap.core.logging import configure_logging
 from cartrap.db.mongo import MongoManager
 from cartrap.modules.monitoring.service import MonitoringService
 from cartrap.modules.notifications.service import NotificationService, build_web_push_sender
@@ -70,6 +71,7 @@ def run_single_poll_cycle(
 
 def run_polling_loop(sleep_seconds: int = 30) -> None:
     settings = get_settings()
+    configure_logging(settings.log_level)
     mongo = MongoManager(settings.mongo_uri, settings.mongo_db, settings.mongo_ping_on_startup)
     mongo.connect()
     sender = build_web_push_sender(settings.vapid_private_key, settings.vapid_subject)

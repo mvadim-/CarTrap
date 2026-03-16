@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import logging
 from typing import Protocol
 
 from fastapi import HTTPException, status
@@ -11,6 +12,9 @@ from pymongo.database import Database
 from pywebpush import WebPushException, webpush
 
 from cartrap.modules.notifications.repository import NotificationRepository
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class PushSender(Protocol):
@@ -173,6 +177,10 @@ class NotificationService:
 
     def _send_payload_to_owner(self, owner_user_id: str, payload: dict) -> dict:
         if self._sender is None:
+            LOGGER.warning(
+                "Push delivery skipped because sender is not configured.",
+                extra={"owner_user_id": owner_user_id, "payload_keys": sorted(payload.keys())},
+            )
             return {
                 "delivered": 0,
                 "failed": 0,
@@ -190,13 +198,41 @@ class NotificationService:
                 self._sender.send(subscription, payload)
                 delivered += 1
                 delivered_endpoints.append(subscription["endpoint"])
+                LOGGER.info(
+                    "Push notification delivered.",
+                    extra={
+                        "owner_user_id": owner_user_id,
+                        "endpoint": subscription["endpoint"],
+                        "payload_keys": sorted(payload.keys()),
+                    },
+                )
             except PushDeliveryError as exc:
                 failed += 1
+                LOGGER.warning(
+                    "Push delivery failed.",
+                    extra={
+                        "owner_user_id": owner_user_id,
+                        "endpoint": subscription["endpoint"],
+                        "unrecoverable": exc.unrecoverable,
+                        "reason": str(exc),
+                    },
+                )
                 if exc.unrecoverable:
                     self.repository.delete_subscription_by_id(str(subscription["_id"]))
                     removed += 1
+                    LOGGER.info(
+                        "Removed invalid push subscription after unrecoverable delivery failure.",
+                        extra={"owner_user_id": owner_user_id, "endpoint": subscription["endpoint"]},
+                    )
             except Exception:
                 failed += 1
+                LOGGER.exception(
+                    "Unexpected push delivery failure.",
+                    extra={
+                        "owner_user_id": owner_user_id,
+                        "endpoint": subscription.get("endpoint"),
+                    },
+                )
 
         return {
             "delivered": delivered,

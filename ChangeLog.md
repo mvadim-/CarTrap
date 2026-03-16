@@ -1,5 +1,13 @@
 # Change Log
 
+## [2026-03-16 17:39] Add push delivery diagnostics and worker logging bootstrap
+- Оновлено `backend/src/cartrap/modules/notifications/service.py`: додано явні structured logs для push delivery path, включно з warning при відсутньому sender, логами успішної доставки, причиною `PushDeliveryError`, а також повідомленням про автоматичне видалення subscription після unrecoverable failure.
+- Оновлено `backend/src/cartrap/worker/main.py`: worker тепер викликає `configure_logging(settings.log_level)` на старті, тож результати polling cycle і push delivery failures більше не губляться в порожніх `docker compose logs worker`.
+
+## [2026-03-16 17:14] Add private Synology NAS gateway administration runbook
+- Додано приватний `docs/private/nas-synology-gateway-admin.md` з окремим runbook для Synology DS723+ gateway deployment: NIC.UA DNS піддомен `copart-gw`, DSM Reverse Proxy/Let's Encrypt, `Container Manager`, стандартні deploy/update команди для `docker compose --profile gateway` і щоденні health/log checks.
+- У runbook окремо задокументовано продакшн-мережеву специфіку поточного setup: співіснування з `currex.pp.ua` на тих самих `80/443`, внутрішній gateway порт `8010`, заборону прямого публічного expose `8010`, а також troubleshooting для hairpin NAT, `405` на `HEAD /health`, gateway degraded mode і rotation для `COPART_GATEWAY_TOKEN` / `COPART_API_*`.
+
 ## [2026-03-16 13:27] Close NAS gateway split implementation plan
 - Оновлено `docs/plans/completed/20260316-nas-copart-gateway-split.md`: фінальні Task 7/8 checkboxes позначено виконаними після повного backend/frontend verification, а сам план перенесено з `docs/plans/` у `docs/plans/completed/`.
 - Verification closure для цього циклу спирається на вже прогнані команди: `./.venv/bin/pytest backend/tests` -> `124 passed`, `npm run test --prefix frontend` -> `16 passed`, `npm run build --prefix frontend` -> успішно, `docker compose --profile gateway config` -> успішно.
