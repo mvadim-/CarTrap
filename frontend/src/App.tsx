@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 
-import { DashboardShell } from "./features/dashboard/DashboardShell";
+import { useHashRoute } from "./app/router";
+import { useSession } from "./app/useSession";
 import { AdminInvitesPanel } from "./features/admin/AdminInvitesPanel";
 import { AdminSearchCatalogPanel } from "./features/admin/AdminSearchCatalogPanel";
 import { InviteAcceptScreen } from "./features/auth/InviteAcceptScreen";
 import { LoginScreen } from "./features/auth/LoginScreen";
+import { DashboardShell } from "./features/dashboard/DashboardShell";
 import { PushSettingsModal } from "./features/push/PushSettingsModal";
 import { SearchPanel } from "./features/search/SearchPanel";
+import { AsyncStatus } from "./features/shared/AsyncStatus";
 import { WatchlistPanel } from "./features/watchlist/WatchlistPanel";
-import { useHashRoute } from "./app/router";
-import { useSession } from "./app/useSession";
 import {
   acceptInvite,
   addFromSearch,
@@ -17,18 +18,19 @@ import {
   configureAuthLifecycle,
   createInvite,
   deleteSavedSearch,
-  getSearchCatalog,
   getPushSubscriptionConfig,
+  getSearchCatalog,
   getSystemStatus,
   listPushSubscriptions,
   listSavedSearches,
   listWatchlist,
   login,
-  removeWatchlistItem,
   refreshSavedSearchLive,
   refreshSearchCatalog,
+  removeWatchlistItem,
   saveSearch,
   searchLots,
+  sendPushTest,
   subscribeToPush,
   unsubscribeFromPush,
   viewSavedSearch,
@@ -36,17 +38,93 @@ import {
 import type {
   Invite,
   LiveSyncStatus,
+  PushDeliveryResult,
+  PushSubscriptionConfig,
   PushSubscriptionItem,
   PushSubscriptionPayload,
   SavedSearch,
+  SavedSearchResultsResponse,
   SearchCatalog,
   SearchResult,
-  SavedSearchResultsResponse,
   WatchlistItem,
 } from "./types";
 
+type SearchPayload = {
+  make?: string;
+  model?: string;
+  makeFilter?: string;
+  modelFilter?: string;
+  driveType?: string;
+  primaryDamage?: string;
+  titleType?: string;
+  fuelType?: string;
+  lotCondition?: string;
+  odometerRange?: string;
+  yearFrom?: string;
+  yearTo?: string;
+};
+
+type DashboardResourceKey = "watchlist" | "savedSearches" | "subscriptions" | "searchCatalog" | "liveSync";
+type DashboardState<T> = Record<DashboardResourceKey, T>;
+
+type ActionState = {
+  isSearching: boolean;
+  isSavingSearch: boolean;
+  openingSavedSearchId: string | null;
+  refreshingSavedSearchId: string | null;
+  deletingSavedSearchId: string | null;
+  addingFromSearchLotUrl: string | null;
+  isAddingWatchlistLot: boolean;
+  removingWatchlistId: string | null;
+  isSubscribingPush: boolean;
+  unsubscribingEndpoint: string | null;
+  isSendingPushTest: boolean;
+  isCreatingInvite: boolean;
+  isRefreshingCatalog: boolean;
+};
+
+const INITIAL_DASHBOARD_LOADING: DashboardState<boolean> = {
+  watchlist: false,
+  savedSearches: false,
+  subscriptions: false,
+  searchCatalog: false,
+  liveSync: false,
+};
+
+const INITIAL_DASHBOARD_ERRORS: DashboardState<string | null> = {
+  watchlist: null,
+  savedSearches: null,
+  subscriptions: null,
+  searchCatalog: null,
+  liveSync: null,
+};
+
+const INITIAL_ACTION_STATE: ActionState = {
+  isSearching: false,
+  isSavingSearch: false,
+  openingSavedSearchId: null,
+  refreshingSavedSearchId: null,
+  deletingSavedSearchId: null,
+  addingFromSearchLotUrl: null,
+  isAddingWatchlistLot: false,
+  removingWatchlistId: null,
+  isSubscribingPush: false,
+  unsubscribingEndpoint: null,
+  isSendingPushTest: false,
+  isCreatingInvite: false,
+  isRefreshingCatalog: false,
+};
+
 function getNotificationPermission(): string {
   return typeof Notification === "undefined" ? "unsupported" : Notification.permission;
+}
+
+function getBrowserOfflineState(): boolean {
+  return typeof navigator !== "undefined" && "onLine" in navigator ? !navigator.onLine : false;
+}
+
+function toErrorMessage(caught: unknown, fallbackMessage: string): string {
+  return caught instanceof Error && caught.message.trim() ? caught.message : fallbackMessage;
 }
 
 function encodeBase64Url(buffer: ArrayBuffer | null): string {
@@ -100,18 +178,30 @@ async function ensurePushRegistration(): Promise<ServiceWorkerRegistration> {
 export function App() {
   const [routeState, navigate] = useHashRoute();
   const session = useSession();
-  const [error, setError] = useState<string | null>(null);
+  const [globalError, setGlobalError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchTotalResults, setSearchTotalResults] = useState(0);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [latestInvite, setLatestInvite] = useState<Invite | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [subscriptions, setSubscriptions] = useState<PushSubscriptionItem[]>([]);
   const [searchCatalog, setSearchCatalog] = useState<SearchCatalog | null>(null);
-  const [isLoadingSearchCatalog, setIsLoadingSearchCatalog] = useState(false);
   const [permissionState, setPermissionState] = useState(getNotificationPermission());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [liveSyncStatus, setLiveSyncStatus] = useState<LiveSyncStatus | null>(null);
+  const [pushConfig, setPushConfig] = useState<PushSubscriptionConfig | null>(null);
+  const [pushConfigError, setPushConfigError] = useState<string | null>(null);
+  const [isLoadingPushConfig, setIsLoadingPushConfig] = useState(false);
+  const [currentPushEndpoint, setCurrentPushEndpoint] = useState<string | null>(null);
+  const [isBrowserOffline, setIsBrowserOffline] = useState(getBrowserOfflineState());
+  const [dashboardLoading, setDashboardLoading] = useState<DashboardState<boolean>>(INITIAL_DASHBOARD_LOADING);
+  const [dashboardErrors, setDashboardErrors] = useState<DashboardState<string | null>>(INITIAL_DASHBOARD_ERRORS);
+  const [actionState, setActionState] = useState<ActionState>(INITIAL_ACTION_STATE);
+
+  const isBootstrapping = Object.values(dashboardLoading).some(Boolean);
+  const supportsPush = typeof Notification !== "undefined" && typeof window !== "undefined" && "PushManager" in window;
+  const isSecurePushContext = typeof window !== "undefined" ? window.isSecureContext : false;
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -120,18 +210,152 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    function syncOnlineState() {
+      setIsBrowserOffline(getBrowserOfflineState());
+    }
+
+    window.addEventListener("online", syncOnlineState);
+    window.addEventListener("offline", syncOnlineState);
+    return () => {
+      window.removeEventListener("online", syncOnlineState);
+      window.removeEventListener("offline", syncOnlineState);
+    };
+  }, []);
+
+  function resetDashboardData() {
+    setSearchResults([]);
+    setSearchTotalResults(0);
+    setSavedSearches([]);
+    setWatchlist([]);
+    setSubscriptions([]);
+    setSearchCatalog(null);
+    setLiveSyncStatus(null);
+    setPushConfig(null);
+    setPushConfigError(null);
+    setCurrentPushEndpoint(null);
+    setLatestInvite(null);
+    setInviteLink(null);
+    setDashboardErrors(INITIAL_DASHBOARD_ERRORS);
+    setDashboardLoading(INITIAL_DASHBOARD_LOADING);
+    setActionState(INITIAL_ACTION_STATE);
+  }
+
+  function setDashboardLoadingState(key: DashboardResourceKey, value: boolean) {
+    setDashboardLoading((current) => ({ ...current, [key]: value }));
+  }
+
+  function setDashboardErrorState(key: DashboardResourceKey, value: string | null) {
+    setDashboardErrors((current) => ({ ...current, [key]: value }));
+  }
+
+  async function runDashboardLoader<T>(
+    key: DashboardResourceKey,
+    fallbackMessage: string,
+    loader: () => Promise<T>,
+  ): Promise<T | null> {
+    setDashboardLoadingState(key, true);
+    try {
+      const result = await loader();
+      setDashboardErrorState(key, null);
+      return result;
+    } catch (caught) {
+      setDashboardErrorState(key, toErrorMessage(caught, fallbackMessage));
+      return null;
+    } finally {
+      setDashboardLoadingState(key, false);
+    }
+  }
+
+  async function loadWatchlistResource(token: string) {
+    await runDashboardLoader("watchlist", "Could not load tracked lots.", async () => {
+      const items = await listWatchlist(token);
+      setWatchlist(items);
+      return items;
+    });
+  }
+
+  async function loadSavedSearchesResource(token: string) {
+    await runDashboardLoader("savedSearches", "Could not load saved searches.", async () => {
+      const items = await listSavedSearches(token);
+      setSavedSearches(items);
+      return items;
+    });
+  }
+
+  async function loadPushSubscriptionsResource(token: string) {
+    await runDashboardLoader("subscriptions", "Could not load device subscriptions.", async () => {
+      const items = await listPushSubscriptions(token);
+      setSubscriptions(items);
+      return items;
+    });
+  }
+
+  async function loadSearchCatalogResource(token: string) {
+    await runDashboardLoader("searchCatalog", "Could not load the search catalog.", async () => {
+      const catalog = await getSearchCatalog(token);
+      setSearchCatalog(catalog);
+      return catalog;
+    });
+  }
+
+  async function loadLiveSyncStatusResource(token: string) {
+    await runDashboardLoader("liveSync", "Could not load live-sync status.", async () => {
+      const status = await getSystemStatus(token);
+      setLiveSyncStatus(status.live_sync);
+      return status;
+    });
+  }
+
+  async function loadPushConfigResource(token: string): Promise<PushSubscriptionConfig | null> {
+    setIsLoadingPushConfig(true);
+    try {
+      const config = await getPushSubscriptionConfig(token);
+      setPushConfig(config);
+      setPushConfigError(null);
+      return config;
+    } catch (caught) {
+      const message = toErrorMessage(caught, "Could not load push diagnostics.");
+      setPushConfigError(message);
+      return null;
+    } finally {
+      setIsLoadingPushConfig(false);
+    }
+  }
+
+  async function detectCurrentPushSubscriptionEndpoint(): Promise<string | null> {
+    if (!("serviceWorker" in navigator)) {
+      setCurrentPushEndpoint(null);
+      return null;
+    }
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = await registration?.pushManager.getSubscription();
+      const endpoint = subscription?.endpoint ?? null;
+      setCurrentPushEndpoint(endpoint);
+      return endpoint;
+    } catch {
+      setCurrentPushEndpoint(null);
+      return null;
+    }
+  }
+
+  async function loadDashboardResources(token: string) {
+    await Promise.allSettled([
+      loadWatchlistResource(token),
+      loadSavedSearchesResource(token),
+      loadPushSubscriptionsResource(token),
+      loadSearchCatalogResource(token),
+      loadLiveSyncStatusResource(token),
+    ]);
+  }
+
+  useEffect(() => {
     configureAuthLifecycle({
       onTokensRefreshed: session.updateTokens,
       onAuthFailed: () => {
         session.logout();
-        setSearchResults([]);
-        setSearchTotalResults(0);
-        setSavedSearches([]);
-        setWatchlist([]);
-        setSubscriptions([]);
-        setSearchCatalog(null);
-        setLiveSyncStatus(null);
-        setError("Session expired. Please sign in again.");
+        resetDashboardData();
+        setGlobalError("Session expired. Please sign in again.");
         navigate("/login");
       },
     });
@@ -141,40 +365,28 @@ export function App() {
     if (!session.accessToken) {
       return;
     }
-    setIsLoadingSearchCatalog(true);
-    void Promise.allSettled([
-      listWatchlist(session.accessToken),
-      listSavedSearches(session.accessToken),
-      listPushSubscriptions(session.accessToken),
-      getSearchCatalog(session.accessToken),
-      getSystemStatus(session.accessToken),
-    ]).then((results) => {
-      const [watchlistResult, savedSearchesResult, pushResult, catalogResult, systemStatusResult] = results;
-      if (watchlistResult.status === "fulfilled") {
-        setWatchlist(watchlistResult.value);
-      }
-      if (savedSearchesResult.status === "fulfilled") {
-        setSavedSearches(savedSearchesResult.value);
-      }
-      if (pushResult.status === "fulfilled") {
-        setSubscriptions(pushResult.value);
-      }
-      if (catalogResult.status === "fulfilled") {
-        setSearchCatalog(catalogResult.value);
-      }
-      if (systemStatusResult.status === "fulfilled") {
-        setLiveSyncStatus(systemStatusResult.value.live_sync);
-      }
-      setIsLoadingSearchCatalog(false);
-    });
+    void loadDashboardResources(session.accessToken);
   }, [session.accessToken]);
+
+  useEffect(() => {
+    if (!session.accessToken || !isSettingsOpen) {
+      return;
+    }
+    void Promise.allSettled([
+      loadPushConfigResource(session.accessToken),
+      loadPushSubscriptionsResource(session.accessToken),
+      detectCurrentPushSubscriptionEndpoint(),
+    ]);
+  }, [isSettingsOpen, session.accessToken]);
 
   async function refreshLiveSyncStatus(token: string): Promise<LiveSyncStatus | null> {
     try {
       const status = await getSystemStatus(token);
       setLiveSyncStatus(status.live_sync);
+      setDashboardErrorState("liveSync", null);
       return status.live_sync;
-    } catch {
+    } catch (caught) {
+      setDashboardErrorState("liveSync", toErrorMessage(caught, "Could not load live-sync status."));
       return null;
     }
   }
@@ -183,32 +395,35 @@ export function App() {
     return status?.status === "degraded";
   }
 
-  function formatLiveSyncActionError(actionLabel: string, fallbackMessage: string, status: LiveSyncStatus | null): string {
-    if (!isLiveSyncUnavailable(status)) {
-      return fallbackMessage;
+  function formatConnectivityError(actionLabel: string, fallbackMessage: string, status: LiveSyncStatus | null): string {
+    if (isBrowserOffline) {
+      return `${actionLabel} is unavailable because this device is offline. Reconnect and try again.`;
     }
-    return `${actionLabel} is unavailable right now because live Copart sync is offline. Cached data remains available.`;
+    if (isLiveSyncUnavailable(status)) {
+      return `${actionLabel} is unavailable right now because live Copart sync is offline. Cached data remains available.`;
+    }
+    return fallbackMessage;
   }
 
   async function handleLogin(email: string, password: string) {
     try {
-      setError(null);
+      setGlobalError(null);
       const result = await login(email, password);
       session.persist(result.user, result.tokens);
       navigate("/dashboard");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Login failed");
+      setGlobalError(toErrorMessage(caught, "Login failed"));
     }
   }
 
   async function handleInviteAccept(password: string) {
     const inviteToken = routeState.params.get("token") ?? "";
     try {
-      setError(null);
+      setGlobalError(null);
       await acceptInvite(inviteToken, password);
       navigate("/login");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Invite activation failed");
+      setGlobalError(toErrorMessage(caught, "Invite activation failed"));
     }
   }
 
@@ -216,25 +431,12 @@ export function App() {
     setSavedSearches((current) => [savedSearch, ...current.filter((item) => item.id !== savedSearch.id)]);
   }
 
-  async function handleSearch(payload: {
-    make?: string;
-    model?: string;
-    makeFilter?: string;
-    modelFilter?: string;
-    driveType?: string;
-    primaryDamage?: string;
-    titleType?: string;
-    fuelType?: string;
-    lotCondition?: string;
-    odometerRange?: string;
-    yearFrom?: string;
-    yearTo?: string;
-  }): Promise<{ results: SearchResult[]; total_results: number }> {
+  async function handleSearch(payload: SearchPayload): Promise<{ results: SearchResult[]; total_results: number }> {
     if (!session.accessToken) {
       throw new Error("Missing session");
     }
+    setActionState((current) => ({ ...current, isSearching: true }));
     try {
-      setError(null);
       const response = await searchLots(
         {
           make: payload.make,
@@ -257,35 +459,22 @@ export function App() {
       setSearchTotalResults(response.total_results);
       return response;
     } catch (caught) {
-      const status = await refreshLiveSyncStatus(session.accessToken);
-      const fallbackMessage = caught instanceof Error ? caught.message : "Search failed";
-      const message = formatLiveSyncActionError("Search", fallbackMessage, status);
-      setError(message);
+      const status = isBrowserOffline ? liveSyncStatus : await refreshLiveSyncStatus(session.accessToken);
+      const message = formatConnectivityError("Search", toErrorMessage(caught, "Search failed"), status);
       throw new Error(message);
+    } finally {
+      setActionState((current) => ({ ...current, isSearching: false }));
     }
   }
 
-  async function handleSaveSearch(payload: {
-    make?: string;
-    model?: string;
-    makeFilter?: string;
-    modelFilter?: string;
-    driveType?: string;
-    primaryDamage?: string;
-    titleType?: string;
-    fuelType?: string;
-    lotCondition?: string;
-    odometerRange?: string;
-    yearFrom?: string;
-    yearTo?: string;
-    seedResults?: SearchResult[];
-    totalResults?: number;
-  }): Promise<SavedSearch> {
+  async function handleSaveSearch(
+    payload: SearchPayload & { seedResults?: SearchResult[]; totalResults?: number },
+  ): Promise<SavedSearch> {
     if (!session.accessToken) {
       throw new Error("Missing session");
     }
+    setActionState((current) => ({ ...current, isSavingSearch: true }));
     try {
-      setError(null);
       const saved = await saveSearch(
         {
           make: payload.make,
@@ -308,9 +497,9 @@ export function App() {
       mergeSavedSearch(saved);
       return saved;
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Could not save search";
-      setError(message);
-      throw new Error(message);
+      throw new Error(toErrorMessage(caught, "Could not save search"));
+    } finally {
+      setActionState((current) => ({ ...current, isSavingSearch: false }));
     }
   }
 
@@ -318,15 +507,17 @@ export function App() {
     if (!session.accessToken) {
       throw new Error("Missing session");
     }
+    setActionState((current) => ({ ...current, openingSavedSearchId: id }));
     try {
-      setError(null);
       const response = await viewSavedSearch(id, session.accessToken);
       mergeSavedSearch(response.saved_search);
       return response;
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Could not open saved search";
-      setError(message);
-      throw new Error(message);
+      throw new Error(toErrorMessage(caught, "Could not open saved search"));
+    } finally {
+      setActionState((current) =>
+        current.openingSavedSearchId === id ? { ...current, openingSavedSearchId: null } : current,
+      );
     }
   }
 
@@ -334,74 +525,108 @@ export function App() {
     if (!session.accessToken) {
       throw new Error("Missing session");
     }
+    setActionState((current) => ({ ...current, refreshingSavedSearchId: id }));
     try {
-      setError(null);
       const response = await refreshSavedSearchLive(id, session.accessToken);
       await refreshLiveSyncStatus(session.accessToken);
       mergeSavedSearch(response.saved_search);
       return response;
     } catch (caught) {
-      const status = await refreshLiveSyncStatus(session.accessToken);
-      const fallbackMessage = caught instanceof Error ? caught.message : "Could not refresh saved search";
-      const message = formatLiveSyncActionError("Saved-search refresh", fallbackMessage, status);
-      setError(message);
+      const status = isBrowserOffline ? liveSyncStatus : await refreshLiveSyncStatus(session.accessToken);
+      const message = formatConnectivityError(
+        "Saved-search refresh",
+        toErrorMessage(caught, "Could not refresh saved search"),
+        status,
+      );
       throw new Error(message);
+    } finally {
+      setActionState((current) =>
+        current.refreshingSavedSearchId === id ? { ...current, refreshingSavedSearchId: null } : current,
+      );
     }
   }
 
   async function handleAddFromSearch(lotUrl: string) {
-    if (!session.accessToken) return;
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    setActionState((current) => ({ ...current, addingFromSearchLotUrl: lotUrl }));
     try {
       const trackedLot = await addFromSearch(lotUrl, session.accessToken);
       await refreshLiveSyncStatus(session.accessToken);
       setWatchlist((current) => [trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]);
+      return trackedLot;
     } catch (caught) {
-      const status = await refreshLiveSyncStatus(session.accessToken);
-      setError(
-        formatLiveSyncActionError(
+      const status = isBrowserOffline ? liveSyncStatus : await refreshLiveSyncStatus(session.accessToken);
+      throw new Error(
+        formatConnectivityError(
           "Adding a lot from search",
-          caught instanceof Error ? caught.message : "Could not add lot",
+          toErrorMessage(caught, "Could not add lot"),
           status,
         ),
+      );
+    } finally {
+      setActionState((current) =>
+        current.addingFromSearchLotUrl === lotUrl ? { ...current, addingFromSearchLotUrl: null } : current,
       );
     }
   }
 
   async function handleDeleteSavedSearch(id: string) {
     if (!session.accessToken) {
-      return;
+      throw new Error("Missing session");
     }
+    setActionState((current) => ({ ...current, deletingSavedSearchId: id }));
     try {
-      setError(null);
       await deleteSavedSearch(id, session.accessToken);
       setSavedSearches((current) => current.filter((item) => item.id !== id));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not delete saved search");
+      throw new Error(toErrorMessage(caught, "Could not delete saved search"));
+    } finally {
+      setActionState((current) =>
+        current.deletingSavedSearchId === id ? { ...current, deletingSavedSearchId: null } : current,
+      );
     }
   }
 
   async function handleRemoveWatchlistItem(id: string) {
-    if (!session.accessToken) return;
-    await removeWatchlistItem(id, session.accessToken);
-    setWatchlist((current) => current.filter((item) => item.id !== id));
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    setActionState((current) => ({ ...current, removingWatchlistId: id }));
+    try {
+      await removeWatchlistItem(id, session.accessToken);
+      setWatchlist((current) => current.filter((item) => item.id !== id));
+    } catch (caught) {
+      throw new Error(toErrorMessage(caught, "Could not remove lot"));
+    } finally {
+      setActionState((current) =>
+        current.removingWatchlistId === id ? { ...current, removingWatchlistId: null } : current,
+      );
+    }
   }
 
   async function handleAddByLotNumber(lotNumber: string) {
-    if (!session.accessToken) return;
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    setActionState((current) => ({ ...current, isAddingWatchlistLot: true }));
     try {
-      setError(null);
       const trackedLot = await addLotNumberToWatchlist(lotNumber, session.accessToken);
       await refreshLiveSyncStatus(session.accessToken);
       setWatchlist((current) => [trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]);
+      return trackedLot;
     } catch (caught) {
-      const status = await refreshLiveSyncStatus(session.accessToken);
-      setError(
-        formatLiveSyncActionError(
+      const status = isBrowserOffline ? liveSyncStatus : await refreshLiveSyncStatus(session.accessToken);
+      throw new Error(
+        formatConnectivityError(
           "Adding a lot to the watchlist",
-          caught instanceof Error ? caught.message : "Could not add lot",
+          toErrorMessage(caught, "Could not add lot"),
           status,
         ),
       );
+    } finally {
+      setActionState((current) => ({ ...current, isAddingWatchlistLot: false }));
     }
   }
 
@@ -409,37 +634,54 @@ export function App() {
     if (!session.accessToken) {
       throw new Error("Missing session");
     }
-    const invite = await createInvite(email, session.accessToken);
-    setInviteLink(`${window.location.origin}${window.location.pathname}#/invite?token=${invite.token}`);
-    return invite;
+    setActionState((current) => ({ ...current, isCreatingInvite: true }));
+    try {
+      const invite = await createInvite(email, session.accessToken);
+      setLatestInvite(invite);
+      setInviteLink(`${window.location.origin}${window.location.pathname}#/invite?token=${invite.token}`);
+      return invite;
+    } catch (caught) {
+      throw new Error(toErrorMessage(caught, "Could not create invite"));
+    } finally {
+      setActionState((current) => ({ ...current, isCreatingInvite: false }));
+    }
   }
 
   async function handleRefreshSearchCatalog() {
     if (!session.accessToken) {
-      return;
+      throw new Error("Missing session");
     }
+    setActionState((current) => ({ ...current, isRefreshingCatalog: true }));
     try {
-      setError(null);
       const refreshedCatalog = await refreshSearchCatalog(session.accessToken);
       await refreshLiveSyncStatus(session.accessToken);
       setSearchCatalog(refreshedCatalog);
+      setDashboardErrorState("searchCatalog", null);
+      return refreshedCatalog;
     } catch (caught) {
-      const status = await refreshLiveSyncStatus(session.accessToken);
-      setError(
-        formatLiveSyncActionError(
+      const status = isBrowserOffline ? liveSyncStatus : await refreshLiveSyncStatus(session.accessToken);
+      throw new Error(
+        formatConnectivityError(
           "Refreshing the search catalog",
-          caught instanceof Error ? caught.message : "Could not refresh search catalog",
+          toErrorMessage(caught, "Could not refresh search catalog"),
           status,
         ),
       );
+    } finally {
+      setActionState((current) => ({ ...current, isRefreshingCatalog: false }));
     }
   }
 
   async function handleSubscribePush() {
-    if (!session.accessToken) return;
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    setActionState((current) => ({ ...current, isSubscribingPush: true }));
     try {
-      setError(null);
-      if (!window.isSecureContext) {
+      if (isBrowserOffline) {
+        throw new Error("Push setup is unavailable because this device is offline. Reconnect and try again.");
+      }
+      if (!isSecurePushContext) {
         throw new Error("Push notifications require HTTPS or localhost.");
       }
       if (typeof Notification === "undefined" || !("PushManager" in window)) {
@@ -457,9 +699,9 @@ export function App() {
         );
       }
 
-      const config = await getPushSubscriptionConfig(session.accessToken);
-      if (!config.enabled || !config.public_key) {
-        throw new Error(config.reason ?? "Push notifications are not configured on the server.");
+      const config = pushConfig ?? (await loadPushConfigResource(session.accessToken));
+      if (!config?.enabled || !config.public_key) {
+        throw new Error(config?.reason ?? "Push notifications are not configured on the server.");
       }
 
       const registration = await ensurePushRegistration();
@@ -476,15 +718,21 @@ export function App() {
         session.accessToken,
       );
       setSubscriptions((current) => [created, ...current.filter((item) => item.endpoint !== created.endpoint)]);
+      setCurrentPushEndpoint(created.endpoint);
+      return created;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not enable push notifications");
+      throw new Error(toErrorMessage(caught, "Could not enable push notifications"));
+    } finally {
+      setActionState((current) => ({ ...current, isSubscribingPush: false }));
     }
   }
 
   async function handleUnsubscribePush(endpoint: string) {
-    if (!session.accessToken) return;
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    setActionState((current) => ({ ...current, unsubscribingEndpoint: endpoint }));
     try {
-      setError(null);
       if ("serviceWorker" in navigator) {
         const registration = await navigator.serviceWorker.getRegistration();
         const browserSubscription = await registration?.pushManager.getSubscription();
@@ -494,20 +742,43 @@ export function App() {
       }
       await unsubscribeFromPush(endpoint, session.accessToken);
       setSubscriptions((current) => current.filter((item) => item.endpoint !== endpoint));
+      if (currentPushEndpoint === endpoint) {
+        setCurrentPushEndpoint(null);
+      }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not revoke push subscription");
+      throw new Error(toErrorMessage(caught, "Could not revoke push subscription"));
+    } finally {
+      setActionState((current) =>
+        current.unsubscribingEndpoint === endpoint ? { ...current, unsubscribingEndpoint: null } : current,
+      );
     }
+  }
+
+  async function handleSendPushTest(): Promise<PushDeliveryResult> {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    setActionState((current) => ({ ...current, isSendingPushTest: true }));
+    try {
+      if (isBrowserOffline) {
+        throw new Error("Push diagnostics are unavailable because this device is offline. Reconnect and try again.");
+      }
+      return await sendPushTest(session.accessToken);
+    } catch (caught) {
+      throw new Error(toErrorMessage(caught, "Could not send test push"));
+    } finally {
+      setActionState((current) => ({ ...current, isSendingPushTest: false }));
+    }
+  }
+
+  function handleOpenSettings() {
+    setIsSettingsOpen(true);
   }
 
   function handleLogout() {
     session.logout();
-    setSearchResults([]);
-    setSearchTotalResults(0);
-    setSavedSearches([]);
-    setWatchlist([]);
-    setSubscriptions([]);
-    setSearchCatalog(null);
-    setLiveSyncStatus(null);
+    resetDashboardData();
+    setGlobalError(null);
     setIsSettingsOpen(false);
     navigate("/login");
   }
@@ -516,14 +787,14 @@ export function App() {
     return (
       <InviteAcceptScreen
         inviteToken={routeState.params.get("token") ?? ""}
-        error={error}
+        error={globalError}
         onSubmit={handleInviteAccept}
       />
     );
   }
 
   if (!session.isAuthenticated) {
-    return <LoginScreen error={error} onSubmit={handleLogin} />;
+    return <LoginScreen error={globalError} onSubmit={handleLogin} />;
   }
 
   return (
@@ -531,20 +802,56 @@ export function App() {
       <DashboardShell
         user={session.user!}
         liveSyncStatus={liveSyncStatus}
+        isBrowserOffline={isBrowserOffline}
+        isBootstrapping={isBootstrapping}
         onLogout={handleLogout}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={handleOpenSettings}
       >
-        {error ? <p className="error">{error}</p> : null}
+        {globalError ? (
+          <AsyncStatus
+            tone="error"
+            title="Session issue"
+            message={globalError}
+            className="dashboard-status"
+          />
+        ) : null}
         {session.user?.role === "admin" ? (
           <>
-            <AdminInvitesPanel inviteLink={inviteLink} onCreateInvite={handleCreateInvite} />
-            <AdminSearchCatalogPanel catalog={searchCatalog} onRefresh={handleRefreshSearchCatalog} />
+            <AdminInvitesPanel
+              inviteLink={inviteLink}
+              latestInvite={latestInvite}
+              isCreatingInvite={actionState.isCreatingInvite}
+              onCreateInvite={handleCreateInvite}
+            />
+            <AdminSearchCatalogPanel
+              catalog={searchCatalog}
+              loadError={dashboardErrors.searchCatalog}
+              isLoading={dashboardLoading.searchCatalog}
+              isRefreshing={actionState.isRefreshingCatalog}
+              onRefresh={handleRefreshSearchCatalog}
+              onRetryLoad={() => (session.accessToken ? loadSearchCatalogResource(session.accessToken) : Promise.resolve())}
+            />
           </>
         ) : null}
         <SearchPanel
           catalog={searchCatalog}
-          isLoadingCatalog={isLoadingSearchCatalog}
+          isLoadingCatalog={dashboardLoading.searchCatalog}
+          catalogError={dashboardErrors.searchCatalog}
+          onRetryCatalog={() => (session.accessToken ? loadSearchCatalogResource(session.accessToken) : Promise.resolve())}
           savedSearches={savedSearches}
+          isLoadingSavedSearches={dashboardLoading.savedSearches}
+          savedSearchesError={dashboardErrors.savedSearches}
+          onRetrySavedSearches={() =>
+            session.accessToken ? loadSavedSearchesResource(session.accessToken) : Promise.resolve()
+          }
+          isSearching={actionState.isSearching}
+          isSavingSearch={actionState.isSavingSearch}
+          openingSavedSearchId={actionState.openingSavedSearchId}
+          refreshingSavedSearchId={actionState.refreshingSavedSearchId}
+          deletingSavedSearchId={actionState.deletingSavedSearchId}
+          addingFromSearchLotUrl={actionState.addingFromSearchLotUrl}
+          isBrowserOffline={isBrowserOffline}
+          liveSyncStatus={liveSyncStatus}
           onSearch={handleSearch}
           onSaveSearch={handleSaveSearch}
           onViewSavedSearch={handleViewSavedSearch}
@@ -552,14 +859,47 @@ export function App() {
           onDeleteSavedSearch={handleDeleteSavedSearch}
           onAddFromSearch={handleAddFromSearch}
         />
-        <WatchlistPanel items={watchlist} onAddByLotNumber={handleAddByLotNumber} onRemove={handleRemoveWatchlistItem} />
+        <WatchlistPanel
+          items={watchlist}
+          isLoading={dashboardLoading.watchlist}
+          loadError={dashboardErrors.watchlist}
+          isAddingLot={actionState.isAddingWatchlistLot}
+          removingItemId={actionState.removingWatchlistId}
+          isBrowserOffline={isBrowserOffline}
+          liveSyncStatus={liveSyncStatus}
+          onRetry={() => (session.accessToken ? loadWatchlistResource(session.accessToken) : Promise.resolve())}
+          onAddByLotNumber={handleAddByLotNumber}
+          onRemove={handleRemoveWatchlistItem}
+        />
       </DashboardShell>
       <PushSettingsModal
         isOpen={isSettingsOpen}
         subscriptions={subscriptions}
+        subscriptionsError={dashboardErrors.subscriptions}
+        isLoadingSubscriptions={dashboardLoading.subscriptions}
+        pushConfig={pushConfig}
+        pushConfigError={pushConfigError}
+        isLoadingPushConfig={isLoadingPushConfig}
+        currentDeviceEndpoint={currentPushEndpoint}
         permissionState={permissionState}
+        supportsPush={supportsPush}
+        isSecureContext={isSecurePushContext}
+        isBrowserOffline={isBrowserOffline}
+        isSubscribing={actionState.isSubscribingPush}
+        unsubscribingEndpoint={actionState.unsubscribingEndpoint}
+        isSendingTestPush={actionState.isSendingPushTest}
+        onRetryDiagnostics={() =>
+          session.accessToken
+            ? Promise.allSettled([
+                loadPushSubscriptionsResource(session.accessToken),
+                loadPushConfigResource(session.accessToken),
+                detectCurrentPushSubscriptionEndpoint(),
+              ]).then(() => undefined)
+            : Promise.resolve()
+        }
         onSubscribe={handleSubscribePush}
         onUnsubscribe={handleUnsubscribePush}
+        onSendTestPush={handleSendPushTest}
         onClose={() => setIsSettingsOpen(false)}
       />
     </>

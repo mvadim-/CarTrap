@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
 
+import { AsyncStatus } from "../shared/AsyncStatus";
 import type { LiveSyncStatus, User } from "../../types";
 
 type Props = {
   user: User;
   liveSyncStatus: LiveSyncStatus | null;
+  isBrowserOffline: boolean;
+  isBootstrapping: boolean;
   onLogout: () => void;
   onOpenSettings: () => void;
   children: ReactNode;
@@ -30,7 +33,15 @@ function formatLastSyncLabel(status: LiveSyncStatus): string | null {
   return null;
 }
 
-export function DashboardShell({ user, liveSyncStatus, onLogout, onOpenSettings, children }: Props) {
+export function DashboardShell({
+  user,
+  liveSyncStatus,
+  isBrowserOffline,
+  isBootstrapping,
+  onLogout,
+  onOpenSettings,
+  children,
+}: Props) {
   const showOfflineBanner = liveSyncStatus?.status === "degraded";
   const syncTimestampLabel = liveSyncStatus ? formatLastSyncLabel(liveSyncStatus) : null;
 
@@ -65,6 +76,30 @@ export function DashboardShell({ user, liveSyncStatus, onLogout, onOpenSettings,
           </div>
         </div>
       </header>
+      {isBootstrapping ? (
+        <AsyncStatus
+          compact
+          progress="bar"
+          title="Updating dashboard"
+          message="Loading the latest saved searches, watchlist, and device diagnostics."
+          className="dashboard-status"
+        />
+      ) : null}
+      {isBrowserOffline ? (
+        <section className="live-sync-banner live-sync-banner--offline" aria-live="polite">
+          <div>
+            <p className="eyebrow">Connection</p>
+            <h2>This device is offline.</h2>
+            <p className="lede live-sync-banner__copy">
+              Previously loaded data stays visible, but live search, watchlist updates, and push diagnostics need a
+              connection.
+            </p>
+          </div>
+          <div className="live-sync-banner__meta">
+            <p>Reconnect to resume live Copart actions and retry failed requests.</p>
+          </div>
+        </section>
+      ) : null}
       {showOfflineBanner ? (
         <section className="live-sync-banner" aria-live="polite">
           <div>

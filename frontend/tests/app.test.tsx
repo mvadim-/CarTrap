@@ -81,6 +81,8 @@ describe("CarTrap app", () => {
   let lastSearchPayload: Record<string, unknown> | null;
   let liveSyncStatus: Record<string, unknown>;
   let searchShouldFail: boolean;
+  let savedSearchesShouldFail: boolean;
+  let pushTestShouldFail: boolean;
   let watchlistAddShouldFail: boolean;
   let liveSearchCallCount: number;
   let savedSearchViewCallCount: number;
@@ -101,6 +103,8 @@ describe("CarTrap app", () => {
     savedSearchViewCallCount = 0;
     savedSearchRefreshCallCount = 0;
     nextSavedSearchSeedNewLotNumbers = [];
+    savedSearchesShouldFail = false;
+    pushTestShouldFail = false;
     const savedSearches: Array<{
       id: string;
       label: string;
@@ -480,7 +484,24 @@ describe("CarTrap app", () => {
             nextSavedSearchSeedNewLotNumbers = [];
             return new Response(JSON.stringify({ saved_search: savedSearch }), { status: 201 });
           }
+          if (savedSearchesShouldFail) {
+            return new Response(JSON.stringify({ detail: "Saved-search cache is unavailable." }), { status: 503 });
+          }
           return new Response(JSON.stringify({ items: savedSearches }), { status: 200 });
+        }
+        if (url.includes("/notifications/test")) {
+          if (pushTestShouldFail) {
+            return new Response(JSON.stringify({ detail: "Push sender is unavailable." }), { status: 503 });
+          }
+          return new Response(
+            JSON.stringify({
+              delivered: 1,
+              failed: 0,
+              removed: 0,
+              endpoints: ["https://push.example.test/subscriptions/device-1"],
+            }),
+            { status: 200 },
+          );
         }
         if (url.includes("/admin/search-catalog/refresh")) {
           return new Response(
@@ -821,6 +842,34 @@ describe("CarTrap app", () => {
     expect(subscribe).toHaveBeenCalledTimes(1);
   });
 
+  it("retries a partial bootstrap failure for saved searches without reloading the whole dashboard", async () => {
+    savedSearchesShouldFail = true;
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/saved searches unavailable/i);
+    savedSearchesShouldFail = false;
+    fireEvent.click(screen.getByRole("button", { name: /retry saved searches/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/saved searches unavailable/i)).toBeNull();
+    });
+    expect(screen.getByText(/no saved searches yet/i)).toBeTruthy();
+  });
+
+  it("sends a push test from settings diagnostics", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.click(screen.getByRole("button", { name: /settings/i }));
+    await screen.findByRole("dialog", { name: /settings/i });
+    fireEvent.click(screen.getByRole("button", { name: /send test push/i }));
+
+    expect(await screen.findByText(/push test finished: 1 delivered, 0 failed, 0 removed\./i)).toBeTruthy();
+  });
+
   it("renders fallbacks for missing tracked lot detail fields", async () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
@@ -935,6 +984,24 @@ describe("CarTrap app", () => {
       await screen.findByText(
         /adding a lot to the watchlist is unavailable right now because live copart sync is offline\. cached data remains available\./i,
       ),
+    ).toBeTruthy();
+  });
+
+  it("shows browser-offline messaging separately from backend degraded mode", async () => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    searchShouldFail = true;
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByRole("heading", { name: /this device is offline/i });
+    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+
+    expect(
+      await screen.findByText(/search is unavailable because this device is offline\. reconnect and try again\./i),
     ).toBeTruthy();
   });
 });

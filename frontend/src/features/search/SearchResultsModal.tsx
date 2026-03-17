@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import type { SearchResult } from "../../types";
+import { AsyncStatus } from "../shared/AsyncStatus";
 import { LotThumbnail } from "../shared/LotThumbnail";
 
 type Props = {
@@ -12,10 +13,14 @@ type Props = {
   onAddFromSearch: (lotUrl: string) => Promise<void>;
   onSaveSearch: () => Promise<void>;
   canSave: boolean;
+  isSavingSearch?: boolean;
+  addingFromSearchLotUrl?: string | null;
   canRefreshLive?: boolean;
   onRefreshLive?: () => Promise<void>;
+  isRefreshingLive?: boolean;
   lastSyncedAt?: string | null;
   refreshError?: string | null;
+  statusMessage?: string | null;
 };
 
 export function SearchResultsModal({
@@ -27,10 +32,14 @@ export function SearchResultsModal({
   onAddFromSearch,
   onSaveSearch,
   canSave,
+  isSavingSearch = false,
+  addingFromSearchLotUrl = null,
   canRefreshLive = false,
   onRefreshLive,
+  isRefreshingLive = false,
   lastSyncedAt = null,
   refreshError = null,
+  statusMessage = null,
 }: Props) {
   useEffect(() => {
     if (!isOpen) {
@@ -67,13 +76,25 @@ export function SearchResultsModal({
           </div>
           <div className="modal-toolbar">
             {canSave ? (
-              <button type="button" className="ghost-button" onClick={() => void onSaveSearch()} disabled={!canSave}>
-                Save Search
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => void onSaveSearch()}
+                disabled={!canSave || isSavingSearch}
+                aria-busy={isSavingSearch}
+              >
+                {isSavingSearch ? "Saving..." : "Save Search"}
               </button>
             ) : null}
             {canRefreshLive ? (
-              <button type="button" className="ghost-button" onClick={() => void onRefreshLive?.()}>
-                Refresh Live
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => void onRefreshLive?.()}
+                disabled={isRefreshingLive}
+                aria-busy={isRefreshingLive}
+              >
+                {isRefreshingLive ? "Refreshing..." : "Refresh Live"}
               </button>
             ) : null}
             <button type="button" className="ghost-button" onClick={onClose}>
@@ -87,7 +108,27 @@ export function SearchResultsModal({
           </span>
           {lastSyncedAt ? <span className="muted">Last synced {new Date(lastSyncedAt).toLocaleString()}</span> : null}
         </div>
-        {refreshError ? <p className="error">{refreshError}</p> : null}
+        {isRefreshingLive ? (
+          <AsyncStatus
+            compact
+            progress="bar"
+            title="Refreshing live results"
+            message="Cached results stay visible while the latest Copart data loads."
+            className="modal-status"
+          />
+        ) : null}
+        {statusMessage ? (
+          <AsyncStatus compact tone="success" message={statusMessage} className="modal-status" />
+        ) : null}
+        {refreshError ? (
+          <AsyncStatus
+            compact
+            tone="error"
+            title="Live refresh unavailable"
+            message={refreshError}
+            className="modal-status"
+          />
+        ) : null}
         <div className="modal-body result-list">
           {results.length === 0 ? (
             <p className="muted">No lots matched this search.</p>
@@ -104,8 +145,13 @@ export function SearchResultsModal({
                 <div className="result-actions">
                   {result.is_new ? <span className="new-badge">NEW</span> : null}
                   <span className="status-pill">{result.status}</span>
-                  <button type="button" onClick={() => void onAddFromSearch(result.url)}>
-                    Add to Watchlist
+                  <button
+                    type="button"
+                    onClick={() => void onAddFromSearch(result.url)}
+                    disabled={addingFromSearchLotUrl === result.url}
+                    aria-busy={addingFromSearchLotUrl === result.url}
+                  >
+                    {addingFromSearchLotUrl === result.url ? "Adding..." : "Add to Watchlist"}
                   </button>
                 </div>
               </article>

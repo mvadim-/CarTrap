@@ -1,24 +1,71 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
-import type { PushSubscriptionItem } from "../../types";
+import type { PushDeliveryResult, PushSubscriptionConfig, PushSubscriptionItem } from "../../types";
+import { AsyncStatus } from "../shared/AsyncStatus";
 
 type Props = {
   isOpen: boolean;
   subscriptions: PushSubscriptionItem[];
+  subscriptionsError: string | null;
+  isLoadingSubscriptions: boolean;
+  pushConfig: PushSubscriptionConfig | null;
+  pushConfigError: string | null;
+  isLoadingPushConfig: boolean;
+  currentDeviceEndpoint: string | null;
   permissionState: string;
-  onSubscribe: () => Promise<void>;
+  supportsPush: boolean;
+  isSecureContext: boolean;
+  isBrowserOffline: boolean;
+  isSubscribing: boolean;
+  unsubscribingEndpoint: string | null;
+  isSendingTestPush: boolean;
+  onRetryDiagnostics: () => Promise<void>;
+  onSubscribe: () => Promise<PushSubscriptionItem>;
   onUnsubscribe: (endpoint: string) => Promise<void>;
+  onSendTestPush: () => Promise<PushDeliveryResult>;
   onClose: () => void;
 };
+
+function formatTimestamp(value: string | null): string {
+  if (!value) {
+    return "—";
+  }
+  return new Date(value).toLocaleString();
+}
+
+function maskEndpoint(endpoint: string): string {
+  const maxLength = 52;
+  if (endpoint.length <= maxLength) {
+    return endpoint;
+  }
+  return `${endpoint.slice(0, 28)}...${endpoint.slice(-18)}`;
+}
 
 export function PushSettingsModal({
   isOpen,
   subscriptions,
+  subscriptionsError,
+  isLoadingSubscriptions,
+  pushConfig,
+  pushConfigError,
+  isLoadingPushConfig,
+  currentDeviceEndpoint,
   permissionState,
+  supportsPush,
+  isSecureContext,
+  isBrowserOffline,
+  isSubscribing,
+  unsubscribingEndpoint,
+  isSendingTestPush,
+  onRetryDiagnostics,
   onSubscribe,
   onUnsubscribe,
+  onSendTestPush,
   onClose,
 }: Props) {
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -37,6 +84,49 @@ export function PushSettingsModal({
   if (!isOpen) {
     return null;
   }
+
+  async function handleSubscribe() {
+    setMessage(null);
+    setError(null);
+    try {
+      await onSubscribe();
+      setMessage("Push is enabled for this device.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not enable push notifications.");
+    }
+  }
+
+  async function handleUnsubscribe(endpoint: string) {
+    setMessage(null);
+    setError(null);
+    try {
+      await onUnsubscribe(endpoint);
+      setMessage("Push subscription revoked.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not revoke push subscription.");
+    }
+  }
+
+  async function handleSendTest() {
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await onSendTestPush();
+      setMessage(
+        `Push test finished: ${result.delivered} delivered, ${result.failed} failed, ${result.removed} removed.`,
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not send test push.");
+    }
+  }
+
+  const serverStatus = pushConfig
+    ? pushConfig.enabled && pushConfig.public_key
+      ? "Configured"
+      : pushConfig.reason ?? "Not configured"
+    : isLoadingPushConfig
+      ? "Loading diagnostics"
+      : "Unknown";
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -63,39 +153,117 @@ export function PushSettingsModal({
                 <p className="eyebrow">Push</p>
                 <h3>Browser Notifications</h3>
               </div>
+              <button type="button" className="ghost-button" onClick={() => void onRetryDiagnostics()}>
+                Retry Diagnostics
+              </button>
             </div>
+            {isBrowserOffline ? (
+              <AsyncStatus
+                compact
+                tone="error"
+                title="Device offline"
+                message="Reconnect to refresh diagnostics, enable push, or send a test notification."
+                className="panel-status"
+              />
+            ) : null}
+            {isLoadingPushConfig || isLoadingSubscriptions ? (
+              <AsyncStatus
+                compact
+                progress="bar"
+                title="Loading push diagnostics"
+                message="Checking browser support, server readiness, and registered device subscriptions."
+                className="panel-status"
+              />
+            ) : null}
+            {pushConfigError ? (
+              <AsyncStatus
+                compact
+                tone="error"
+                title="Push diagnostics unavailable"
+                message={pushConfigError}
+                className="panel-status"
+              />
+            ) : null}
+            {subscriptionsError ? (
+              <AsyncStatus
+                compact
+                tone="error"
+                title="Device list unavailable"
+                message={subscriptionsError}
+                className="panel-status"
+              />
+            ) : null}
+            {error ? <AsyncStatus compact tone="error" message={error} className="panel-status" /> : null}
+            {message ? <AsyncStatus compact tone="success" message={message} className="panel-status" /> : null}
             <dl className="detail-grid detail-grid--single">
               <div className="detail-item">
-                <dt className="detail-label">Status:</dt>
+                <dt className="detail-label">Browser support:</dt>
+                <dd className="detail-value">{supportsPush ? "Supported" : "Unsupported"}</dd>
+              </div>
+              <div className="detail-item">
+                <dt className="detail-label">Secure context:</dt>
+                <dd className="detail-value">{isSecureContext ? "Ready" : "HTTPS or localhost required"}</dd>
+              </div>
+              <div className="detail-item">
+                <dt className="detail-label">Permission:</dt>
                 <dd className="detail-value">
                   <span className="status-pill">{permissionState}</span>
                 </dd>
               </div>
               <div className="detail-item detail-item--stack">
+                <dt className="detail-label">Server config:</dt>
+                <dd className="detail-value">{serverStatus}</dd>
+              </div>
+              <div className="detail-item">
                 <dt className="detail-label">Subscriptions:</dt>
                 <dd className="detail-value">{subscriptions.length}</dd>
               </div>
+              <div className="detail-item detail-item--stack">
+                <dt className="detail-label">Current device:</dt>
+                <dd className="detail-value">{currentDeviceEndpoint ? "Registered" : "Not registered here"}</dd>
+              </div>
             </dl>
             <div className="settings-section__actions">
-              <button type="button" onClick={onSubscribe}>
-                Enable Push On This Device
+              <button type="button" onClick={() => void handleSubscribe()} disabled={isSubscribing} aria-busy={isSubscribing}>
+                {isSubscribing ? "Enabling..." : "Enable Push On This Device"}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => void handleSendTest()}
+                disabled={isSendingTestPush}
+                aria-busy={isSendingTestPush}
+              >
+                {isSendingTestPush ? "Sending Test..." : "Send Test Push"}
               </button>
             </div>
-            {subscriptions.length === 0 ? (
+            {subscriptions.length === 0 && !isLoadingSubscriptions ? (
               <p className="muted">No device subscriptions registered.</p>
             ) : (
               <div className="result-list">
-                {subscriptions.map((subscription) => (
-                  <article key={subscription.id} className="result-card">
-                    <div>
-                      <strong>{subscription.user_agent ?? "Browser Subscription"}</strong>
-                      <p className="muted">{subscription.endpoint}</p>
-                    </div>
-                    <button type="button" className="ghost-button" onClick={() => onUnsubscribe(subscription.endpoint)}>
-                      Revoke
-                    </button>
-                  </article>
-                ))}
+                {subscriptions.map((subscription) => {
+                  const isCurrentDevice = currentDeviceEndpoint === subscription.endpoint;
+                  return (
+                    <article key={subscription.id} className="result-card">
+                      <div>
+                        <strong>
+                          {isCurrentDevice ? "This browser" : subscription.user_agent ?? "Browser Subscription"}
+                        </strong>
+                        <p className="muted">{maskEndpoint(subscription.endpoint)}</p>
+                        <p className="muted">Updated {formatTimestamp(subscription.updated_at)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => void handleUnsubscribe(subscription.endpoint)}
+                        disabled={unsubscribingEndpoint === subscription.endpoint}
+                        aria-busy={unsubscribingEndpoint === subscription.endpoint}
+                      >
+                        {unsubscribingEndpoint === subscription.endpoint ? "Revoking..." : "Revoke"}
+                      </button>
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>

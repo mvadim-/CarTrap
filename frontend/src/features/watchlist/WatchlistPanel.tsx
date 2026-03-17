@@ -1,26 +1,65 @@
 import { FormEvent, useState } from "react";
 
-import type { WatchlistItem } from "../../types";
+import type { LiveSyncStatus, WatchlistItem } from "../../types";
+import { AsyncStatus } from "../shared/AsyncStatus";
 import { LotThumbnail } from "../shared/LotThumbnail";
 import { LotGalleryModal } from "./LotGalleryModal";
 
 type Props = {
   items: WatchlistItem[];
+  isLoading: boolean;
+  loadError: string | null;
+  isAddingLot: boolean;
+  removingItemId: string | null;
+  isBrowserOffline: boolean;
+  liveSyncStatus: LiveSyncStatus | null;
+  onRetry: () => Promise<void>;
   onAddByLotNumber: (lotNumber: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 };
 
-export function WatchlistPanel({ items, onAddByLotNumber, onRemove }: Props) {
+export function WatchlistPanel({
+  items,
+  isLoading,
+  loadError,
+  isAddingLot,
+  removingItemId,
+  isBrowserOffline,
+  liveSyncStatus,
+  onRetry,
+  onAddByLotNumber,
+  onRemove,
+}: Props) {
   const [lotNumber, setLotNumber] = useState("");
   const [selectedLot, setSelectedLot] = useState<WatchlistItem | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!lotNumber.trim()) {
+    if (!lotNumber.trim() || isAddingLot) {
       return;
     }
-    await onAddByLotNumber(lotNumber.trim());
-    setLotNumber("");
+    setActionError(null);
+    setActionNotice(null);
+    try {
+      await onAddByLotNumber(lotNumber.trim());
+      setActionNotice(`Tracked lot ${lotNumber.trim()} added.`);
+      setLotNumber("");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not add lot.");
+    }
+  }
+
+  async function handleRemove(id: string) {
+    setActionError(null);
+    setActionNotice(null);
+    try {
+      await onRemove(id);
+      setActionNotice("Tracked lot removed.");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not remove lot.");
+    }
   }
 
   function formatDetailValue(value: string | null | undefined): string {
@@ -61,8 +100,19 @@ export function WatchlistPanel({ items, onAddByLotNumber, onRemove }: Props) {
     }).format(new Date(value));
   }
 
+  function formatLastChecked(value: string): string {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  }
+
   function getTrackedLotDetails(item: WatchlistItem) {
     return [
+      { label: "Status", value: formatDetailValue(item.raw_status), emphasis: true },
+      { label: "Last checked", value: formatLastChecked(item.last_checked_at) },
       { label: "Odometer", value: formatDetailValue(item.odometer) },
       { label: "Primary damage", value: formatDetailValue(item.primary_damage) },
       { label: "Retail", value: formatMoney(item.estimated_retail_value, item.currency) },
@@ -100,6 +150,18 @@ export function WatchlistPanel({ items, onAddByLotNumber, onRemove }: Props) {
     ];
   }
 
+  function getWatchlistContextMessage(): string | null {
+    if (isBrowserOffline) {
+      return "This device is offline. Live lot updates and new additions will resume after reconnecting.";
+    }
+    if (liveSyncStatus?.status === "degraded") {
+      return "Live Copart sync is unavailable. Existing tracked data stays visible while refresh-dependent actions may fail.";
+    }
+    return null;
+  }
+
+  const contextMessage = getWatchlistContextMessage();
+
   return (
     <section className="panel">
       <div className="panel-header">
@@ -108,7 +170,25 @@ export function WatchlistPanel({ items, onAddByLotNumber, onRemove }: Props) {
           <h2>Tracked Lots</h2>
         </div>
       </div>
-      <form className="search-grid watchlist-form" onSubmit={handleSubmit}>
+      {contextMessage ? <AsyncStatus compact message={contextMessage} className="panel-status" /> : null}
+      {loadError ? (
+        <AsyncStatus
+          tone="error"
+          title="Tracked lots unavailable"
+          message={loadError}
+          action={
+            <button type="button" className="ghost-button" onClick={() => void onRetry()}>
+              Retry watchlist
+            </button>
+          }
+          className="panel-status"
+        />
+      ) : null}
+      {actionError ? (
+        <AsyncStatus tone="error" title="Watchlist action failed" message={actionError} className="panel-status" />
+      ) : null}
+      {actionNotice ? <AsyncStatus tone="success" compact message={actionNotice} className="panel-status" /> : null}
+      <form className="search-grid watchlist-form" onSubmit={handleSubmit} aria-busy={isAddingLot}>
         <label>
           Add by Lot Number
           <input
@@ -117,9 +197,28 @@ export function WatchlistPanel({ items, onAddByLotNumber, onRemove }: Props) {
             placeholder="99251295"
           />
         </label>
-        <button type="submit">Add Lot</button>
+        <button type="submit" disabled={!lotNumber.trim() || isAddingLot} aria-busy={isAddingLot}>
+          {isAddingLot ? "Adding..." : "Add Lot"}
+        </button>
       </form>
-      {items.length === 0 ? (
+      {isAddingLot ? (
+        <AsyncStatus
+          compact
+          progress="bar"
+          title="Adding tracked lot"
+          message="Current watchlist items stay visible while fresh lot details load."
+          className="panel-status"
+        />
+      ) : null}
+      {isLoading && items.length === 0 ? (
+        <AsyncStatus
+          progress="spinner"
+          title="Loading tracked lots"
+          message="Saved lot details and freshness metadata are loading."
+          className="panel-status"
+        />
+      ) : null}
+      {!isLoading && items.length === 0 && !loadError ? (
         <p className="muted">No lots tracked yet.</p>
       ) : (
         <div className="result-list watchlist-list">
@@ -150,14 +249,24 @@ export function WatchlistPanel({ items, onAddByLotNumber, onRemove }: Props) {
                       className={`watchlist-card__detail detail-item${detail.full ? " watchlist-card__detail--full" : ""}`}
                     >
                       <dt className="watchlist-card__detail-label detail-label">{detail.label}:</dt>
-                      <dd className="watchlist-card__detail-value detail-value">{detail.value}</dd>
+                      <dd
+                        className={`watchlist-card__detail-value detail-value${detail.emphasis ? " watchlist-card__detail-value--emphasis" : ""}`}
+                      >
+                        {detail.value}
+                      </dd>
                     </div>
                   ))}
                 </dl>
               </div>
               <div className="watchlist-card__actions">
-                <button type="button" className="ghost-button" onClick={() => onRemove(item.id)}>
-                  Remove
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => void handleRemove(item.id)}
+                  disabled={removingItemId === item.id}
+                  aria-busy={removingItemId === item.id}
+                >
+                  {removingItemId === item.id ? "Removing..." : "Remove"}
                 </button>
               </div>
             </article>

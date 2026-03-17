@@ -1,5 +1,19 @@
 # Change Log
 
+## [2026-03-17 14:50] Implement PWA UX polish for search, watchlist, push, and admin flows
+- Оновлено `frontend/src/{App.tsx,styles.css,types.ts}` і додано `frontend/src/features/shared/AsyncStatus.tsx`: введено shared async-status primitives, granular bootstrap/action pending states, panel-level retry для partial load failures, browser offline tracking і окреме UX-розділення між device offline та backend live-sync degraded mode.
+- Оновлено `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx}` і `frontend/src/features/watchlist/WatchlistPanel.tsx`: manual search, saved-search cache flow і watchlist mutations тепер мають явні loading/success/error states, disabled/busy semantics, кращу metadata clarity (`freshness`, `last checked`, `last synced`) і non-blocking refresh UX із збереженням уже завантажених даних.
+- Оновлено `frontend/src/features/push/PushSettingsModal.tsx` та `frontend/src/features/admin/{AdminInvitesPanel.tsx,AdminSearchCatalogPanel.tsx}`: додано push diagnostics (`support`, `secure context`, `permission`, `server config`, `current device`), `Send Test Push`, покращений subscription list, copy-invite affordance, expiry visibility, catalog refresh feedback і support-friendly success/error messaging.
+- Оновлено `frontend/src/features/dashboard/DashboardShell.tsx`: dashboard тепер показує окремий offline banner для браузера/девайса, компактний bootstrap progress і зберігає live-sync degraded banner як окремий сценарій.
+- Оновлено `frontend/tests/app.test.tsx`: додано покриття для partial bootstrap retry, push test diagnostics, browser-offline messaging та оновлено assertions під новий UX contract.
+- Оновлено `docs/plans/completed/20260317-pwa-ux-polish-flows.md`: усі tasks позначено виконаними, план перенесено в `docs/plans/completed/`.
+- Verification: `npm run test --prefix frontend` -> `21 passed`, `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-17 12:11] Add 6-week product roadmap document
+- Додано `output/doc/cartrap-6-week-roadmap.docx` з 6-тижневим roadmap для CarTrap, що спирається на поточний стан репозиторію: завершений MVP, cached saved-search flow, NAS-backed `copart-gateway` split, degraded/offline UX і наявні deployment constraints.
+- У roadmap окремо винесено milestones, тижневий план `Week 1-6`, явні dependencies і key risks, з фокусом на production hardening, observability, automated regression safety, release automation і beta rollout замість великого net-new feature scope.
+- Структуру документа перевірено через зворотне читання `.docx`; візуальний render-to-image check не виконано, бо в середовищі відсутні `soffice` і `pdftoppm`.
+
 ## [2026-03-16 18:42] Add plan for cached saved-search run flow
 - Додано `docs/plans/20260316-saved-search-cache-run-search.md` з планом переходу saved searches на Mongo-backed results cache: seed cache під час `Save Search`, cached `Run Search`, `Refresh Live` всередині modal і `NEW` badge для лотів, що з’явилися після останнього перегляду.
 - У плані окремо розписано backend cache persistence, worker diff logic для `new_lot_numbers`, нові API endpoints для `view`/`refresh-live`, frontend modal/list UX і обов’язкове тестове покриття для backend та frontend flows.
@@ -451,3 +465,10 @@
 - Оновлено `docs/plans/completed/20260316-saved-search-cache-run-search.md`: Task 5/6 позначено завершеними, додано примітку що `README.md`/`backend/README.md` не змінювались у цьому циклі, і план перенесено в `docs/plans/completed/`.
 - Проведено повний regression прогін після backend/frontend реалізації cached saved-search flow.
 - Verification: `./.venv/bin/pytest backend/tests` -> `133 passed`, `npm run test --prefix frontend` -> `18 passed`, `npm run build --prefix frontend` -> успішно.
+## [2026-03-17 14:31] Add implementation plan for PWA UX polish across search, watchlist, push, and admin flows
+- Додано `docs/plans/20260317-pwa-ux-polish-flows.md` з покроковим планом доробки UX для вже реалізованих flows: saved-search metadata, refresh/error states, watchlist clarity, push diagnostics, admin support tooling.
+- У плані зафіксовано рекомендований підхід через shared async feedback primitives замість великого редизайну, з окремим акцентом на mobile/PWA usage, loading indicators, progress bars, disabled/pending semantics і degraded-mode messaging.
+- Окремо додано перелік практичних usability improvements beyond spinner/progress bar: cached-data preservation during refresh, clearer stale/live status copy, current-device push diagnostics, test-push UX, copy affordances для довгих URL/endpoint-ів і safer admin feedback.
+## [2026-03-17 14:37] Tighten PWA UX polish plan with missing failure-state coverage
+- Оновлено `docs/plans/20260317-pwa-ux-polish-flows.md` після повторної перевірки: додано явне покриття для manual search / save-search pending states, partial bootstrap failures з panel-level retry, а також browser offline/online UX як окремий сценарій від backend live-sync degraded mode.
+- Уточнено testing/manual verification секції: тепер план вимагає перевіряти часткові фейли завантаження dashboard, throttled search/save flows, offline-to-online recovery і reduced-motion-safe loading animations.

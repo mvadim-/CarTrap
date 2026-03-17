@@ -1,5 +1,6 @@
 import type {
   Invite,
+  PushDeliveryResult,
   PushSubscriptionConfig,
   PushSubscriptionItem,
   PushSubscriptionPayload,
@@ -297,4 +298,15 @@ export async function subscribeToPush(
 export async function unsubscribeFromPush(endpoint: string, token: string): Promise<void> {
   const query = new URLSearchParams({ endpoint }).toString();
   await request<void>(`/notifications/subscriptions?${query}`, { method: "DELETE", token });
+}
+
+export async function sendPushTest(token: string): Promise<PushDeliveryResult> {
+  return request<PushDeliveryResult>("/notifications/test", {
+    method: "POST",
+    body: {
+      title: "CarTrap test notification",
+      body: "Push delivery is working on this device.",
+    },
+    token,
+  });
 }

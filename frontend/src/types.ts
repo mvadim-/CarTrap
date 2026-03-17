@@ -156,6 +156,13 @@ export type PushSubscriptionConfig = {
   reason: string | null;
 };
 
+export type PushDeliveryResult = {
+  delivered: number;
+  failed: number;
+  removed: number;
+  endpoints: string[];
+};
+
 export type LiveSyncStatus = {
   status: "available" | "degraded";
   last_success_at: string | null;

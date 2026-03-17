@@ -1,13 +1,15 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import type {
+  LiveSyncStatus,
   SavedSearch,
+  SavedSearchResultsResponse,
   SearchCatalog,
   SearchCatalogMake,
   SearchCatalogModel,
   SearchResult,
-  SavedSearchResultsResponse,
 } from "../../types";
+import { AsyncStatus } from "../shared/AsyncStatus";
 import { SearchFiltersModal } from "./SearchFiltersModal";
 import { SearchResultsModal } from "./SearchResultsModal";
 import { getSearchFilterLabels, SearchFilterValues } from "./searchFilters";
@@ -137,7 +139,20 @@ type SearchPayload = {
 type Props = {
   catalog: SearchCatalog | null;
   isLoadingCatalog: boolean;
+  catalogError: string | null;
+  onRetryCatalog: () => Promise<void>;
   savedSearches: SavedSearch[];
+  isLoadingSavedSearches: boolean;
+  savedSearchesError: string | null;
+  onRetrySavedSearches: () => Promise<void>;
+  isSearching: boolean;
+  isSavingSearch: boolean;
+  openingSavedSearchId: string | null;
+  refreshingSavedSearchId: string | null;
+  deletingSavedSearchId: string | null;
+  addingFromSearchLotUrl: string | null;
+  isBrowserOffline: boolean;
+  liveSyncStatus: LiveSyncStatus | null;
   onSearch: (payload: SearchPayload) => Promise<{ results: SearchResult[]; total_results: number }>;
   onSaveSearch: (payload: SearchPayload & { seedResults?: SearchResult[]; totalResults?: number }) => Promise<SavedSearch>;
   onViewSavedSearch: (id: string) => Promise<SavedSearchResultsResponse>;
@@ -156,12 +171,40 @@ type SearchModalState = {
   savedSearchId: string | null;
   lastSyncedAt: string | null;
   refreshError: string | null;
+  statusMessage: string | null;
 };
+
+function formatLotCount(count: number | null | undefined): string {
+  if (count === null || count === undefined) {
+    return "Lot count unavailable";
+  }
+  return `${count} ${count === 1 ? "lot" : "lots"} found`;
+}
+
+function formatYearRange(from?: string, to?: string): string {
+  if (from && to) {
+    return `${from}-${to}`;
+  }
+  return from || to || "—";
+}
 
 export function SearchPanel({
   catalog,
   isLoadingCatalog,
+  catalogError,
+  onRetryCatalog,
   savedSearches,
+  isLoadingSavedSearches,
+  savedSearchesError,
+  onRetrySavedSearches,
+  isSearching,
+  isSavingSearch,
+  openingSavedSearchId,
+  refreshingSavedSearchId,
+  deletingSavedSearchId,
+  addingFromSearchLotUrl,
+  isBrowserOffline,
+  liveSyncStatus,
   onSearch,
   onSaveSearch,
   onViewSavedSearch,
@@ -184,6 +227,9 @@ export function SearchPanel({
   const [lotCondition, setLotCondition] = useState<string | undefined>(undefined);
   const [odometerRange, setOdometerRange] = useState<string | undefined>(undefined);
   const [lastSubmittedPayload, setLastSubmittedPayload] = useState<SearchPayload | null>(null);
+  const [manualSearchError, setManualSearchError] = useState<string | null>(null);
+  const [savedSearchError, setSavedSearchError] = useState<string | null>(null);
+  const [savedSearchNotice, setSavedSearchNotice] = useState<string | null>(null);
   const [searchModal, setSearchModal] = useState<SearchModalState>({
     isOpen: false,
     mode: "manual",
@@ -194,12 +240,14 @@ export function SearchPanel({
     savedSearchId: null,
     lastSyncedAt: null,
     refreshError: null,
+    statusMessage: null,
   });
 
   const filteredMakes = catalog?.makes.filter((item) => matchesMakeQuery(item.name, makeQuery)) ?? [];
   const selectedMake: SearchCatalogMake | null = catalog?.makes.find((item) => item.slug === selectedMakeSlug) ?? null;
   const filteredModels = selectedMake?.models.filter((item) => matchesModelQuery(item.name, modelQuery)) ?? [];
   const selectedModel: SearchCatalogModel | null = selectedMake?.models.find((item) => item.slug === selectedModelSlug) ?? null;
+  const isLiveSyncUnavailable = liveSyncStatus?.status === "degraded";
 
   useEffect(() => {
     if (!catalog || catalog.makes.length === 0) {
@@ -215,10 +263,7 @@ export function SearchPanel({
   }, [catalog, selectedMakeSlug]);
 
   useEffect(() => {
-    if (!catalog) {
-      return;
-    }
-    if (!makeQuery.trim()) {
+    if (!catalog || !makeQuery.trim()) {
       return;
     }
     if (filteredMakes.length === 0) {
@@ -231,7 +276,7 @@ export function SearchPanel({
     }
     setSelectedMakeSlug(filteredMakes[0].slug);
     setSelectedModelSlug("");
-  }, [catalog, filteredMakes, selectedMakeSlug]);
+  }, [catalog, filteredMakes, makeQuery, selectedMakeSlug]);
 
   useEffect(() => {
     if (!selectedMake) {
@@ -245,10 +290,7 @@ export function SearchPanel({
   }, [selectedMake, selectedModelSlug]);
 
   useEffect(() => {
-    if (!selectedMake) {
-      return;
-    }
-    if (!modelQuery.trim()) {
+    if (!selectedMake || !modelQuery.trim()) {
       return;
     }
     if (filteredModels.length === 0) {
@@ -259,7 +301,7 @@ export function SearchPanel({
       return;
     }
     setSelectedModelSlug(filteredModels[0].slug);
-  }, [filteredModels, selectedMake, selectedModelSlug]);
+  }, [filteredModels, modelQuery, selectedMake, selectedModelSlug]);
 
   function buildPayload(makeOverride?: SearchCatalogMake | null, modelOverride?: SearchCatalogModel | null): SearchPayload {
     const resolvedMake = makeOverride ?? selectedMake;
@@ -293,27 +335,30 @@ export function SearchPanel({
       savedSearchId: null,
       lastSyncedAt: null,
       refreshError: null,
+      statusMessage: null,
     });
     setIsResultsOpen(true);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedMake) {
+    if (!selectedMake || isSearching) {
       return;
     }
+    setManualSearchError(null);
+    setSavedSearchNotice(null);
     try {
       await runSearch(buildPayload());
-    } catch {
+    } catch (error) {
       setSearchModal((current) => ({ ...current, isOpen: false }));
       setIsResultsOpen(false);
+      setManualSearchError(error instanceof Error ? error.message : "Search failed.");
     }
   }
 
   async function handleRunSavedSearch(savedSearch: SavedSearch) {
     const matchedMake = catalog?.makes.find((item) => item.name === savedSearch.criteria.make) ?? null;
-    const matchedModel =
-      matchedMake?.models.find((item) => item.name === savedSearch.criteria.model) ?? null;
+    const matchedModel = matchedMake?.models.find((item) => item.name === savedSearch.criteria.model) ?? null;
 
     if (matchedMake) {
       setSelectedMakeSlug(matchedMake.slug);
@@ -329,6 +374,8 @@ export function SearchPanel({
     setFuelType(savedSearch.criteria.fuel_type);
     setLotCondition(savedSearch.criteria.lot_condition);
     setOdometerRange(savedSearch.criteria.odometer_range);
+    setSavedSearchError(null);
+    setSavedSearchNotice(null);
 
     try {
       const response = await onViewSavedSearch(savedSearch.id);
@@ -342,33 +389,43 @@ export function SearchPanel({
         savedSearchId: savedSearch.id,
         lastSyncedAt: response.last_synced_at,
         refreshError: null,
+        statusMessage: "Opened cached results. Live refresh stays available from this modal.",
       });
       setIsResultsOpen(true);
-    } catch {
+    } catch (error) {
       setSearchModal((current) => ({ ...current, isOpen: false }));
       setIsResultsOpen(false);
+      setSavedSearchError(error instanceof Error ? error.message : "Could not open saved search.");
     }
   }
 
   async function handleSaveCurrentSearch() {
-    if (!lastSubmittedPayload) {
+    if (!lastSubmittedPayload || isSavingSearch) {
       return;
     }
+    setManualSearchError(null);
+    setSavedSearchError(null);
     try {
       await onSaveSearch({
         ...lastSubmittedPayload,
         seedResults: searchModal.results,
         totalResults: searchModal.totalResults,
       });
-    } catch {
-      return;
+      setSavedSearchNotice("Saved search ready.");
+      setSearchModal((current) => ({
+        ...current,
+        statusMessage: "Saved search ready. Cached results can be reopened from the saved list.",
+      }));
+    } catch (error) {
+      setManualSearchError(error instanceof Error ? error.message : "Could not save search.");
     }
   }
 
   async function handleRefreshCurrentSavedSearch() {
-    if (!searchModal.savedSearchId) {
+    if (!searchModal.savedSearchId || refreshingSavedSearchId === searchModal.savedSearchId) {
       return;
     }
+    setSavedSearchError(null);
     try {
       const response = await onRefreshSavedSearch(searchModal.savedSearchId);
       setSearchModal({
@@ -381,31 +438,49 @@ export function SearchPanel({
         savedSearchId: response.saved_search.id,
         lastSyncedAt: response.last_synced_at,
         refreshError: null,
+        statusMessage: "Live refresh completed. Cached results are now up to date.",
       });
+      setSavedSearchNotice(`Live refresh completed for ${response.saved_search.label}.`);
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not refresh saved search.";
       setSearchModal((current) => ({
         ...current,
-        refreshError: error instanceof Error ? error.message : "Could not refresh saved search.",
+        refreshError: message,
+        statusMessage: null,
       }));
+      setSavedSearchError(message);
     }
   }
 
-  function formatLotCount(count: number | null | undefined): string {
-    if (count === null || count === undefined) {
-      return "Lot count unavailable";
+  async function handleDeleteSavedSearch(id: string) {
+    setSavedSearchError(null);
+    setSavedSearchNotice(null);
+    try {
+      await onDeleteSavedSearch(id);
+      setSavedSearchNotice("Saved search removed.");
+    } catch (error) {
+      setSavedSearchError(error instanceof Error ? error.message : "Could not delete saved search.");
     }
-    return `${count} ${count === 1 ? "lot" : "lots"} found`;
-  }
-
-  function formatYearRange(from?: string, to?: string): string {
-    if (from && to) {
-      return `${from}-${to}`;
-    }
-    return from || to || "—";
   }
 
   function formatSavedSearchYears(item: SavedSearch): string {
     return formatYearRange(item.criteria.year_from?.toString(), item.criteria.year_to?.toString());
+  }
+
+  function getSavedSearchSyncState(item: SavedSearch): string {
+    if (refreshingSavedSearchId === item.id) {
+      return "Refreshing live now";
+    }
+    if (isBrowserOffline) {
+      return "Device offline";
+    }
+    if (isLiveSyncUnavailable) {
+      return "Live sync unavailable";
+    }
+    if (!item.last_synced_at) {
+      return "Never synced";
+    }
+    return "Cached results ready";
   }
 
   const activeFilterLabels = getSearchFilterLabels({
@@ -428,7 +503,34 @@ export function SearchPanel({
           Filters{activeFilterLabels.length > 0 ? ` (${activeFilterLabels.length})` : ""}
         </button>
       </div>
-      <form className="search-grid search-grid--panel" onSubmit={handleSubmit}>
+      {isLoadingCatalog && !catalog ? (
+        <AsyncStatus
+          progress="bar"
+          title="Loading search catalog"
+          message="Make and model options are loading for this device."
+          className="panel-status"
+        />
+      ) : null}
+      {catalogError ? (
+        <AsyncStatus
+          tone="error"
+          title="Search catalog unavailable"
+          message={catalogError}
+          action={
+            <button type="button" className="ghost-button" onClick={() => void onRetryCatalog()}>
+              Retry catalog
+            </button>
+          }
+          className="panel-status"
+        />
+      ) : null}
+      {manualSearchError ? (
+        <AsyncStatus tone="error" title="Search request failed" message={manualSearchError} className="panel-status" />
+      ) : null}
+      {savedSearchNotice ? (
+        <AsyncStatus tone="success" compact message={savedSearchNotice} className="panel-status" />
+      ) : null}
+      <form className="search-grid search-grid--panel" onSubmit={handleSubmit} aria-busy={isSearching}>
         <SearchableSelector
           label="Make"
           ariaLabel="Make"
@@ -486,10 +588,19 @@ export function SearchPanel({
             />
           </label>
         </div>
-        <button type="submit" disabled={!selectedMake}>
-          Search Lots
+        <button type="submit" disabled={!selectedMake || isSearching} aria-busy={isSearching}>
+          {isSearching ? "Searching..." : "Search Lots"}
         </button>
       </form>
+      {isSearching ? (
+        <AsyncStatus
+          compact
+          progress="bar"
+          title="Searching Copart"
+          message="Current filters stay in place while live results load."
+          className="panel-status"
+        />
+      ) : null}
       <dl className="detail-grid detail-grid--search search-summary">
         <div className="detail-item">
           <dt className="detail-label">Make:</dt>
@@ -505,12 +616,10 @@ export function SearchPanel({
         </div>
         <div className="detail-item detail-item--stack">
           <dt className="detail-label">Filters:</dt>
-          <dd className="detail-value">
-            {activeFilterLabels.length > 0 ? activeFilterLabels.join(" · ") : "None"}
-          </dd>
+          <dd className="detail-value">{activeFilterLabels.length > 0 ? activeFilterLabels.join(" · ") : "None"}</dd>
         </div>
       </dl>
-      {!catalog && !isLoadingCatalog ? <p className="muted">Search catalog is unavailable.</p> : null}
+      {!catalog && !isLoadingCatalog && !catalogError ? <p className="muted">Search catalog is unavailable.</p> : null}
 
       <div className="saved-searches">
         <div className="panel-header">
@@ -519,14 +628,41 @@ export function SearchPanel({
             <h3>Saved Searches</h3>
           </div>
         </div>
+        {savedSearchError ? (
+          <AsyncStatus tone="error" title="Saved-search action failed" message={savedSearchError} className="panel-status" />
+        ) : null}
+        {isLoadingSavedSearches && savedSearches.length === 0 ? (
+          <AsyncStatus
+            progress="spinner"
+            title="Loading saved searches"
+            message="Your cached search runs and freshness metadata are loading."
+            className="panel-status"
+          />
+        ) : null}
+        {savedSearchesError ? (
+          <AsyncStatus
+            tone="error"
+            title="Saved searches unavailable"
+            message={savedSearchesError}
+            action={
+              <button type="button" className="ghost-button" onClick={() => void onRetrySavedSearches()}>
+                Retry saved searches
+              </button>
+            }
+            className="panel-status"
+          />
+        ) : null}
         <div className="result-list">
-          {savedSearches.length === 0 ? (
+          {!isLoadingSavedSearches && savedSearches.length === 0 && !savedSearchesError ? (
             <p className="muted">No saved searches yet.</p>
           ) : (
             savedSearches.map((item) => (
-              <article key={item.id} className="result-card">
+              <article key={item.id} className="result-card saved-search-card">
                 <div className="result-copy">
-                  <strong>{item.label}</strong>
+                  <div className="saved-search-card__header">
+                    <strong>{item.label}</strong>
+                    {item.new_count > 0 ? <span className="new-badge">{item.new_count} NEW</span> : null}
+                  </div>
                   <dl className="detail-grid detail-grid--saved-search saved-search-card__details">
                     <div className="detail-item">
                       <dt className="detail-label">Make:</dt>
@@ -562,31 +698,43 @@ export function SearchPanel({
                           : "None"}
                       </dd>
                     </div>
-                    <div className="detail-item saved-search-card__detail--full">
+                    <div className="detail-item">
                       <dt className="detail-label">Matches:</dt>
                       <dd className="detail-value">{formatLotCount(item.cached_result_count ?? item.result_count)}</dd>
                     </div>
                     <div className="detail-item">
-                      <dt className="detail-label">New:</dt>
-                      <dd className="detail-value">
-                        {item.new_count > 0 ? <span className="new-badge">{item.new_count} NEW</span> : "0"}
-                      </dd>
+                      <dt className="detail-label">Freshness:</dt>
+                      <dd className="detail-value">{getSavedSearchSyncState(item)}</dd>
                     </div>
                     <div className="detail-item saved-search-card__detail--full">
                       <dt className="detail-label">Synced:</dt>
-                      <dd className="detail-value">{item.last_synced_at ? new Date(item.last_synced_at).toLocaleString() : "Not yet"}</dd>
+                      <dd className="detail-value">
+                        {item.last_synced_at ? new Date(item.last_synced_at).toLocaleString() : "Not yet"}
+                      </dd>
                     </div>
                   </dl>
                 </div>
                 <div className="result-actions">
-                  <button type="button" className="ghost-button" onClick={() => void handleRunSavedSearch(item)}>
-                    Run Search
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void handleRunSavedSearch(item)}
+                    disabled={openingSavedSearchId === item.id}
+                    aria-busy={openingSavedSearchId === item.id}
+                  >
+                    {openingSavedSearchId === item.id ? "Opening..." : "Run Search"}
                   </button>
                   <a className="ghost-button" href={item.external_url} target="_blank" rel="noreferrer">
                     Open URL
                   </a>
-                  <button type="button" className="ghost-button" onClick={() => void onDeleteSavedSearch(item.id)}>
-                    Delete
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void handleDeleteSavedSearch(item.id)}
+                    disabled={deletingSavedSearchId === item.id}
+                    aria-busy={deletingSavedSearchId === item.id}
+                  >
+                    {deletingSavedSearchId === item.id ? "Deleting..." : "Delete"}
                   </button>
                 </div>
               </article>
@@ -601,16 +749,25 @@ export function SearchPanel({
         results={searchModal.results}
         totalResults={searchModal.totalResults}
         onClose={() => {
-          setSearchModal((current) => ({ ...current, isOpen: false, refreshError: null }));
+          setSearchModal((current) => ({
+            ...current,
+            isOpen: false,
+            refreshError: null,
+            statusMessage: null,
+          }));
           setIsResultsOpen(false);
         }}
         onAddFromSearch={onAddFromSearch}
         onSaveSearch={handleSaveCurrentSearch}
         canSave={searchModal.canSave && lastSubmittedPayload !== null}
+        isSavingSearch={isSavingSearch}
+        addingFromSearchLotUrl={addingFromSearchLotUrl}
         canRefreshLive={searchModal.mode === "saved" && searchModal.savedSearchId !== null}
         onRefreshLive={handleRefreshCurrentSavedSearch}
+        isRefreshingLive={searchModal.savedSearchId !== null && refreshingSavedSearchId === searchModal.savedSearchId}
         lastSyncedAt={searchModal.lastSyncedAt}
         refreshError={searchModal.refreshError}
+        statusMessage={searchModal.statusMessage}
       />
       <SearchFiltersModal
         isOpen={isFiltersOpen}
