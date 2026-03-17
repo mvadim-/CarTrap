@@ -474,6 +474,13 @@ select {
   padding: 0.8rem;
 }
 
+.watchlist-card--updated {
+  border-color: rgba(177, 48, 34, 0.28);
+  background:
+    linear-gradient(135deg, rgba(255, 246, 242, 0.94) 0%, rgba(255, 255, 255, 0.82) 48%, rgba(255, 245, 237, 0.92) 100%);
+  box-shadow: 0 16px 36px rgba(177, 48, 34, 0.08);
+}
+
 .watchlist-card__body,
 .watchlist-card__actions {
   display: grid;
@@ -487,9 +494,55 @@ select {
   gap: 0.55rem;
 }
 
+.watchlist-card__header-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .watchlist-card__header strong {
   font-size: 0.96rem;
   line-height: 1.2;
+}
+
+.watchlist-card__update-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.72rem;
+  border-radius: 999px;
+  background: rgba(177, 48, 34, 0.12);
+  color: #b13022;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.watchlist-card__update-callout {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.95rem;
+  border: 1px solid rgba(177, 48, 34, 0.16);
+  background: rgba(255, 242, 237, 0.88);
+}
+
+.watchlist-card__update-summary,
+.watchlist-card__update-meta {
+  margin: 0;
+}
+
+.watchlist-card__update-summary {
+  color: #8f2c21;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.watchlist-card__update-meta {
+  color: rgba(143, 44, 33, 0.76);
+  font-size: 0.76rem;
 }
 
 .watchlist-card__lot-link {

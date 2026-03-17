@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
@@ -25,6 +25,11 @@ class WatchlistCreateRequest(BaseModel):
             return str(self.lot_url)
         normalized = "".join(char for char in str(self.lot_number) if char.isdigit())
         return f"https://www.copart.com/lot/{normalized}"
+
+
+class LotChangeValueResponse(BaseModel):
+    before: Any = None
+    after: Any = None
 
 
 class WatchlistItemResponse(BaseModel):
@@ -49,6 +54,9 @@ class WatchlistItemResponse(BaseModel):
     sale_date: Optional[datetime] = None
     last_checked_at: datetime
     created_at: datetime
+    has_unseen_update: bool = False
+    latest_change_at: Optional[datetime] = None
+    latest_changes: dict[str, LotChangeValueResponse] = Field(default_factory=dict)
 
 
 class LotSnapshotResponse(BaseModel):

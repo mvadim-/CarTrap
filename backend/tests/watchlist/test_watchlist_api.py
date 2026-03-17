@@ -192,6 +192,47 @@ def test_watchlist_rejects_duplicate_lot(client: TestClient) -> None:
     assert duplicate_response.status_code == 409
 
 
+def test_watchlist_lists_updated_lots_first_and_clears_update_marker_after_view(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "updates@example.com", "UpdatesPass123")
+        older_id = client.post(
+            "/api/watchlist",
+            json={"lot_number": "12345678"},
+            headers={"Authorization": f"Bearer {user_token}"},
+        ).json()["tracked_lot"]["id"]
+        newer_id = client.post(
+            "/api/watchlist",
+            json={"lot_number": "87654321"},
+            headers={"Authorization": f"Bearer {user_token}"},
+        ).json()["tracked_lot"]["id"]
+        client.app.state.mongo.database["tracked_lots"].update_one(
+            {"_id": ObjectId(older_id)},
+            {
+                "$set": {
+                    "has_unseen_update": True,
+                    "latest_change_at": datetime(2026, 3, 17, 16, 0, tzinfo=timezone.utc),
+                    "latest_changes": {
+                        "raw_status": {"before": "On Approval", "after": "Live"},
+                        "current_bid": {"before": 4200.0, "after": 5100.0},
+                    },
+                }
+            },
+        )
+
+        first_list_response = client.get("/api/watchlist", headers={"Authorization": f"Bearer {user_token}"})
+        second_list_response = client.get("/api/watchlist", headers={"Authorization": f"Bearer {user_token}"})
+
+    assert first_list_response.status_code == 200
+    assert [item["id"] for item in first_list_response.json()["items"]] == [older_id, newer_id]
+    assert first_list_response.json()["items"][0]["has_unseen_update"] is True
+    assert first_list_response.json()["items"][0]["latest_changes"]["current_bid"] == {"before": 4200.0, "after": 5100.0}
+
+    assert second_list_response.status_code == 200
+    assert [item["id"] for item in second_list_response.json()["items"]] == [newer_id, older_id]
+    assert second_list_response.json()["items"][1]["has_unseen_update"] is False
+    assert second_list_response.json()["items"][1]["latest_changes"] == {}
+
+
 def test_watchlist_accepts_lot_number_input(client: TestClient) -> None:
     with client:
         user_token = _create_user(client, "lotnumber@example.com", "LotNumberPass123")

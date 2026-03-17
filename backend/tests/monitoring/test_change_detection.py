@@ -159,6 +159,10 @@ def test_monitoring_service_stores_new_snapshot_when_state_changes() -> None:
     assert tracked_lot["drivetrain"] == "AWD"
     assert tracked_lot["highlights"] == ["Enhanced Vehicles"]
     assert tracked_lot["vin"] == "1FA6P8TH0J5100002"
+    assert tracked_lot["has_unseen_update"] is True
+    assert tracked_lot["latest_change_at"] == datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc)
+    assert tracked_lot["latest_changes"]["raw_status"] == {"before": "Upcoming", "after": "Live"}
+    assert tracked_lot["latest_changes"]["current_bid"] == {"before": 1000.0, "after": 1800.0}
 
 
 def test_monitoring_service_counts_failures_without_overwriting_state() -> None:
@@ -238,6 +242,7 @@ def test_monitoring_service_skips_snapshot_creation_when_lot_etag_is_not_modifie
     tracked_lot = database["tracked_lots"].find_one({"_id": ObjectId(created["tracked_lot"]["id"])})
     assert tracked_lot["detail_etag"] == "\"lot-etag-2\""
     assert tracked_lot["last_checked_at"] == datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc)
+    assert tracked_lot["has_unseen_update"] is False
     assert database["lot_snapshots"].count_documents({"tracked_lot_id": created["tracked_lot"]["id"]}) == 1
 
 

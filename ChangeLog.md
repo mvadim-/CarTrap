@@ -1,5 +1,14 @@
 # Change Log
 
+## [2026-03-17 16:02] Tighten lot-change push copy for minimal informative text
+- Оновлено `backend/src/cartrap/modules/notifications/service.py`: title lot-change push тепер має більш компактний формат `<title> (<lot_number>)`, а body скорочено до мінімалістичного diff без зайвого повтору валюти, наприклад `Status: Upcoming -> Live; Bid: 1,000 -> 1,800 USD`.
+- Оновлено `backend/tests/notifications/test_push_delivery.py` під новий copy contract.
+
+## [2026-03-17 15:58] Prioritize updated watchlist lots and enrich lot-change push copy
+- Оновлено `backend/src/cartrap/modules/{watchlist/schemas.py,watchlist/repository.py,watchlist/service.py,monitoring/service.py,notifications/service.py}`: watchlist items тепер мають `has_unseen_update`/`latest_change*` metadata, `GET /watchlist` повертає лоти з непрочитаними оновленнями першими та очищає marker після перегляду, а lot-change push notification тепер починається з назви лота й містить значення змін (`Status`, `Current bid`, `Sale date` тощо).
+- Оновлено `frontend/src/{types.ts,styles.css}` і `frontend/src/features/watchlist/WatchlistPanel.tsx`: card з оновленням тепер має виразний accent state, `Updated` badge і change summary callout з деталями diff прямо в списку.
+- Оновлено `backend/tests/{watchlist/test_snapshot_storage.py,watchlist/test_watchlist_api.py,monitoring/test_change_detection.py,notifications/test_push_delivery.py}`, `frontend/tests/app.test.tsx` і `docs/backend-api.md` під новий watchlist/push contract.
+
 ## [2026-03-17 15:25] Move saved-search and watchlist refresh cadence to env config
 - Оновлено `backend/src/cartrap/{config.py,app.py,worker/main.py}`: додано env-driven settings для періодичності polling saved searches і watchlist lots, а runtime створення сервісів тепер підхоплює ці значення з `.env`.
 - Оновлено `backend/src/cartrap/modules/{search/service.py,search/router.py,admin/router.py,monitoring/service.py,monitoring/polling_policy.py}`: прибрано жорстко зашиті інтервали, saved-search polling і adaptive watchlist polling тепер працюють через конфігуровані значення.

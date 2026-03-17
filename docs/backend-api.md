@@ -346,6 +346,8 @@ Response shape is identical to `POST /api/watchlist`.
 
 Lists current user tracked lots.
 
+Items with unseen polling updates are returned first. After the list response is served, those unseen markers are cleared for the current user, so the highlight behaves like a view-once notification.
+
 Response:
 
 ```json
@@ -365,7 +367,13 @@ Response:
       "currency": "USD",
       "sale_date": "2026-03-20T17:00:00Z",
       "last_checked_at": "2026-03-13T10:00:00Z",
-      "created_at": "2026-03-13T10:00:00Z"
+      "created_at": "2026-03-13T10:00:00Z",
+      "has_unseen_update": true,
+      "latest_change_at": "2026-03-17T15:40:00Z",
+      "latest_changes": {
+        "raw_status": { "before": "On Approval", "after": "Live" },
+        "current_bid": { "before": 4200.0, "after": 5100.0 }
+      }
     }
   ]
 }
@@ -407,7 +415,10 @@ Response:
     "currency": "USD",
     "sale_date": null,
     "last_checked_at": "2026-03-13T10:00:00Z",
-    "created_at": "2026-03-13T10:00:00Z"
+    "created_at": "2026-03-13T10:00:00Z",
+    "has_unseen_update": false,
+    "latest_change_at": null,
+    "latest_changes": {}
   },
   "initial_snapshot": {
     "id": "mongo-object-id",

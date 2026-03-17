@@ -35,6 +35,9 @@ function buildTrackedLot(overrides: Record<string, unknown> = {}) {
     sale_date: null,
     last_checked_at: "2026-03-11T12:00:00Z",
     created_at: "2026-03-11T12:00:00Z",
+    has_unseen_update: false,
+    latest_change_at: null,
+    latest_changes: {},
     ...overrides,
   };
 }
@@ -89,6 +92,7 @@ describe("CarTrap app", () => {
   let savedSearchViewCallCount: number;
   let savedSearchRefreshCallCount: number;
   let nextSavedSearchSeedNewLotNumbers: string[];
+  let watchlistItems: Array<Record<string, unknown>>;
 
   beforeEach(() => {
     const storage = new Map<string, string>();
@@ -105,6 +109,7 @@ describe("CarTrap app", () => {
     savedSearchViewCallCount = 0;
     savedSearchRefreshCallCount = 0;
     nextSavedSearchSeedNewLotNumbers = [];
+    watchlistItems = [];
     savedSearchesShouldFail = false;
     pushTestShouldFail = false;
     const savedSearches: Array<{
@@ -191,45 +196,42 @@ describe("CarTrap app", () => {
               });
             }
             const body = init?.body ? JSON.parse(String(init.body)) : {};
-            return new Response(
-              JSON.stringify({
-                tracked_lot:
-                  body.lot_number === "99251295"
-                    ? buildTrackedLot({
-                        id: "tracked-2",
-                        lot_number: "99251295",
-                        url: "https://www.copart.com/lot/99251295",
-                        title: "2025 FORD MUSTANG MACH-E PREMIUM",
-                        thumbnail_url: "https://img.copart.com/99251295-detail.jpg",
-                        image_urls: [
-                          "https://img.copart.com/99251295-detail.jpg",
-                          "https://img.copart.com/99251295-detail-2.jpg",
-                        ],
-                        sale_date: "2026-03-13T18:30:00Z",
-                        vin: "3FMTK3SU5SMA00001",
-                      })
-                    : body.lot_number === "87654321"
-                      ? buildTrackedLot({
-                          id: "tracked-3",
-                          lot_number: "87654321",
-                          url: "https://www.copart.com/lot/87654321",
-                          title: "2018 HONDA CIVIC EX",
-                          thumbnail_url: "https://img.copart.com/87654321-detail.jpg",
-                          image_urls: ["https://img.copart.com/87654321-detail.jpg"],
-                          odometer: null,
-                          primary_damage: null,
-                          estimated_retail_value: null,
-                          has_key: null,
-                          drivetrain: null,
-                          highlights: [],
-                          vin: null,
-                        })
-                      : buildTrackedLot(),
-              }),
-              { status: 201 },
-            );
+            const trackedLot =
+              body.lot_number === "99251295"
+                ? buildTrackedLot({
+                    id: "tracked-2",
+                    lot_number: "99251295",
+                    url: "https://www.copart.com/lot/99251295",
+                    title: "2025 FORD MUSTANG MACH-E PREMIUM",
+                    thumbnail_url: "https://img.copart.com/99251295-detail.jpg",
+                    image_urls: [
+                      "https://img.copart.com/99251295-detail.jpg",
+                      "https://img.copart.com/99251295-detail-2.jpg",
+                    ],
+                    sale_date: "2026-03-13T18:30:00Z",
+                    vin: "3FMTK3SU5SMA00001",
+                  })
+                : body.lot_number === "87654321"
+                  ? buildTrackedLot({
+                      id: "tracked-3",
+                      lot_number: "87654321",
+                      url: "https://www.copart.com/lot/87654321",
+                      title: "2018 HONDA CIVIC EX",
+                      thumbnail_url: "https://img.copart.com/87654321-detail.jpg",
+                      image_urls: ["https://img.copart.com/87654321-detail.jpg"],
+                      odometer: null,
+                      primary_damage: null,
+                      estimated_retail_value: null,
+                      has_key: null,
+                      drivetrain: null,
+                      highlights: [],
+                      vin: null,
+                    })
+                  : buildTrackedLot();
+            watchlistItems = [trackedLot, ...watchlistItems.filter((item) => item.id !== trackedLot.id)];
+            return new Response(JSON.stringify({ tracked_lot: trackedLot }), { status: 201 });
           }
-          return new Response(JSON.stringify({ items: [] }), { status: 200 });
+          return new Response(JSON.stringify({ items: watchlistItems }), { status: 200 });
         }
         if (url.includes("/notifications/subscription-config")) {
           return new Response(
@@ -556,12 +558,9 @@ describe("CarTrap app", () => {
           );
         }
         if (url.includes("/search/watchlist")) {
-          return new Response(
-            JSON.stringify({
-              tracked_lot: buildTrackedLot(),
-            }),
-            { status: 201 },
-          );
+          const trackedLot = buildTrackedLot();
+          watchlistItems = [trackedLot, ...watchlistItems.filter((item) => item.id !== trackedLot.id)];
+          return new Response(JSON.stringify({ tracked_lot: trackedLot }), { status: 201 });
         }
         if (url.includes("/admin/invites")) {
           return new Response(
@@ -797,6 +796,40 @@ describe("CarTrap app", () => {
     const lotLink = screen.getByRole("link", { name: /open copart lot 99251295/i });
     expect(lotLink.getAttribute("href")).toBe("https://www.copart.com/lot/99251295");
     expect(lotLink.getAttribute("target")).toBe("_blank");
+  });
+
+  it("highlights updated tracked lots and keeps them at the top of the watchlist", async () => {
+    watchlistItems = [
+      buildTrackedLot({
+        id: "tracked-updated",
+        lot_number: "12345678",
+        title: "2020 TOYOTA CAMRY SE",
+        has_unseen_update: true,
+        latest_change_at: "2026-03-17T15:40:00Z",
+        latest_changes: {
+          raw_status: { before: "On Approval", after: "Live" },
+          current_bid: { before: 4200, after: 5100 },
+        },
+      }),
+      buildTrackedLot({
+        id: "tracked-newer",
+        lot_number: "99251295",
+        title: "2025 FORD MUSTANG MACH-E PREMIUM",
+        url: "https://www.copart.com/lot/99251295",
+        created_at: "2026-03-17T15:45:00Z",
+        last_checked_at: "2026-03-17T15:45:00Z",
+      }),
+    ];
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    const watchlistCards = document.querySelectorAll(".watchlist-card");
+    expect(watchlistCards[0]?.textContent).toContain("2020 TOYOTA CAMRY SE");
+    expect(screen.getByText(/^Updated$/i)).toBeTruthy();
+    expect(screen.getByText(/Status: On Approval -> Live/i)).toBeTruthy();
+    expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
   });
 
   it("enables browser push subscription on this device", async () => {

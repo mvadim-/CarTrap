@@ -38,7 +38,11 @@ class WatchlistRepository:
         return self.tracked_lots.find_one({"owner_user_id": owner_user_id, "lot_number": lot_number})
 
     def list_tracked_lots_for_owner(self, owner_user_id: str) -> list[dict]:
-        return list(self.tracked_lots.find({"owner_user_id": owner_user_id}).sort("created_at", -1))
+        return list(
+            self.tracked_lots.find({"owner_user_id": owner_user_id}).sort(
+                [("has_unseen_update", -1), ("latest_change_at", -1), ("created_at", -1)]
+            )
+        )
 
     def list_active_tracked_lots(self) -> list[dict]:
         return list(self.tracked_lots.find({"active": True}).sort("last_checked_at", 1))
@@ -64,4 +68,12 @@ class WatchlistRepository:
         self.tracked_lots.update_one(
             {"_id": ObjectId(tracked_lot_id)},
             {"$set": {**payload, "updated_at": updated_at}},
+        )
+
+    def clear_unseen_updates(self, tracked_lot_ids: list[str]) -> None:
+        if not tracked_lot_ids:
+            return
+        self.tracked_lots.update_many(
+            {"_id": {"$in": [ObjectId(tracked_lot_id) for tracked_lot_id in tracked_lot_ids]}},
+            {"$set": {"has_unseen_update": False, "latest_change_at": None, "latest_changes": {}}},
         )

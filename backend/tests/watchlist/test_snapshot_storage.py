@@ -77,6 +77,9 @@ def test_initial_snapshot_is_stored_with_tracked_lot_state() -> None:
     assert tracked_lot["highlights"] == ["Run and Drive"]
     assert tracked_lot["vin"] == "1FA6P8TH0J5100001"
     assert tracked_lot["status"] == "on_approval"
+    assert tracked_lot["has_unseen_update"] is False
+    assert tracked_lot["latest_change_at"] is None
+    assert tracked_lot["latest_changes"] == {}
     assert len(snapshots) == 1
     assert snapshots[0]["current_bid"] == 4200.0
     assert snapshots[0]["tracked_lot_id"] == result["tracked_lot"]["id"]

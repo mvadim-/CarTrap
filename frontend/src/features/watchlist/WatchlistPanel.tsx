@@ -109,6 +109,61 @@ export function WatchlistPanel({
     }).format(new Date(value));
   }
 
+  function formatChangeValue(item: WatchlistItem, field: string, value: unknown): string {
+    if (value === null || value === undefined || value === "") {
+      return "none";
+    }
+    if ((field === "current_bid" || field === "buy_now_price") && typeof value === "number") {
+      return formatMoney(value, item.currency);
+    }
+    if (field === "sale_date" && typeof value === "string") {
+      return formatLocalAuctionStart(value);
+    }
+    return String(value);
+  }
+
+  function formatLatestChangeSummary(item: WatchlistItem): string[] {
+    const changes = item.latest_changes;
+    const hasRawStatus = "raw_status" in changes;
+    const orderedFields = [
+      "raw_status",
+      "status",
+      "current_bid",
+      "buy_now_price",
+      "sale_date",
+      ...Object.keys(changes),
+    ];
+    const seen = new Set<string>();
+    const summaries: string[] = [];
+    for (const field of orderedFields) {
+      if (seen.has(field) || !(field in changes)) {
+        continue;
+      }
+      seen.add(field);
+      if (field === "status" && hasRawStatus) {
+        continue;
+      }
+      const change = changes[field];
+      if (!change) {
+        continue;
+      }
+      const label =
+        field === "raw_status"
+          ? "Status"
+          : field === "current_bid"
+            ? "Bid"
+            : field === "buy_now_price"
+              ? "Buy now"
+              : field === "sale_date"
+                ? "Sale"
+                : field.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+      summaries.push(
+        `${label}: ${formatChangeValue(item, field, change.before)} -> ${formatChangeValue(item, field, change.after)}`,
+      );
+    }
+    return summaries;
+  }
+
   function getTrackedLotDetails(item: WatchlistItem) {
     return [
       { label: "Status", value: formatDetailValue(item.raw_status), emphasis: true },
@@ -223,7 +278,10 @@ export function WatchlistPanel({
       ) : (
         <div className="result-list watchlist-list">
           {items.map((item) => (
-            <article key={item.id} className="result-card result-card--media watchlist-card">
+            <article
+              key={item.id}
+              className={`result-card result-card--media watchlist-card${item.has_unseen_update ? " watchlist-card--updated" : ""}`}
+            >
               <LotThumbnail
                 title={item.title}
                 thumbnailUrl={item.thumbnail_url}
@@ -232,8 +290,19 @@ export function WatchlistPanel({
               <div className="result-copy watchlist-card__body">
                 <div className="watchlist-card__header">
                   <strong>{item.title}</strong>
-                  <span className="status-pill">{item.status}</span>
+                  <div className="watchlist-card__header-badges">
+                    {item.has_unseen_update ? <span className="watchlist-card__update-badge">Updated</span> : null}
+                    <span className="status-pill">{item.status}</span>
+                  </div>
                 </div>
+                {item.has_unseen_update ? (
+                  <div className="watchlist-card__update-callout" role="status" aria-live="polite">
+                    <p className="watchlist-card__update-summary">{formatLatestChangeSummary(item).join(" · ")}</p>
+                    {item.latest_change_at ? (
+                      <p className="watchlist-card__update-meta">Detected {formatLastChecked(item.latest_change_at)}</p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <dl className="watchlist-card__summary">
                   {getTrackedLotSummary(item).map((detail) => (
                     <div key={detail.label} className="watchlist-card__detail detail-item">

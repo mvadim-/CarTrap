@@ -55,6 +55,9 @@ class WatchlistService:
                 "active": True,
                 "created_at": now,
                 "updated_at": now,
+                "has_unseen_update": False,
+                "latest_change_at": None,
+                "latest_changes": {},
             }
         )
 
@@ -79,10 +82,15 @@ class WatchlistService:
         }
 
     def list_watchlist(self, owner_user: dict) -> dict:
-        items = [
-            self.serialize_tracked_lot(self._ensure_tracked_lot_fields(item))
-            for item in self.repository.list_tracked_lots_for_owner(owner_user["id"])
-        ]
+        unseen_update_ids: list[str] = []
+        items = []
+        for item in self.repository.list_tracked_lots_for_owner(owner_user["id"]):
+            hydrated_item = self._ensure_tracked_lot_fields(item)
+            if hydrated_item.get("has_unseen_update"):
+                unseen_update_ids.append(str(hydrated_item["_id"]))
+            items.append(self.serialize_tracked_lot(hydrated_item))
+        if unseen_update_ids:
+            self.repository.clear_unseen_updates(unseen_update_ids)
         return {"items": items}
 
     def remove_tracked_lot(self, owner_user: dict, tracked_lot_id: str) -> None:
@@ -184,6 +192,9 @@ class WatchlistService:
             "sale_date": document.get("sale_date"),
             "last_checked_at": document["last_checked_at"],
             "created_at": document["created_at"],
+            "has_unseen_update": document.get("has_unseen_update", False),
+            "latest_change_at": document.get("latest_change_at"),
+            "latest_changes": document.get("latest_changes", {}),
         }
 
     @staticmethod

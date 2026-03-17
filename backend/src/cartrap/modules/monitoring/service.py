@@ -110,14 +110,19 @@ class MonitoringService:
         next_snapshot = self._snapshot_document(tracked_lot, fresh_snapshot, now)
         changes = detect_significant_changes(latest_snapshot, next_snapshot)
 
-        self.repository.update_tracked_lot_state(
-            str(tracked_lot["_id"]),
-            {
-                **WatchlistService._tracked_lot_state_from_snapshot(fresh_snapshot, detail_etag=detail_etag),
-                "last_checked_at": now,
-            },
-            updated_at=now,
-        )
+        tracked_lot_payload = {
+            **WatchlistService._tracked_lot_state_from_snapshot(fresh_snapshot, detail_etag=detail_etag),
+            "last_checked_at": now,
+        }
+        if changes:
+            tracked_lot_payload.update(
+                {
+                    "has_unseen_update": True,
+                    "latest_change_at": now,
+                    "latest_changes": changes,
+                }
+            )
+        self.repository.update_tracked_lot_state(str(tracked_lot["_id"]), tracked_lot_payload, updated_at=now)
         self._system_status_service.mark_live_sync_available("watchlist_poll", checked_at=now)
 
         if not changes:
@@ -129,6 +134,8 @@ class MonitoringService:
             "snapshot_id": str(stored_snapshot["_id"]),
             "owner_user_id": tracked_lot["owner_user_id"],
             "lot_number": tracked_lot["lot_number"],
+            "title": fresh_snapshot.title,
+            "currency": fresh_snapshot.currency,
             "changes": changes,
         }
 

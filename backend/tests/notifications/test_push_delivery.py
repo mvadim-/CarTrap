@@ -94,6 +94,8 @@ def test_notification_delivery_sends_to_active_subscriptions() -> None:
     assert result["updated"] == 1
     assert len(sender.sent) == 1
     assert sender.sent[0][1]["tracked_lot_id"] == result["events"][0]["tracked_lot_id"]
+    assert sender.sent[0][1]["title"] == "2020 TOYOTA CAMRY SE (12345678)"
+    assert sender.sent[0][1]["body"] == "Status: Upcoming -> Live; Bid: 1,000 -> 1,800 USD"
 
 
 def test_failed_delivery_removes_invalid_subscription() -> None:
@@ -116,6 +118,8 @@ def test_failed_delivery_removes_invalid_subscription() -> None:
             "tracked_lot_id": "tracked-1",
             "owner_user_id": "user-2",
             "lot_number": "87654321",
+            "title": "2018 HONDA CIVIC EX",
+            "currency": "USD",
             "changes": {"status": {"before": "upcoming", "after": "live"}},
         }
     )
@@ -149,6 +153,8 @@ def test_transient_delivery_failure_keeps_subscription() -> None:
             "tracked_lot_id": "tracked-2",
             "owner_user_id": "user-3",
             "lot_number": "12344321",
+            "title": "2020 TOYOTA CAMRY SE",
+            "currency": "USD",
             "changes": {"current_bid": {"before": 1000, "after": 1200}},
         }
     )

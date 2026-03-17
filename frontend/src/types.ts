@@ -35,6 +35,9 @@ export type WatchlistItem = {
   sale_date: string | null;
   last_checked_at: string;
   created_at: string;
+  has_unseen_update: boolean;
+  latest_change_at: string | null;
+  latest_changes: Record<string, { before: unknown; after: unknown }>;
 };
 
 export type SearchResult = {

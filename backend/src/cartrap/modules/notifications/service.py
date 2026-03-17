@@ -16,6 +16,15 @@ from cartrap.modules.notifications.repository import NotificationRepository
 
 LOGGER = logging.getLogger(__name__)
 
+CHANGE_LABELS = {
+    "raw_status": "Status",
+    "status": "Status",
+    "sale_date": "Sale",
+    "current_bid": "Bid",
+    "buy_now_price": "Buy now",
+    "currency": "Currency",
+}
+
 
 class PushSender(Protocol):
     def send(self, subscription: dict, payload: dict) -> None:
@@ -167,9 +176,10 @@ class NotificationService:
         return self._send_payload_to_owner(event["owner_user_id"], payload)
 
     def send_lot_change_notification(self, event: dict) -> dict:
+        change_summary = self._format_change_summary(event["changes"], currency=event.get("currency"))
         payload = {
-            "title": f"Lot {event['lot_number']} updated",
-            "body": ", ".join(sorted(event["changes"].keys())),
+            "title": f"{event['title']} ({event['lot_number']})",
+            "body": change_summary,
             "tracked_lot_id": event["tracked_lot_id"],
             "changes": event["changes"],
         }
@@ -250,6 +260,50 @@ class NotificationService:
             "created_at": document["created_at"],
             "updated_at": document["updated_at"],
         }
+
+    @classmethod
+    def _format_change_summary(cls, changes: dict, currency: str | None = None) -> str:
+        formatted_parts = []
+        for field_name, change in cls._iter_display_changes(changes):
+            label = CHANGE_LABELS.get(field_name, field_name.replace("_", " ").title())
+            before_value = cls._format_change_value(field_name, change.get("before"))
+            after_value = cls._format_change_value(field_name, change.get("after"))
+            if before_value == after_value:
+                continue
+            if field_name in {"current_bid", "buy_now_price"} and currency:
+                formatted_parts.append(f"{label}: {before_value} -> {after_value} {currency}")
+            else:
+                formatted_parts.append(f"{label}: {before_value} -> {after_value}")
+        if not formatted_parts:
+            return "Tracked lot details changed."
+        return "; ".join(formatted_parts)
+
+    @staticmethod
+    def _iter_display_changes(changes: dict):
+        has_raw_status = "raw_status" in changes
+        for field_name in ("raw_status", "status", "current_bid", "buy_now_price", "sale_date", "currency"):
+            if field_name not in changes:
+                continue
+            if field_name == "status" and has_raw_status:
+                continue
+            yield field_name, changes[field_name]
+        for field_name, change in changes.items():
+            if field_name in {"raw_status", "status", "current_bid", "buy_now_price", "sale_date", "currency"}:
+                continue
+            yield field_name, change
+
+    @staticmethod
+    def _format_change_value(field_name: str, value: object) -> str:
+        if value is None:
+            return "none"
+        if field_name in {"current_bid", "buy_now_price"} and isinstance(value, (int, float)):
+            digits = 0 if float(value).is_integer() else 2
+            return f"{value:,.{digits}f}"
+        if field_name == "sale_date":
+            if isinstance(value, datetime):
+                return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            return str(value)
+        return str(value)
 
     @staticmethod
     def _now() -> datetime:
