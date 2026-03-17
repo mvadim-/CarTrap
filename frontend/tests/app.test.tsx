@@ -79,6 +79,7 @@ function buildLiveSyncStatus(overrides: Record<string, unknown> = {}) {
 
 describe("CarTrap app", () => {
   let lastSearchPayload: Record<string, unknown> | null;
+  let loginRole: "admin" | "user";
   let liveSyncStatus: Record<string, unknown>;
   let searchShouldFail: boolean;
   let savedSearchesShouldFail: boolean;
@@ -99,6 +100,7 @@ describe("CarTrap app", () => {
       updated_at: string;
     }> = [];
     lastSearchPayload = null;
+    loginRole = "admin";
     liveSearchCallCount = 0;
     savedSearchViewCallCount = 0;
     savedSearchRefreshCallCount = 0;
@@ -161,7 +163,7 @@ describe("CarTrap app", () => {
         if (url.includes("/auth/login")) {
           return new Response(
             JSON.stringify({
-              access_token: buildToken({ sub: "user-1", role: "admin" }),
+              access_token: buildToken({ sub: "user-1", role: loginRole }),
               refresh_token: "refresh-token",
               token_type: "bearer",
             }),
@@ -171,7 +173,7 @@ describe("CarTrap app", () => {
         if (url.includes("/auth/refresh")) {
           return new Response(
             JSON.stringify({
-              access_token: buildToken({ sub: "user-1", role: "admin", refreshed: true }),
+              access_token: buildToken({ sub: "user-1", role: loginRole, refreshed: true }),
               refresh_token: "refresh-token-next",
               token_type: "bearer",
             }),
@@ -868,6 +870,24 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /send test push/i }));
 
     expect(await screen.findByText(/push test finished: 1 delivered, 0 failed, 0 removed\./i)).toBeTruthy();
+  });
+
+  it("hides admin-only push diagnostics for non-admin accounts", async () => {
+    loginRole = "user";
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.click(screen.getByRole("button", { name: /settings/i }));
+    await screen.findByRole("dialog", { name: /settings/i });
+
+    expect(screen.queryByRole("button", { name: /send test push/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /retry diagnostics/i })).toBeNull();
+    expect(screen.queryByText(/server config:/i)).toBeNull();
+    expect(screen.queryByText(/current device:/i)).toBeNull();
+    expect(screen.getByText(/permission:/i)).toBeTruthy();
+    expect(screen.getByText(/subscriptions:/i)).toBeTruthy();
   });
 
   it("renders fallbacks for missing tracked lot detail fields", async () => {

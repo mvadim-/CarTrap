@@ -202,6 +202,7 @@ export function App() {
   const isBootstrapping = Object.values(dashboardLoading).some(Boolean);
   const supportsPush = typeof Notification !== "undefined" && typeof window !== "undefined" && "PushManager" in window;
   const isSecurePushContext = typeof window !== "undefined" ? window.isSecureContext : false;
+  const isAdmin = session.user?.role === "admin";
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -372,12 +373,12 @@ export function App() {
     if (!session.accessToken || !isSettingsOpen) {
       return;
     }
-    void Promise.allSettled([
-      loadPushConfigResource(session.accessToken),
-      loadPushSubscriptionsResource(session.accessToken),
-      detectCurrentPushSubscriptionEndpoint(),
-    ]);
-  }, [isSettingsOpen, session.accessToken]);
+    const tasks = [loadPushSubscriptionsResource(session.accessToken)];
+    if (isAdmin) {
+      tasks.push(loadPushConfigResource(session.accessToken), detectCurrentPushSubscriptionEndpoint());
+    }
+    void Promise.allSettled(tasks);
+  }, [isAdmin, isSettingsOpen, session.accessToken]);
 
   async function refreshLiveSyncStatus(token: string): Promise<LiveSyncStatus | null> {
     try {
@@ -758,6 +759,9 @@ export function App() {
     if (!session.accessToken) {
       throw new Error("Missing session");
     }
+    if (!isAdmin) {
+      throw new Error("Push diagnostics are available only for admin accounts.");
+    }
     setActionState((current) => ({ ...current, isSendingPushTest: true }));
     try {
       if (isBrowserOffline) {
@@ -815,7 +819,7 @@ export function App() {
             className="dashboard-status"
           />
         ) : null}
-        {session.user?.role === "admin" ? (
+        {isAdmin ? (
           <>
             <AdminInvitesPanel
               inviteLink={inviteLink}
@@ -874,6 +878,7 @@ export function App() {
       </DashboardShell>
       <PushSettingsModal
         isOpen={isSettingsOpen}
+        isAdmin={isAdmin}
         subscriptions={subscriptions}
         subscriptionsError={dashboardErrors.subscriptions}
         isLoadingSubscriptions={dashboardLoading.subscriptions}
@@ -889,13 +894,15 @@ export function App() {
         unsubscribingEndpoint={actionState.unsubscribingEndpoint}
         isSendingTestPush={actionState.isSendingPushTest}
         onRetryDiagnostics={() =>
-          session.accessToken
+          session.accessToken && isAdmin
             ? Promise.allSettled([
                 loadPushSubscriptionsResource(session.accessToken),
                 loadPushConfigResource(session.accessToken),
                 detectCurrentPushSubscriptionEndpoint(),
               ]).then(() => undefined)
-            : Promise.resolve()
+            : session.accessToken
+              ? loadPushSubscriptionsResource(session.accessToken)
+              : Promise.resolve()
         }
         onSubscribe={handleSubscribePush}
         onUnsubscribe={handleUnsubscribePush}

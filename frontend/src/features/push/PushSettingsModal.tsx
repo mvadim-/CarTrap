@@ -5,6 +5,7 @@ import { AsyncStatus } from "../shared/AsyncStatus";
 
 type Props = {
   isOpen: boolean;
+  isAdmin: boolean;
   subscriptions: PushSubscriptionItem[];
   subscriptionsError: string | null;
   isLoadingSubscriptions: boolean;
@@ -43,6 +44,7 @@ function maskEndpoint(endpoint: string): string {
 
 export function PushSettingsModal({
   isOpen,
+  isAdmin,
   subscriptions,
   subscriptionsError,
   isLoadingSubscriptions,
@@ -153,20 +155,26 @@ export function PushSettingsModal({
                 <p className="eyebrow">Push</p>
                 <h3>Browser Notifications</h3>
               </div>
-              <button type="button" className="ghost-button" onClick={() => void onRetryDiagnostics()}>
-                Retry Diagnostics
-              </button>
+              {isAdmin ? (
+                <button type="button" className="ghost-button" onClick={() => void onRetryDiagnostics()}>
+                  Retry Diagnostics
+                </button>
+              ) : null}
             </div>
             {isBrowserOffline ? (
               <AsyncStatus
                 compact
                 tone="error"
                 title="Device offline"
-                message="Reconnect to refresh diagnostics, enable push, or send a test notification."
+                message={
+                  isAdmin
+                    ? "Reconnect to refresh diagnostics, enable push, or send a test notification."
+                    : "Reconnect to enable push or manage device subscriptions."
+                }
                 className="panel-status"
               />
             ) : null}
-            {isLoadingPushConfig || isLoadingSubscriptions ? (
+            {isAdmin && (isLoadingPushConfig || isLoadingSubscriptions) ? (
               <AsyncStatus
                 compact
                 progress="bar"
@@ -175,7 +183,7 @@ export function PushSettingsModal({
                 className="panel-status"
               />
             ) : null}
-            {pushConfigError ? (
+            {isAdmin && pushConfigError ? (
               <AsyncStatus
                 compact
                 tone="error"
@@ -197,45 +205,51 @@ export function PushSettingsModal({
             {message ? <AsyncStatus compact tone="success" message={message} className="panel-status" /> : null}
             <dl className="detail-grid detail-grid--single">
               <div className="detail-item">
-                <dt className="detail-label">Browser support:</dt>
-                <dd className="detail-value">{supportsPush ? "Supported" : "Unsupported"}</dd>
-              </div>
-              <div className="detail-item">
-                <dt className="detail-label">Secure context:</dt>
-                <dd className="detail-value">{isSecureContext ? "Ready" : "HTTPS or localhost required"}</dd>
-              </div>
-              <div className="detail-item">
                 <dt className="detail-label">Permission:</dt>
                 <dd className="detail-value">
                   <span className="status-pill">{permissionState}</span>
                 </dd>
               </div>
-              <div className="detail-item detail-item--stack">
-                <dt className="detail-label">Server config:</dt>
-                <dd className="detail-value">{serverStatus}</dd>
-              </div>
               <div className="detail-item">
                 <dt className="detail-label">Subscriptions:</dt>
                 <dd className="detail-value">{subscriptions.length}</dd>
               </div>
-              <div className="detail-item detail-item--stack">
-                <dt className="detail-label">Current device:</dt>
-                <dd className="detail-value">{currentDeviceEndpoint ? "Registered" : "Not registered here"}</dd>
-              </div>
+              {isAdmin ? (
+                <>
+                  <div className="detail-item">
+                    <dt className="detail-label">Browser support:</dt>
+                    <dd className="detail-value">{supportsPush ? "Supported" : "Unsupported"}</dd>
+                  </div>
+                  <div className="detail-item">
+                    <dt className="detail-label">Secure context:</dt>
+                    <dd className="detail-value">{isSecureContext ? "Ready" : "HTTPS or localhost required"}</dd>
+                  </div>
+                  <div className="detail-item detail-item--stack">
+                    <dt className="detail-label">Server config:</dt>
+                    <dd className="detail-value">{serverStatus}</dd>
+                  </div>
+                  <div className="detail-item detail-item--stack">
+                    <dt className="detail-label">Current device:</dt>
+                    <dd className="detail-value">{currentDeviceEndpoint ? "Registered" : "Not registered here"}</dd>
+                  </div>
+                </>
+              ) : null}
             </dl>
             <div className="settings-section__actions">
               <button type="button" onClick={() => void handleSubscribe()} disabled={isSubscribing} aria-busy={isSubscribing}>
                 {isSubscribing ? "Enabling..." : "Enable Push On This Device"}
               </button>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => void handleSendTest()}
-                disabled={isSendingTestPush}
-                aria-busy={isSendingTestPush}
-              >
-                {isSendingTestPush ? "Sending Test..." : "Send Test Push"}
-              </button>
+              {isAdmin ? (
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => void handleSendTest()}
+                  disabled={isSendingTestPush}
+                  aria-busy={isSendingTestPush}
+                >
+                  {isSendingTestPush ? "Sending Test..." : "Send Test Push"}
+                </button>
+              ) : null}
             </div>
             {subscriptions.length === 0 && !isLoadingSubscriptions ? (
               <p className="muted">No device subscriptions registered.</p>
@@ -246,9 +260,7 @@ export function PushSettingsModal({
                   return (
                     <article key={subscription.id} className="result-card">
                       <div>
-                        <strong>
-                          {isCurrentDevice ? "This browser" : subscription.user_agent ?? "Browser Subscription"}
-                        </strong>
+                        <strong>{isAdmin && isCurrentDevice ? "This browser" : subscription.user_agent ?? "Browser Subscription"}</strong>
                         <p className="muted">{maskEndpoint(subscription.endpoint)}</p>
                         <p className="muted">Updated {formatTimestamp(subscription.updated_at)}</p>
                       </div>

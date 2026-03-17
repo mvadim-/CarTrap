@@ -1,5 +1,9 @@
 # Change Log
 
+## [2026-03-17 14:58] Restrict push diagnostics visibility to admin accounts
+- Оновлено `frontend/src/{App.tsx}` і `frontend/src/features/push/PushSettingsModal.tsx`: test push, retry diagnostics і розширений diagnostics block (`browser support`, `secure context`, `server config`, `current device`) тепер відображаються лише для `admin` акаунтів, тоді як звичайні користувачі бачать тільки власний push management (`permission`, `subscriptions`, `enable/revoke`).
+- Оновлено `frontend/tests/app.test.tsx`: додано окремий сценарій для non-admin user, який перевіряє, що admin-only push diagnostics не рендеряться в settings modal.
+
 ## [2026-03-17 14:50] Implement PWA UX polish for search, watchlist, push, and admin flows
 - Оновлено `frontend/src/{App.tsx,styles.css,types.ts}` і додано `frontend/src/features/shared/AsyncStatus.tsx`: введено shared async-status primitives, granular bootstrap/action pending states, panel-level retry для partial load failures, browser offline tracking і окреме UX-розділення між device offline та backend live-sync degraded mode.
 - Оновлено `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx}` і `frontend/src/features/watchlist/WatchlistPanel.tsx`: manual search, saved-search cache flow і watchlist mutations тепер мають явні loading/success/error states, disabled/busy semantics, кращу metadata clarity (`freshness`, `last checked`, `last synced`) і non-blocking refresh UX із збереженням уже завантажених даних.
