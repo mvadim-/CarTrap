@@ -30,7 +30,10 @@ async def lifespan(app: FastAPI):
     app.state.mongo = mongo
     set_service_factory(app, lambda: AuthService(mongo.database, settings))
     AuthService(mongo.database, settings).ensure_bootstrap_admin()
-    SearchService(mongo.database).ensure_catalog_seeded()
+    SearchService(
+        mongo.database,
+        saved_search_poll_interval_minutes=settings.saved_search_poll_interval_minutes,
+    ).ensure_catalog_seeded()
     app.state.web_push_sender = build_web_push_sender(settings.vapid_private_key, settings.vapid_subject)
 
     try:

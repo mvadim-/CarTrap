@@ -83,8 +83,18 @@ def run_polling_loop(sleep_seconds: int = 30) -> None:
         vapid_subject=settings.vapid_subject,
     )
     system_status_service = SystemStatusService(mongo.database)
-    monitoring_service = MonitoringService(mongo.database, notification_service=notification_service)
-    search_service = SearchService(mongo.database, notification_service=notification_service)
+    monitoring_service = MonitoringService(
+        mongo.database,
+        notification_service=notification_service,
+        default_poll_interval_minutes=settings.watchlist_default_poll_interval_minutes,
+        near_auction_poll_interval_minutes=settings.watchlist_near_auction_poll_interval_minutes,
+        near_auction_window_hours=settings.watchlist_near_auction_window_hours,
+    )
+    search_service = SearchService(
+        mongo.database,
+        notification_service=notification_service,
+        saved_search_poll_interval_minutes=settings.saved_search_poll_interval_minutes,
+    )
 
     try:
         while True:

@@ -15,6 +15,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 def get_search_service(request: Request) -> SearchService:
     provider_factory = getattr(request.app.state, "copart_provider_factory", None)
+    settings = request.app.state.settings
     return SearchService(
         request.app.state.mongo.database,
         provider_factory=provider_factory,
@@ -22,6 +23,7 @@ def get_search_service(request: Request) -> SearchService:
             request.app.state.mongo.database,
             provider_factory=provider_factory,
         ),
+        saved_search_poll_interval_minutes=settings.saved_search_poll_interval_minutes,
     )
 
 

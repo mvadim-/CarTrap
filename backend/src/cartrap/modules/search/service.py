@@ -27,7 +27,7 @@ CATALOG_DATA_DIR = Path(__file__).with_name("data")
 CATALOG_JSON_PATH = CATALOG_DATA_DIR / "copart_make_model_catalog.json"
 CATALOG_OVERRIDES_PATH = CATALOG_DATA_DIR / "copart_make_model_overrides.json"
 SEARCH_PAGE_SIZE = 20
-SAVED_SEARCH_POLL_INTERVAL_MINUTES = 15
+DEFAULT_SAVED_SEARCH_POLL_INTERVAL_MINUTES = 15
 
 
 class SearchService:
@@ -39,6 +39,7 @@ class SearchService:
         catalog_refresh_factory: Optional[Callable[[], SearchCatalogRefreshJob]] = None,
         catalog_seed_path: Optional[Path] = None,
         notification_service: Optional[NotificationService] = None,
+        saved_search_poll_interval_minutes: int = DEFAULT_SAVED_SEARCH_POLL_INTERVAL_MINUTES,
     ) -> None:
         self._database = database
         self._provider_factory = provider_factory or CopartProvider
@@ -49,6 +50,7 @@ class SearchService:
         self._saved_search_repository.ensure_indexes()
         self._notification_service = notification_service
         self._system_status_service = SystemStatusService(database)
+        self._saved_search_poll_interval_minutes = saved_search_poll_interval_minutes
         self._catalog_refresh_factory = catalog_refresh_factory or (
             lambda: SearchCatalogRefreshJob(provider_factory=self._provider_factory, overrides_path=CATALOG_OVERRIDES_PATH)
         )
@@ -224,7 +226,7 @@ class SearchService:
 
     def poll_due_saved_searches(self, now: datetime | None = None) -> dict:
         current_time = now or datetime.now(timezone.utc)
-        due_before = current_time - timedelta(minutes=SAVED_SEARCH_POLL_INTERVAL_MINUTES)
+        due_before = current_time - timedelta(minutes=self._saved_search_poll_interval_minutes)
         processed = 0
         updated = 0
         failed = 0

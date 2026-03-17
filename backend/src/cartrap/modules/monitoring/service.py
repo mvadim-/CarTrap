@@ -10,7 +10,12 @@ from pymongo.database import Database
 from cartrap.modules.copart_provider.models import CopartLotSnapshot
 from cartrap.modules.copart_provider.service import CopartProvider
 from cartrap.modules.monitoring.change_detection import detect_significant_changes
-from cartrap.modules.monitoring.polling_policy import is_due_for_poll
+from cartrap.modules.monitoring.polling_policy import (
+    DEFAULT_INTERVAL_MINUTES,
+    NEAR_AUCTION_INTERVAL_MINUTES,
+    NEAR_AUCTION_WINDOW_HOURS,
+    is_due_for_poll,
+)
 from cartrap.modules.notifications.service import NotificationService
 from cartrap.modules.system_status.service import SystemStatusService
 from cartrap.modules.watchlist.repository import WatchlistRepository
@@ -23,12 +28,18 @@ class MonitoringService:
         database: Database,
         provider_factory: Optional[Callable[[], CopartProvider]] = None,
         notification_service: Optional[NotificationService] = None,
+        default_poll_interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
+        near_auction_poll_interval_minutes: int = NEAR_AUCTION_INTERVAL_MINUTES,
+        near_auction_window_hours: int = NEAR_AUCTION_WINDOW_HOURS,
     ) -> None:
         self.repository = WatchlistRepository(database)
         self.repository.ensure_indexes()
         self._provider_factory = provider_factory or CopartProvider
         self._notification_service = notification_service
         self._system_status_service = SystemStatusService(database)
+        self._default_poll_interval_minutes = default_poll_interval_minutes
+        self._near_auction_poll_interval_minutes = near_auction_poll_interval_minutes
+        self._near_auction_window_hours = near_auction_window_hours
 
     def poll_due_lots(self, now: datetime | None = None) -> dict:
         current_time = now or self._now()
@@ -38,7 +49,13 @@ class MonitoringService:
         events: list[dict] = []
 
         for tracked_lot in self.repository.list_active_tracked_lots():
-            if not is_due_for_poll(tracked_lot, current_time):
+            if not is_due_for_poll(
+                tracked_lot,
+                current_time,
+                default_interval_minutes=self._default_poll_interval_minutes,
+                near_auction_interval_minutes=self._near_auction_poll_interval_minutes,
+                near_auction_window_hours=self._near_auction_window_hours,
+            ):
                 continue
             processed += 1
             try:

@@ -23,6 +23,10 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("MONGO_URI", "mongodb://example:27017")
     monkeypatch.setenv("MONGO_DB", "cartrap_local")
     monkeypatch.setenv("MONGO_PING_ON_STARTUP", "true")
+    monkeypatch.setenv("SAVED_SEARCH_POLL_INTERVAL_MINUTES", "20")
+    monkeypatch.setenv("WATCHLIST_DEFAULT_POLL_INTERVAL_MINUTES", "25")
+    monkeypatch.setenv("WATCHLIST_NEAR_AUCTION_POLL_INTERVAL_MINUTES", "2")
+    monkeypatch.setenv("WATCHLIST_NEAR_AUCTION_WINDOW_HOURS", "3")
     monkeypatch.setenv("COPART_API_BASE_URL", "https://mmember.copart.com")
     monkeypatch.setenv("COPART_API_SEARCH_PATH", "/srch/?services=bidIncrementsBySiteV2")
     monkeypatch.setenv("COPART_API_SEARCH_KEYWORDS_PATH", "/mcs/v2/public/data/search/keywords")
@@ -42,6 +46,10 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.mongo_uri == "mongodb://example:27017"
     assert settings.mongo_db == "cartrap_local"
     assert settings.mongo_ping_on_startup is True
+    assert settings.saved_search_poll_interval_minutes == 20
+    assert settings.watchlist_default_poll_interval_minutes == 25
+    assert settings.watchlist_near_auction_poll_interval_minutes == 2
+    assert settings.watchlist_near_auction_window_hours == 3
     assert settings.copart_api_base_url == "https://mmember.copart.com"
     assert settings.copart_api_search_path == "/srch/?services=bidIncrementsBySiteV2"
     assert settings.copart_api_search_keywords_path == "/mcs/v2/public/data/search/keywords"

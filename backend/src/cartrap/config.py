@@ -48,6 +48,22 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = Field(default=30, alias="ACCESS_TOKEN_TTL_MINUTES", ge=1)
     refresh_token_ttl_minutes: int = Field(default=60 * 24 * 14, alias="REFRESH_TOKEN_TTL_MINUTES", ge=1)
     invite_ttl_hours: int = Field(default=72, alias="INVITE_TTL_HOURS", ge=1)
+    saved_search_poll_interval_minutes: int = Field(default=15, alias="SAVED_SEARCH_POLL_INTERVAL_MINUTES", ge=1)
+    watchlist_default_poll_interval_minutes: int = Field(
+        default=15,
+        alias="WATCHLIST_DEFAULT_POLL_INTERVAL_MINUTES",
+        ge=1,
+    )
+    watchlist_near_auction_poll_interval_minutes: int = Field(
+        default=1,
+        alias="WATCHLIST_NEAR_AUCTION_POLL_INTERVAL_MINUTES",
+        ge=1,
+    )
+    watchlist_near_auction_window_hours: int = Field(
+        default=2,
+        alias="WATCHLIST_NEAR_AUCTION_WINDOW_HOURS",
+        ge=1,
+    )
     bootstrap_admin_email: Optional[str] = Field(default=None, alias="BOOTSTRAP_ADMIN_EMAIL")
     bootstrap_admin_password: Optional[str] = Field(default=None, alias="BOOTSTRAP_ADMIN_PASSWORD")
     copart_api_base_url: str = Field(default="https://mmember.copart.com", alias="COPART_API_BASE_URL", min_length=1)

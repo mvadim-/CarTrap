@@ -1,5 +1,11 @@
 # Change Log
 
+## [2026-03-17 15:25] Move saved-search and watchlist refresh cadence to env config
+- Оновлено `backend/src/cartrap/{config.py,app.py,worker/main.py}`: додано env-driven settings для періодичності polling saved searches і watchlist lots, а runtime створення сервісів тепер підхоплює ці значення з `.env`.
+- Оновлено `backend/src/cartrap/modules/{search/service.py,search/router.py,admin/router.py,monitoring/service.py,monitoring/polling_policy.py}`: прибрано жорстко зашиті інтервали, saved-search polling і adaptive watchlist polling тепер працюють через конфігуровані значення.
+- Оновлено `.env`, `.env.example`, `README.md` і backend-тести (`backend/tests/test_config.py`, `backend/tests/monitoring/test_polling_policy.py`, `backend/tests/search/test_saved_search_monitoring.py`) під новий env contract.
+- Verification: `./.venv/bin/pytest backend/tests/test_config.py` -> `4 passed`, `./.venv/bin/pytest backend/tests/monitoring/test_polling_policy.py` -> `3 passed`, `./.venv/bin/pytest backend/tests/search/test_saved_search_monitoring.py` -> `7 passed`, `./.venv/bin/pytest backend/tests/monitoring/test_change_detection.py` -> `5 passed`, `./.venv/bin/pytest backend/tests/test_worker_main.py` -> `3 passed`, `./.venv/bin/pytest backend/tests/test_app_boot.py` -> `4 passed` (усюди лишився лише `urllib3` warning про локальний LibreSSL).
+
 ## [2026-03-17 14:58] Restrict push diagnostics visibility to admin accounts
 - Оновлено `frontend/src/{App.tsx}` і `frontend/src/features/push/PushSettingsModal.tsx`: test push, retry diagnostics і розширений diagnostics block (`browser support`, `secure context`, `server config`, `current device`) тепер відображаються лише для `admin` акаунтів, тоді як звичайні користувачі бачать тільки власний push management (`permission`, `subscriptions`, `enable/revoke`).
 - Оновлено `frontend/tests/app.test.tsx`: додано окремий сценарій для non-admin user, який перевіряє, що admin-only push diagnostics не рендеряться в settings modal.

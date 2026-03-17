@@ -235,6 +235,38 @@ def test_saved_search_poll_skips_recently_checked_searches() -> None:
     assert provider.search_payloads == []
 
 
+def test_saved_search_poll_uses_configured_interval() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    notification_service = FakeNotificationService()
+    provider = ConditionalSearchProvider(not_modified=False, etag="\"search-etag-1\"", results=[_build_result("11111111")])
+    service = SearchService(
+        database,
+        provider_factory=lambda: provider,
+        notification_service=notification_service,
+        saved_search_poll_interval_minutes=30,
+    )
+    current_time = datetime(2026, 3, 13, 12, 0, tzinfo=timezone.utc)
+    saved = service.save_search(
+        {"id": "user-interval"},
+        SavedSearchCreateRequest(make="Ford", model="Mustang Mach-E", result_count=5),
+    )["saved_search"]
+    database["saved_searches"].update_one(
+        {"_id": ObjectId(saved["id"])},
+        {"$set": {"last_checked_at": current_time - timedelta(minutes=20)}},
+    )
+
+    result = service.poll_due_saved_searches(now=current_time)
+
+    assert result == {
+        "processed": 0,
+        "updated": 0,
+        "failed": 0,
+        "notified": 0,
+        "events": [],
+    }
+    assert provider.search_payloads == []
+
+
 def test_saved_search_poll_backfills_missing_cache_even_when_search_etag_is_not_modified() -> None:
     database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
     notification_service = FakeNotificationService()

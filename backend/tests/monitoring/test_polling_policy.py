@@ -33,3 +33,29 @@ def test_polling_policy_uses_default_interval_far_from_sale() -> None:
 
     assert get_poll_interval_minutes(tracked_lot, now) == DEFAULT_INTERVAL_MINUTES
     assert is_due_for_poll(tracked_lot, now) is False
+
+
+def test_polling_policy_accepts_configured_intervals() -> None:
+    now = datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc)
+    tracked_lot = {"sale_date": now + timedelta(minutes=45), "last_checked_at": now - timedelta(minutes=3)}
+
+    assert (
+        get_poll_interval_minutes(
+            tracked_lot,
+            now,
+            default_interval_minutes=20,
+            near_auction_interval_minutes=5,
+            near_auction_window_hours=1,
+        )
+        == 5
+    )
+    assert (
+        is_due_for_poll(
+            tracked_lot,
+            now,
+            default_interval_minutes=20,
+            near_auction_interval_minutes=5,
+            near_auction_window_hours=1,
+        )
+        is False
+    )
