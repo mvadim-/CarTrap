@@ -1,5 +1,36 @@
 # Change Log
 
+## [2026-03-18 15:49] Apply premium finish and close dashboard polish implementation
+- Оновлено `frontend/src/features/{dashboard/DashboardShell.tsx,search/SearchPanel.tsx,watchlist/WatchlistPanel.tsx,admin/AdminInvitesPanel.tsx,admin/AdminSearchCatalogPanel.tsx,push/PushSettingsModal.tsx}` та `frontend/src/styles.css`: dashboard surfaces, badges, pills, support cards і settings modal зведено до більш єдиної premium visual language без зміни runtime contract.
+- Оновлено planning artifacts: `docs/plans/20260318-dashboard-density-urgency-premium-polish.md` синхронізовано з фактичним execution, зафіксовано блокер ручного headed smoke-check через недоступний локальний API (`127.0.0.1:8000`), після чого план перенесено в `docs/plans/completed/20260318-dashboard-density-urgency-premium-polish.md`.
+- Verification: `npm run test --prefix frontend` -> `26 passed`; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-18 15:43] Make watchlist urgency the dominant signal
+- Оновлено `frontend/src/features/watchlist/WatchlistPanel.tsx`, `frontend/src/features/shared/LotThumbnail.tsx` і `frontend/src/styles.css`: sale timing винесено в головний top-row сигнал, watchlist cards отримали urgency-tier surfaces (`today/soon/live`), тихіші `Show details` / `Remove`, компактніший intake row, менші KPI boxes і щільніший thumbnail/gallery affordance.
+- Оновлено `frontend/tests/app.test.tsx`: додано окремий сценарій для `Auction live`, зберігши попереднє покриття `Sale soon`, updated cards і disclosure flow.
+- Оновлено `docs/plans/20260318-dashboard-density-urgency-premium-polish.md`: `Task 3` позначено виконаним після зеленого test pass.
+- Verification: `npm run test --prefix frontend` -> `26 passed`.
+
+## [2026-03-18 15:41] Compact search workflow and align modal density
+- Оновлено `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx,SearchFiltersModal.tsx}` і `frontend/src/styles.css`: форма пошуку стала щільнішою, `Filters` отримав явний active-count badge, saved-search cards зібрано в компактніший action/meta layout, а filters/results modal toolbar/footer приведено до того ж density rhythm.
+- Оновлено `frontend/tests/app.test.tsx`: додано assertion на доступну назву `Filters (6 active)` після застосування modal filters, не змінюючи решту saved-search/search contracts.
+- Оновлено `docs/plans/20260318-dashboard-density-urgency-premium-polish.md`: `Task 2` позначено виконаним після зеленого test pass.
+- Verification: `npm run test --prefix frontend` -> `25 passed`.
+
+## [2026-03-18 15:38] Tighten dashboard chrome and top-level density
+- Оновлено `frontend/src/features/dashboard/DashboardShell.tsx`, `frontend/src/App.tsx` і `frontend/src/styles.css`: hero/user card стали щільнішими, support-панелі винесено в тихіший нижній lane, а глобальні spacing/button/input tokens піджато для більш операційного first screen.
+- Оновлено `frontend/tests/app.test.tsx`: додано top-level assertion-и на `User summary` та порядок main/support panels після логіну.
+- Оновлено `docs/plans/20260318-dashboard-density-urgency-premium-polish.md`: `Task 1` позначено виконаним після зеленого test pass.
+- Verification: `npm run test --prefix frontend` -> `25 passed`.
+
+## [2026-03-18 15:33] Tighten polish plan around filters modal, watchlist intake, and support surfaces
+- Оновлено `docs/plans/20260318-dashboard-density-urgency-premium-polish.md`: план розширено явним покриттям для `SearchFiltersModal`, compacting `Add by Lot Number` intake row у watchlist, а також consistency-pass для admin/settings surfaces, щоб second-pass polish не лишив візуально чужі ділянки в dashboard.
+- Planning scope став менш двозначним перед наступною імплементацією.
+
+## [2026-03-18 15:30] Add follow-up dashboard polish plan for density, urgency, and premium finish
+- Додано `docs/plans/20260318-dashboard-density-urgency-premium-polish.md`: оформлено follow-up implementation plan на наступний visual/UX pass після щойно реалізованого search/watchlist refresh, з окремими задачами для density polish, urgency-first watchlist і premium visual finish.
+- Цей цикл обмежено planning/documentation scope без runtime-змін.
+
 ## [2026-03-18 15:01] Implement search/watchlist UI hierarchy refresh
 - Оновлено `frontend/src/{App.tsx,styles.css}`: `Search` і `Watchlist` піднято як primary workflows у dashboard grid, введено сильніший visual hierarchy для карток, кнопок, summary bars і responsive stacking без зміни backend contract.
 - Оновлено `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx}`: manual search тепер має один домінантний action flow, compact criteria summary bar, а saved-search cards отримали явні primary/secondary actions з кращою scanability.

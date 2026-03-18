@@ -64,6 +64,15 @@ export function SearchFiltersModal({ isOpen, filters, onApply, onClose }: Props)
     return null;
   }
 
+  const activeFilterCount = [
+    draftDriveType,
+    draftPrimaryDamage,
+    draftTitleType,
+    draftFuelType,
+    draftLotCondition,
+    draftOdometerRange,
+  ].filter(Boolean).length;
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
@@ -81,6 +90,14 @@ export function SearchFiltersModal({ isOpen, filters, onApply, onClose }: Props)
           <button type="button" className="ghost-button" onClick={onClose}>
             Close
           </button>
+        </div>
+        <div className="modal-filter-bar">
+          <span className="muted">
+            {activeFilterCount === 0
+              ? "No additional filters selected yet."
+              : `${activeFilterCount} additional ${activeFilterCount === 1 ? "filter" : "filters"} active.`}
+          </span>
+          <span className="muted">Keep only the signals that materially narrow the lot set.</span>
         </div>
         <div className="modal-body filter-grid">
           <label>
@@ -150,7 +167,7 @@ export function SearchFiltersModal({ isOpen, filters, onApply, onClose }: Props)
             </select>
           </label>
         </div>
-        <div className="modal-header filter-modal__actions">
+        <div className="filter-modal__actions">
           <button
             type="button"
             className="ghost-button"

@@ -46,26 +46,24 @@ export function DashboardShell({
   const syncTimestampLabel = liveSyncStatus ? formatLastSyncLabel(liveSyncStatus) : null;
 
   return (
-    <main className="app-shell">
+    <main className="app-shell app-shell--premium">
       <header className="hero">
-        <div>
+        <div className="hero-copy">
           <p className="eyebrow">Auction Control</p>
           <h1>CarTrap dispatch board</h1>
           <p className="lede">
             Track live lots, promote the right findings to watchlists, and keep every invited user in sync.
           </p>
         </div>
-        <div className="hero-card">
+        <aside className="hero-card" aria-label="User summary">
           <div className="hero-card__header">
             <p className="eyebrow">User</p>
             <span className="status-pill">{user.role}</span>
           </div>
-          <dl className="detail-grid detail-grid--single">
-            <div className="detail-item detail-item--stack">
-              <dt className="detail-label">Email:</dt>
-              <dd className="detail-value">{user.email}</dd>
-            </div>
-          </dl>
+          <div className="hero-card__identity">
+            <p className="detail-label">Email</p>
+            <p className="hero-card__email">{user.email}</p>
+          </div>
           <div className="hero-card__actions">
             <button type="button" className="ghost-button" onClick={onOpenSettings}>
               Settings
@@ -74,7 +72,7 @@ export function DashboardShell({
               Log Out
             </button>
           </div>
-        </div>
+        </aside>
       </header>
       {isBootstrapping ? (
         <AsyncStatus

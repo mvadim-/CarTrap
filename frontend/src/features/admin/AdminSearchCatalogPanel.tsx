@@ -42,7 +42,7 @@ export function AdminSearchCatalogPanel({
   }
 
   return (
-    <section className="panel">
+    <section className="panel panel--support">
       <div className="panel-header">
         <div>
           <p className="eyebrow">Admin</p>

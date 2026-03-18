@@ -149,7 +149,7 @@ export function PushSettingsModal({
           </button>
         </div>
         <div className="modal-body settings-modal__body">
-          <section className="settings-section">
+          <section className="settings-section settings-section--card">
             <div className="panel-header">
               <div>
                 <p className="eyebrow">Push</p>
@@ -258,7 +258,7 @@ export function PushSettingsModal({
                 {subscriptions.map((subscription) => {
                   const isCurrentDevice = currentDeviceEndpoint === subscription.endpoint;
                   return (
-                    <article key={subscription.id} className="result-card">
+                    <article key={subscription.id} className="result-card result-card--support">
                       <div>
                         <strong>{isAdmin && isCurrentDevice ? "This browser" : subscription.user_agent ?? "Browser Subscription"}</strong>
                         <p className="muted">{maskEndpoint(subscription.endpoint)}</p>

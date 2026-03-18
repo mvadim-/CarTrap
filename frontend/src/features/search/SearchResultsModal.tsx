@@ -74,7 +74,7 @@ export function SearchResultsModal({
             <p className="eyebrow">Results</p>
             <h3>{title}</h3>
           </div>
-          <div className="modal-toolbar">
+          <div className="modal-toolbar modal-toolbar--results">
             {canSave ? (
               <button
                 type="button"
@@ -132,7 +132,7 @@ export function SearchResultsModal({
             <p className="muted">No lots matched this search.</p>
           ) : (
             results.map((result) => (
-              <article key={result.lot_number} className="result-card result-card--media">
+              <article key={result.lot_number} className="result-card result-card--media result-card--search">
                 <LotThumbnail title={result.title} thumbnailUrl={result.thumbnail_url} />
                 <div className="result-copy">
                   <strong>{result.title}</strong>

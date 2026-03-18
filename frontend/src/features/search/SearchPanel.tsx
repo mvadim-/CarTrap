@@ -516,7 +516,7 @@ export function SearchPanel({
   });
 
   return (
-    <section className="panel panel--search">
+    <section className="panel panel--search panel--operational">
       <div className="panel-header">
         <div>
           <p className="eyebrow">Search</p>
@@ -612,8 +612,18 @@ export function SearchPanel({
           <button type="submit" disabled={!selectedMake || isSearching} aria-busy={isSearching}>
             {isSearching ? "Searching..." : "Search Lots"}
           </button>
-          <button type="button" className="ghost-button" onClick={() => setIsFiltersOpen(true)}>
-            Filters{activeFilterLabels.length > 0 ? ` (${activeFilterLabels.length})` : ""}
+          <button
+            type="button"
+            className="ghost-button search-grid__filters-button"
+            aria-label={activeFilterLabels.length > 0 ? `Filters (${activeFilterLabels.length} active)` : "Filters"}
+            onClick={() => setIsFiltersOpen(true)}
+          >
+            <span>Filters</span>
+            {activeFilterLabels.length > 0 ? (
+              <span className="search-grid__filters-count" aria-hidden="true">
+                {activeFilterLabels.length}
+              </span>
+            ) : null}
           </button>
         </div>
       </form>
@@ -706,18 +716,20 @@ export function SearchPanel({
                   >
                     {openingSavedSearchId === item.id ? "Opening..." : "Open Results"}
                   </button>
-                  <a className="ghost-button" href={item.external_url} target="_blank" rel="noreferrer">
-                    Open URL
-                  </a>
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => void handleDeleteSavedSearch(item.id)}
-                    disabled={deletingSavedSearchId === item.id}
-                    aria-busy={deletingSavedSearchId === item.id}
-                  >
-                    {deletingSavedSearchId === item.id ? "Deleting..." : "Delete"}
-                  </button>
+                  <div className="saved-search-card__secondary-actions">
+                    <a className="ghost-button" href={item.external_url} target="_blank" rel="noreferrer">
+                      Open URL
+                    </a>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => void handleDeleteSavedSearch(item.id)}
+                      disabled={deletingSavedSearchId === item.id}
+                      aria-busy={deletingSavedSearchId === item.id}
+                    >
+                      {deletingSavedSearchId === item.id ? "Deleting..." : "Delete"}
+                    </button>
+                  </div>
                 </div>
               </article>
             ))

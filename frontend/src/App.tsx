@@ -915,7 +915,7 @@ export function App() {
             tone="error"
             title="Session issue"
             message={globalError}
-            className="dashboard-status"
+            className="dashboard-status dashboard-grid__status"
           />
         ) : null}
         <SearchPanel
@@ -957,7 +957,7 @@ export function App() {
           onRemove={handleRemoveWatchlistItem}
         />
         {isAdmin ? (
-          <>
+          <div className="dashboard-grid__support" aria-label="Support panels">
             <AdminInvitesPanel
               inviteLink={inviteLink}
               latestInvite={latestInvite}
@@ -972,7 +972,7 @@ export function App() {
               onRefresh={handleRefreshSearchCatalog}
               onRetryLoad={() => (session.accessToken ? loadSearchCatalogResource(session.accessToken) : Promise.resolve())}
             />
-          </>
+          </div>
         ) : null}
       </DashboardShell>
       <PushSettingsModal

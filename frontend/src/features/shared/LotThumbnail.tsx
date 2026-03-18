@@ -16,12 +16,19 @@ export function LotThumbnail({ title, thumbnailUrl, onClick, variant = "default"
   }
 
   if (!onClick) {
-    return <img className={thumbClassName} src={thumbnailUrl} alt={title} onError={() => setHasError(true)} />;
+    return <img className={thumbClassName} src={thumbnailUrl} alt={title} loading="lazy" onError={() => setHasError(true)} />;
   }
 
   return (
-    <button type="button" className="lot-thumb-button" onClick={onClick} aria-label={`Open gallery for ${title}`}>
-      <img className={thumbClassName} src={thumbnailUrl} alt={title} onError={() => setHasError(true)} />
+    <button
+      type="button"
+      className="lot-thumb-button"
+      onClick={onClick}
+      aria-label={`Open gallery for ${title}`}
+      aria-haspopup="dialog"
+      title="Open lot gallery"
+    >
+      <img className={thumbClassName} src={thumbnailUrl} alt={title} loading="lazy" onError={() => setHasError(true)} />
     </button>
   );
 }

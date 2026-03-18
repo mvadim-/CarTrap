@@ -45,7 +45,7 @@ export function AdminInvitesPanel({ inviteLink, latestInvite, isCreatingInvite, 
   }
 
   return (
-    <section className="panel">
+    <section className="panel panel--support">
       <div className="panel-header">
         <div>
           <p className="eyebrow">Admin</p>
@@ -93,7 +93,7 @@ export function AdminInvitesPanel({ inviteLink, latestInvite, isCreatingInvite, 
         </dl>
       ) : null}
       {inviteLink ? (
-        <div className="callout">
+        <div className="callout callout--support">
           <span>Latest invite link</span>
           <a href={inviteLink}>{inviteLink}</a>
           <button type="button" className="ghost-button" onClick={() => void handleCopyInviteLink()}>

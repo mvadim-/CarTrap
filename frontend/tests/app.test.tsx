@@ -615,7 +615,13 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
     await screen.findByText(/cartrap dispatch board/i);
+    expect(screen.getByLabelText(/user summary/i)).toBeTruthy();
+    const searchHeading = screen.getByRole("heading", { name: /manual copart search/i });
+    const watchlistHeading = screen.getByRole("heading", { name: /tracked lots/i });
+    const invitesHeading = screen.getByRole("heading", { name: /generate invites/i });
     expect(screen.getByText(/generate invites/i)).toBeTruthy();
+    expect(searchHeading.compareDocumentPosition(invitesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(watchlistHeading.compareDocumentPosition(invitesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("renders invite acceptance screen from hash route", () => {
@@ -680,6 +686,7 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /apply filters/i }));
 
     await screen.findByText(/Filters:/i);
+    expect(screen.getByRole("button", { name: /filters \(6 active\)/i })).toBeTruthy();
     expect(screen.getByText(/All Wheel Drive · Hail · Salvage Title · Electric · Run and Drive · Under 25,000 mi/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
     await screen.findByRole("dialog", { name: /search results/i });
@@ -873,6 +880,24 @@ describe("CarTrap app", () => {
 
     await screen.findByText(/cartrap dispatch board/i);
     expect(screen.getByText(/sale soon/i)).toBeTruthy();
+  });
+
+  it("marks already-started tracked lots as auction live", async () => {
+    watchlistItems = [
+      buildTrackedLot({
+        id: "tracked-live",
+        lot_number: "55551234",
+        title: "2024 FORD F-150 XLT",
+        url: "https://www.copart.com/lot/55551234",
+        sale_date: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+      }),
+    ];
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    expect(screen.getByText(/auction live/i)).toBeTruthy();
   });
 
   it("enables browser push subscription on this device", async () => {
