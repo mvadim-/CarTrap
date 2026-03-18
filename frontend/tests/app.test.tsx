@@ -93,6 +93,7 @@ describe("CarTrap app", () => {
   let savedSearchRefreshCallCount: number;
   let nextSavedSearchSeedNewLotNumbers: string[];
   let watchlistItems: Array<Record<string, unknown>>;
+  let serviceWorkerMessageListener: ((event: MessageEvent) => void) | null;
 
   beforeEach(() => {
     const storage = new Map<string, string>();
@@ -110,6 +111,7 @@ describe("CarTrap app", () => {
     savedSearchRefreshCallCount = 0;
     nextSavedSearchSeedNewLotNumbers = [];
     watchlistItems = [];
+    serviceWorkerMessageListener = null;
     savedSearchesShouldFail = false;
     pushTestShouldFail = false;
     const savedSearches: Array<{
@@ -581,6 +583,24 @@ describe("CarTrap app", () => {
       permission: "denied",
       requestPermission: vi.fn(async () => "denied"),
     });
+    Object.defineProperty(window.navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        addEventListener: vi.fn((type: string, listener: (event: MessageEvent) => void) => {
+          if (type === "message") {
+            serviceWorkerMessageListener = listener;
+          }
+        }),
+        removeEventListener: vi.fn((type: string, listener: (event: MessageEvent) => void) => {
+          if (type === "message" && serviceWorkerMessageListener === listener) {
+            serviceWorkerMessageListener = null;
+          }
+        }),
+        getRegistration: vi.fn(async () => undefined),
+        register: vi.fn(async () => undefined),
+        ready: Promise.resolve(undefined),
+      },
+    });
   });
 
   afterEach(() => {
@@ -926,6 +946,36 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /send test push/i }));
 
     expect(await screen.findByText(/push test finished: 1 delivered, 0 failed, 0 removed\./i)).toBeTruthy();
+  });
+
+  it("refreshes watchlist data after a push update message without reloading the page", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    expect(screen.queryByText(/2020 TOYOTA CAMRY SE/i)).toBeNull();
+
+    watchlistItems = [
+      buildTrackedLot({
+        has_unseen_update: true,
+        latest_change_at: "2026-03-18T10:00:00Z",
+        latest_changes: {
+          current_bid: { before: 4200, after: 5100 },
+        },
+      }),
+    ];
+
+    serviceWorkerMessageListener?.({
+      data: {
+        type: "cartrap:push-received",
+        payload: { refresh_targets: ["watchlist"] },
+      },
+    } as MessageEvent);
+
+    await waitFor(() => {
+      expect(screen.getByText(/2020 TOYOTA CAMRY SE/i)).toBeTruthy();
+    });
+    expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
   });
 
   it("hides admin-only push diagnostics for non-admin accounts", async () => {

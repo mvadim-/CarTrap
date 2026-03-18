@@ -162,6 +162,8 @@ class NotificationService:
             "title": title,
             "body": body,
             "test": True,
+            "notification_type": "test",
+            "refresh_targets": [],
         }
         return self._send_payload_to_owner(owner_user["id"], payload)
 
@@ -172,6 +174,8 @@ class NotificationService:
             "saved_search_id": event["saved_search_id"],
             "result_count": event["result_count"],
             "new_matches": event["new_matches"],
+            "notification_type": "saved_search_match",
+            "refresh_targets": ["savedSearches", "liveSync"],
         }
         return self._send_payload_to_owner(event["owner_user_id"], payload)
 
@@ -182,6 +186,8 @@ class NotificationService:
             "body": change_summary,
             "tracked_lot_id": event["tracked_lot_id"],
             "changes": event["changes"],
+            "notification_type": "lot_change",
+            "refresh_targets": ["watchlist", "liveSync"],
         }
         return self._send_payload_to_owner(event["owner_user_id"], payload)
 
@@ -193,6 +199,7 @@ class NotificationService:
             "sale_date": event.get("sale_date"),
             "reminder_offset_minutes": event["reminder_offset_minutes"],
             "notification_type": "auction_reminder",
+            "refresh_targets": ["watchlist", "liveSync"],
         }
         return self._send_payload_to_owner(event["owner_user_id"], payload)
 

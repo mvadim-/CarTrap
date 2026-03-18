@@ -97,7 +97,11 @@ def test_notification_delivery_sends_to_active_subscriptions() -> None:
     assert sender.sent[0][1]["tracked_lot_id"] == result["events"][0]["tracked_lot_id"]
     assert sender.sent[0][1]["title"] == "2020 TOYOTA CAMRY SE (12345678)"
     assert sender.sent[0][1]["body"] == "Status: Upcoming -> Live; Bid: 1,000 -> 1,800 USD"
+    assert sender.sent[0][1]["notification_type"] == "lot_change"
+    assert sender.sent[0][1]["refresh_targets"] == ["watchlist", "liveSync"]
     assert sender.sent[1][1]["body"] == "Auction starts in 1 hour."
+    assert sender.sent[1][1]["notification_type"] == "auction_reminder"
+    assert sender.sent[1][1]["refresh_targets"] == ["watchlist", "liveSync"]
 
 
 def test_failed_delivery_removes_invalid_subscription() -> None:
@@ -196,6 +200,8 @@ def test_auction_reminder_notification_formats_expected_copy() -> None:
     assert result["delivered"] == 1
     assert sender.sent[0][1]["title"] == "2020 TOYOTA CAMRY SE (12344321)"
     assert sender.sent[0][1]["body"] == "Auction starts in 15 min."
+    assert sender.sent[0][1]["notification_type"] == "auction_reminder"
+    assert sender.sent[0][1]["refresh_targets"] == ["watchlist", "liveSync"]
 
 
 def test_web_push_sender_serializes_payload_and_vapid_claims(monkeypatch: pytest.MonkeyPatch) -> None:

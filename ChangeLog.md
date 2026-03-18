@@ -512,3 +512,9 @@
 ## [2026-03-17 14:37] Tighten PWA UX polish plan with missing failure-state coverage
 - Оновлено `docs/plans/20260317-pwa-ux-polish-flows.md` після повторної перевірки: додано явне покриття для manual search / save-search pending states, partial bootstrap failures з panel-level retry, а також browser offline/online UX як окремий сценарій від backend live-sync degraded mode.
 - Уточнено testing/manual verification секції: тепер план вимагає перевіряти часткові фейли завантаження dashboard, throttled search/save flows, offline-to-online recovery і reduced-motion-safe loading animations.
+
+## [2026-03-18 15:25] Refresh PWA data in place after backend push updates
+- Оновлено `backend/src/cartrap/modules/notifications/service.py` і тести `backend/tests/notifications/{test_push_delivery.py,test_push_subscriptions.py}`: push payload тепер містить `notification_type` і `refresh_targets`, щоб frontend міг адресно оновлювати потрібні секції dashboard після серверних змін.
+- Оновлено `frontend/public/sw.js`: service worker після отримання push не тільки показує notification, а й розсилає `cartrap:push-received` у всі відкриті вкладки PWA; додано fallback-логіку для deriving `refresh_targets` і focus/open app по кліку на notification.
+- Оновлено `frontend/src/App.tsx` і `frontend/tests/app.test.tsx`: додано listener на service-worker messages, batched background refresh `watchlist/savedSearches/liveSync/...` без `window.location.reload()`, плюс regression-тест на оновлення watchlist після push.
+- Verification: `./.venv/bin/pytest backend/tests/notifications/test_push_delivery.py backend/tests/notifications/test_push_subscriptions.py` -> `10 passed`; `npm run test --prefix frontend -- app.test.tsx` -> `25 passed`; `npm run build --prefix frontend` -> успішно.

@@ -206,6 +206,8 @@ def test_send_test_push_delivers_to_current_user_subscriptions(
                 "title": "Manual push check",
                 "body": "Browser push path is alive.",
                 "test": True,
+                "notification_type": "test",
+                "refresh_targets": [],
             },
         )
     ]

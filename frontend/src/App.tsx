@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useHashRoute } from "./app/router";
 import { useSession } from "./app/useSession";
@@ -66,6 +66,7 @@ type SearchPayload = {
 
 type DashboardResourceKey = "watchlist" | "savedSearches" | "subscriptions" | "searchCatalog" | "liveSync";
 type DashboardState<T> = Record<DashboardResourceKey, T>;
+type PushRefreshTarget = DashboardResourceKey;
 
 type ActionState = {
   isSearching: boolean;
@@ -114,6 +115,19 @@ const INITIAL_ACTION_STATE: ActionState = {
   isCreatingInvite: false,
   isRefreshingCatalog: false,
 };
+
+const PUSH_MESSAGE_TYPE = "cartrap:push-received";
+
+function isDashboardResourceKey(value: string): value is DashboardResourceKey {
+  return ["watchlist", "savedSearches", "subscriptions", "searchCatalog", "liveSync"].includes(value);
+}
+
+function normalizePushRefreshTargets(value: unknown): PushRefreshTarget[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is PushRefreshTarget => typeof item === "string" && isDashboardResourceKey(item));
+}
 
 function getNotificationPermission(): string {
   return typeof Notification === "undefined" ? "unsupported" : Notification.permission;
@@ -198,6 +212,8 @@ export function App() {
   const [dashboardLoading, setDashboardLoading] = useState<DashboardState<boolean>>(INITIAL_DASHBOARD_LOADING);
   const [dashboardErrors, setDashboardErrors] = useState<DashboardState<string | null>>(INITIAL_DASHBOARD_ERRORS);
   const [actionState, setActionState] = useState<ActionState>(INITIAL_ACTION_STATE);
+  const pushRefreshTimeoutRef = useRef<number | null>(null);
+  const pendingPushRefreshTargetsRef = useRef<Set<PushRefreshTarget>>(new Set());
 
   const isBootstrapping = Object.values(dashboardLoading).some(Boolean);
   const supportsPush = typeof Notification !== "undefined" && typeof window !== "undefined" && "PushManager" in window;
@@ -340,6 +356,28 @@ export function App() {
     }
   }
 
+  async function refreshResourcesFromPush(token: string, targets: PushRefreshTarget[]) {
+    const uniqueTargets = Array.from(new Set(targets));
+    await Promise.allSettled(
+      uniqueTargets.map((target) => {
+        switch (target) {
+          case "watchlist":
+            return loadWatchlistResource(token);
+          case "savedSearches":
+            return loadSavedSearchesResource(token);
+          case "subscriptions":
+            return loadPushSubscriptionsResource(token);
+          case "searchCatalog":
+            return loadSearchCatalogResource(token);
+          case "liveSync":
+            return loadLiveSyncStatusResource(token);
+          default:
+            return Promise.resolve();
+        }
+      }),
+    );
+  }
+
   async function loadDashboardResources(token: string) {
     await Promise.allSettled([
       loadWatchlistResource(token),
@@ -368,6 +406,67 @@ export function App() {
     }
     void loadDashboardResources(session.accessToken);
   }, [session.accessToken]);
+
+  useEffect(() => {
+    const serviceWorker = "serviceWorker" in navigator ? navigator.serviceWorker : undefined;
+    if (
+      !serviceWorker ||
+      typeof serviceWorker.addEventListener !== "function" ||
+      typeof serviceWorker.removeEventListener !== "function" ||
+      !session.accessToken
+    ) {
+      pendingPushRefreshTargetsRef.current.clear();
+      if (pushRefreshTimeoutRef.current !== null) {
+        window.clearTimeout(pushRefreshTimeoutRef.current);
+        pushRefreshTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    function flushPushRefreshQueue() {
+      const queuedTargets = Array.from(pendingPushRefreshTargetsRef.current);
+      pendingPushRefreshTargetsRef.current.clear();
+      pushRefreshTimeoutRef.current = null;
+
+      if (queuedTargets.length === 0 || isBrowserOffline) {
+        return;
+      }
+
+      void refreshResourcesFromPush(session.accessToken, queuedTargets);
+    }
+
+    function schedulePushRefresh(targets: PushRefreshTarget[]) {
+      targets.forEach((target) => pendingPushRefreshTargetsRef.current.add(target));
+      if (pushRefreshTimeoutRef.current !== null) {
+        return;
+      }
+      pushRefreshTimeoutRef.current = window.setTimeout(flushPushRefreshQueue, 350);
+    }
+
+    function handleServiceWorkerMessage(event: MessageEvent) {
+      const data = event.data as { type?: string; payload?: { refresh_targets?: unknown } } | null;
+      if (data?.type !== PUSH_MESSAGE_TYPE) {
+        return;
+      }
+
+      const targets = normalizePushRefreshTargets(data.payload?.refresh_targets);
+      if (targets.length === 0) {
+        return;
+      }
+
+      schedulePushRefresh(targets);
+    }
+
+    serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+    return () => {
+      serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
+      if (pushRefreshTimeoutRef.current !== null) {
+        window.clearTimeout(pushRefreshTimeoutRef.current);
+        pushRefreshTimeoutRef.current = null;
+      }
+      pendingPushRefreshTargetsRef.current.clear();
+    };
+  }, [isBrowserOffline, session.accessToken]);
 
   useEffect(() => {
     if (!session.accessToken || !isSettingsOpen) {
