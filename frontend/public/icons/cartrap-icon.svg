@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">CarTrap app icon</title>
+  <desc id="desc">Stylized CarTrap monogram on a rounded dark badge.</desc>
+  <defs>
+    <linearGradient id="bg" x1="76" y1="52" x2="434" y2="472" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1d3944" />
+      <stop offset="0.58" stop-color="#13262f" />
+      <stop offset="1" stop-color="#0d1b22" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(146 126) rotate(47.921) scale(252.832)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f0a06a" stop-opacity="0.55" />
+      <stop offset="0.48" stop-color="#f0a06a" stop-opacity="0.12" />
+      <stop offset="1" stop-color="#f0a06a" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="accent" x1="256" y1="138" x2="256" y2="388" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c86a35" />
+      <stop offset="1" stop-color="#9b3d12" />
+    </linearGradient>
+  </defs>
+  <rect x="40" y="40" width="432" height="432" rx="112" fill="url(#bg)" />
+  <rect x="40" y="40" width="432" height="432" rx="112" fill="url(#glow)" />
+  <path
+    d="M350 136C319.6 112.6 280.9 100 240 100C142.8 100 64 178.8 64 276S142.8 452 240 452C282.8 452 323 436.8 354 410"
+    fill="none"
+    stroke="#f8f1e7"
+    stroke-linecap="round"
+    stroke-width="74"
+  />
+  <rect x="254" y="144" width="72" height="244" rx="34" fill="url(#accent)" />
+  <rect x="222" y="160" width="182" height="62" rx="31" fill="url(#accent)" />
+  <path
+    d="M348 100C373.4 100 398.34 107.13 419.93 120.58"
+    fill="none"
+    stroke="#f8f1e7"
+    stroke-linecap="round"
+    stroke-opacity="0.25"
+    stroke-width="24"
+  />
+</svg>

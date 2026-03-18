@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">CarTrap maskable app icon</title>
+  <desc id="desc">Maskable CarTrap monogram centered within a full-bleed background.</desc>
+  <defs>
+    <linearGradient id="bg" x1="64" y1="48" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1d3944" />
+      <stop offset="0.58" stop-color="#13262f" />
+      <stop offset="1" stop-color="#0d1b22" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(150 118) rotate(47.921) scale(254.984)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f0a06a" stop-opacity="0.6" />
+      <stop offset="0.48" stop-color="#f0a06a" stop-opacity="0.14" />
+      <stop offset="1" stop-color="#f0a06a" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="accent" x1="256" y1="158" x2="256" y2="376" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c86a35" />
+      <stop offset="1" stop-color="#9b3d12" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="132" fill="url(#bg)" />
+  <rect width="512" height="512" rx="132" fill="url(#glow)" />
+  <path
+    d="M328 160C301.29 139.44 267.24 128 231.28 128C145.89 128 76.66 197.23 76.66 282.62S145.89 437.25 231.28 437.25C268.91 437.25 304.28 423.88 331.52 401.23"
+    fill="none"
+    stroke="#f8f1e7"
+    stroke-linecap="round"
+    stroke-width="66"
+  />
+  <rect x="248" y="162" width="68" height="228" rx="32" fill="url(#accent)" />
+  <rect x="216" y="178" width="176" height="58" rx="29" fill="url(#accent)" />
+  <path
+    d="M342 124C365.07 124 387.72 130.47 407.32 142.68"
+    fill="none"
+    stroke="#f8f1e7"
+    stroke-linecap="round"
+    stroke-opacity="0.25"
+    stroke-width="22"
+  />
+</svg>

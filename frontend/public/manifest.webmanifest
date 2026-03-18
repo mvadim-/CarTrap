@@ -1,9 +1,37 @@
 {
   "name": "CarTrap",
   "short_name": "CarTrap",
+  "id": "/",
+  "scope": "/",
   "start_url": "/#/login",
   "display": "standalone",
   "background_color": "#efe7db",
   "theme_color": "#13262f",
-  "description": "Copart watchlist and alerts for invite-only teams."
+  "description": "Copart watchlist and alerts for invite-only teams.",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
 }

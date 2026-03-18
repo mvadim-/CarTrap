@@ -536,6 +536,7 @@
 - Оновлено `docs/plans/completed/20260316-saved-search-cache-run-search.md`: Task 5/6 позначено завершеними, додано примітку що `README.md`/`backend/README.md` не змінювались у цьому циклі, і план перенесено в `docs/plans/completed/`.
 - Проведено повний regression прогін після backend/frontend реалізації cached saved-search flow.
 - Verification: `./.venv/bin/pytest backend/tests` -> `133 passed`, `npm run test --prefix frontend` -> `18 passed`, `npm run build --prefix frontend` -> успішно.
+
 ## [2026-03-17 14:31] Add implementation plan for PWA UX polish across search, watchlist, push, and admin flows
 - Додано `docs/plans/20260317-pwa-ux-polish-flows.md` з покроковим планом доробки UX для вже реалізованих flows: saved-search metadata, refresh/error states, watchlist clarity, push diagnostics, admin support tooling.
 - У плані зафіксовано рекомендований підхід через shared async feedback primitives замість великого редизайну, з окремим акцентом на mobile/PWA usage, loading indicators, progress bars, disabled/pending semantics і degraded-mode messaging.
@@ -549,3 +550,20 @@
 - Оновлено `frontend/public/sw.js`: service worker після отримання push не тільки показує notification, а й розсилає `cartrap:push-received` у всі відкриті вкладки PWA; додано fallback-логіку для deriving `refresh_targets` і focus/open app по кліку на notification.
 - Оновлено `frontend/src/App.tsx` і `frontend/tests/app.test.tsx`: додано listener на service-worker messages, batched background refresh `watchlist/savedSearches/liveSync/...` без `window.location.reload()`, плюс regression-тест на оновлення watchlist після push.
 - Verification: `./.venv/bin/pytest backend/tests/notifications/test_push_delivery.py backend/tests/notifications/test_push_subscriptions.py` -> `10 passed`; `npm run test --prefix frontend -- app.test.tsx` -> `25 passed`; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-18 15:57] Generate favicon and PWA icon set for CarTrap
+- Додано `frontend/public/icons/{cartrap-icon.svg,cartrap-icon-maskable.svg,icon-192.png,icon-512.png,icon-maskable-192.png,icon-maskable-512.png}` та root-level site icons `frontend/public/{favicon.ico,favicon-16x16.png,favicon-32x32.png,apple-touch-icon.png}`: зібрано повний набір для браузерного favicon, iOS home screen і PWA install flow.
+- Оновлено `frontend/public/manifest.webmanifest`: додано `id`, `scope` і секцію `icons` з `any` та `maskable` assets, щоб installable PWA використовувала коректні іконки на Android/desktop.
+- Оновлено `frontend/index.html`: підключено `favicon.ico`, SVG/PNG favicon-и, `apple-touch-icon`, `manifest` і базові theme/app meta-теги для браузерів та мобільного web app mode.
+- Додано `scripts/generate_frontend_icons.py`: локальний generator через headless Chrome, який дозволяє перевипускати PNG/ICO з SVG source assets без сторонніх npm/python бібліотек.
+- Verification: `python3 scripts/generate_frontend_icons.py` -> успішно; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-18 16:15] Fix favicon/PWA icon rasterization and transparency
+- Оновлено `scripts/generate_frontend_icons.py`: замість прямого browser screenshot сирого SVG generator тепер створює тимчасову HTML-сторінку, рендерить SVG у `canvas` і лише потім знімає PNG, що прибрало кроп, білий фон і неправильне кадрування на малих розмірах.
+- Перегенеровано `frontend/public/{favicon.ico,favicon-16x16.png,favicon-32x32.png,apple-touch-icon.png}` та `frontend/public/icons/{icon-192.png,icon-512.png,icon-maskable-192.png,icon-maskable-512.png}`: assets тепер мають коректний full-frame render і alpha transparency (`RGBA`) замість попередніх обрізаних кадрів.
+- Verification: `python3 scripts/generate_frontend_icons.py` -> успішно; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-18 16:17] Refine CarTrap monogram from ambiguous mark to clear C+t
+- Оновлено `frontend/public/icons/{cartrap-icon.svg,cartrap-icon-maskable.svg}`: внутрішній помаранчевий знак перемальовано з двозначної форми в просту й чітку `t` з окремою вертикаллю та перекладиною, щоб монограма стабільно читалась як `C + t` на favicon і PWA розмірах.
+- Перегенеровано `frontend/public/{favicon.ico,favicon-16x16.png,favicon-32x32.png,apple-touch-icon.png}` та `frontend/public/icons/{icon-192.png,icon-512.png,icon-maskable-192.png,icon-maskable-512.png}` під оновлений знак.
+- Verification: `python3 scripts/generate_frontend_icons.py` -> успішно; `npm run build --prefix frontend` -> успішно.
