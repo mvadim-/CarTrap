@@ -6,8 +6,8 @@ type Props = {
 };
 
 export function LoginScreen({ error, onSubmit }: Props) {
-  const [email, setEmail] = useState("admin@example.com");
-  const [password, setPassword] = useState("AdminPass123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -41,7 +41,15 @@ export function LoginScreen({ error, onSubmit }: Props) {
           {pending ? "Signing In..." : "Sign In"}
         </button>
       </form>
-      <p className="muted">Need an invite? Ask your administrator for an invite link.</p>
+      <p className="muted">
+        Need an invite? Ask your{" "}
+        <a
+          href="mailto:vpm2000@gmail.com?subject=CarTrap%20invite%20request&body=Hello%2C%20please%20send%20me%20an%20invite%20link%20for%20CarTrap."
+        >
+          administrator
+        </a>{" "}
+        for an invite link.
+      </p>
     </section>
   );
 }

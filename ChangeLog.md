@@ -488,6 +488,10 @@
 - Оновлено `frontend/src/styles.css`: для search form додано явний нижній відступ під `Search Lots`, а saved-search details отримали власний compact detail-grid з тим самим шрифтовим контрактом.
 - Verification: `npm run test --prefix frontend -- app.test.tsx` -> `12 passed`, `npm run build --prefix frontend` -> успішно.
 
+## [2026-03-18 16:24] Remove prefilled login credentials and add admin email link
+- Оновлено `frontend/src/features/auth/LoginScreen.tsx`: поля `Email` і `Password` на login screen тепер стартують порожніми замість predefined `admin@example.com` / `AdminPass123`.
+- Оновлено текст invite hint на login screen: слово `administrator` тепер є `mailto:`-посиланням на `vpm2000@gmail.com` з підготовленими subject/body для запиту invite link.
+
 ## [2026-03-16 12:04] Add implementation plan for NAS-backed Copart gateway split
 - Додано `docs/plans/20260316-nas-copart-gateway-split.md` з покроковим планом розділення інтеграції Copart: AWS лишається primary backend + Mongo, а локальний NAS стає окремим `copart-gateway`, який виконує сирі Copart-запити з локальної IP.
 - У плані зафіксовано рекомендовану архітектуру без fallback на direct Copart mode: backend деградує в `offline/live-sync unavailable` режим, worker пропускає sync cycles без падіння process, frontend показує banner про доступність лише локально збережених даних.
