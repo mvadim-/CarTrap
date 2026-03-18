@@ -92,10 +92,12 @@ def test_notification_delivery_sends_to_active_subscriptions() -> None:
     result = monitoring_service.poll_due_lots(now=datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc))
 
     assert result["updated"] == 1
-    assert len(sender.sent) == 1
+    assert result["reminded"] == 1
+    assert len(sender.sent) == 2
     assert sender.sent[0][1]["tracked_lot_id"] == result["events"][0]["tracked_lot_id"]
     assert sender.sent[0][1]["title"] == "2020 TOYOTA CAMRY SE (12345678)"
     assert sender.sent[0][1]["body"] == "Status: Upcoming -> Live; Bid: 1,000 -> 1,800 USD"
+    assert sender.sent[1][1]["body"] == "Auction starts in 1 hour."
 
 
 def test_failed_delivery_removes_invalid_subscription() -> None:
@@ -163,6 +165,37 @@ def test_transient_delivery_failure_keeps_subscription() -> None:
     assert result["failed"] == 1
     assert result["removed"] == 0
     assert database["push_subscriptions"].count_documents({}) == 1
+
+
+def test_auction_reminder_notification_formats_expected_copy() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    sender = FakeSender()
+    notification_service = NotificationService(database, sender=sender)
+    notification_service.upsert_subscription(
+        {"id": "user-4"},
+        {
+            "subscription": {
+                "endpoint": "https://push.example.test/subscriptions/4",
+                "expirationTime": None,
+                "keys": {"p256dh": "abc", "auth": "def"},
+            }
+        },
+    )
+
+    result = notification_service.send_auction_reminder_notification(
+        {
+            "tracked_lot_id": "tracked-4",
+            "owner_user_id": "user-4",
+            "lot_number": "12344321",
+            "title": "2020 TOYOTA CAMRY SE",
+            "sale_date": datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+            "reminder_offset_minutes": 15,
+        }
+    )
+
+    assert result["delivered"] == 1
+    assert sender.sent[0][1]["title"] == "2020 TOYOTA CAMRY SE (12344321)"
+    assert sender.sent[0][1]["body"] == "Auction starts in 15 min."
 
 
 def test_web_push_sender_serializes_payload_and_vapid_claims(monkeypatch: pytest.MonkeyPatch) -> None:

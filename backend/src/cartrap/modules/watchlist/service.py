@@ -58,6 +58,8 @@ class WatchlistService:
                 "has_unseen_update": False,
                 "latest_change_at": None,
                 "latest_changes": {},
+                "auction_reminder_sale_date": snapshot.sale_date,
+                "auction_reminder_sent_minutes": [],
             }
         )
 

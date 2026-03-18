@@ -45,7 +45,7 @@ def test_polling_policy_accepts_configured_intervals() -> None:
             now,
             default_interval_minutes=20,
             near_auction_interval_minutes=5,
-            near_auction_window_hours=1,
+            near_auction_window_minutes=60,
         )
         == 5
     )
@@ -55,7 +55,7 @@ def test_polling_policy_accepts_configured_intervals() -> None:
             now,
             default_interval_minutes=20,
             near_auction_interval_minutes=5,
-            near_auction_window_hours=1,
+            near_auction_window_minutes=60,
         )
         is False
     )

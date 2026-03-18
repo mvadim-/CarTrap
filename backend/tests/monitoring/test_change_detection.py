@@ -66,6 +66,20 @@ class GatewayUnavailableProvider:
         return None
 
 
+class FakeNotificationService:
+    def __init__(self) -> None:
+        self.change_events: list[dict] = []
+        self.reminder_events: list[dict] = []
+
+    def send_lot_change_notification(self, event: dict) -> dict:
+        self.change_events.append(event)
+        return {"delivered": 0, "failed": 0, "removed": 0, "endpoints": []}
+
+    def send_auction_reminder_notification(self, event: dict) -> dict:
+        self.reminder_events.append(event)
+        return {"delivered": 0, "failed": 0, "removed": 0, "endpoints": []}
+
+
 def test_detect_significant_changes_returns_only_changed_fields() -> None:
     previous = {
         "status": "upcoming",
@@ -281,3 +295,129 @@ def test_monitoring_service_treats_gateway_unavailable_as_transient_failure() ->
     assert tracked_lot["status"] == "upcoming"
     assert tracked_lot["last_checked_at"] < datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc)
     assert database["lot_snapshots"].count_documents({"tracked_lot_id": created["tracked_lot"]["id"]}) == 1
+
+
+def test_monitoring_service_sends_auction_reminders_once_per_threshold_for_unchanged_lot() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    notification_service = FakeNotificationService()
+    initial_snapshot = CopartLotSnapshot(
+        lot_number="12345678",
+        title="2020 TOYOTA CAMRY SE",
+        url="https://www.copart.com/lot/12345678",
+        thumbnail_url=None,
+        image_urls=[],
+        odometer="10,000 ACTUAL",
+        primary_damage="FRONT END",
+        estimated_retail_value=35500.0,
+        has_key=False,
+        drivetrain="FWD",
+        highlights=["Run and Drive"],
+        vin="1FA6P8TH0J5100001",
+        status="upcoming",
+        raw_status="Upcoming",
+        sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+        current_bid=1000.0,
+        buy_now_price=None,
+        currency="USD",
+    )
+    watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
+    created = watchlist_service.add_tracked_lot({"id": "user-6"}, "https://www.copart.com/lot/12345678")
+    database["tracked_lots"].update_one(
+        {"_id": ObjectId(created["tracked_lot"]["id"])},
+        {"$set": {"detail_etag": "\"lot-etag-1\""}},
+    )
+    monitoring = MonitoringService(
+        database,
+        provider_factory=lambda: EtagAwareProvider(None, not_modified=True, etag="\"lot-etag-2\""),
+        notification_service=notification_service,
+    )
+
+    result_one = monitoring.poll_due_lots(now=datetime(2026, 3, 20, 16, 0, tzinfo=timezone.utc))
+    result_two = monitoring.poll_due_lots(now=datetime(2026, 3, 20, 16, 5, tzinfo=timezone.utc))
+    result_three = monitoring.poll_due_lots(now=datetime(2026, 3, 20, 16, 45, tzinfo=timezone.utc))
+    result_four = monitoring.poll_due_lots(now=datetime(2026, 3, 20, 17, 1, tzinfo=timezone.utc))
+
+    assert result_one["reminded"] == 1
+    assert result_two["reminded"] == 0
+    assert result_three["reminded"] == 1
+    assert result_four["reminded"] == 1
+    assert [event["reminder_offset_minutes"] for event in notification_service.reminder_events] == [60, 15, 0]
+    tracked_lot = database["tracked_lots"].find_one({"_id": ObjectId(created["tracked_lot"]["id"])})
+    assert tracked_lot["auction_reminder_sent_minutes"] == [60, 15, 0]
+
+
+def test_monitoring_service_resets_auction_reminders_when_sale_date_changes() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    notification_service = FakeNotificationService()
+    initial_snapshot = CopartLotSnapshot(
+        lot_number="12345678",
+        title="2020 TOYOTA CAMRY SE",
+        url="https://www.copart.com/lot/12345678",
+        thumbnail_url=None,
+        image_urls=[],
+        odometer="10,000 ACTUAL",
+        primary_damage="FRONT END",
+        estimated_retail_value=35500.0,
+        has_key=False,
+        drivetrain="FWD",
+        highlights=["Run and Drive"],
+        vin="1FA6P8TH0J5100001",
+        status="upcoming",
+        raw_status="Upcoming",
+        sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+        current_bid=1000.0,
+        buy_now_price=None,
+        currency="USD",
+    )
+    watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
+    created = watchlist_service.add_tracked_lot({"id": "user-7"}, "https://www.copart.com/lot/12345678")
+    tracked_lot_id = created["tracked_lot"]["id"]
+    database["tracked_lots"].update_one(
+        {"_id": ObjectId(tracked_lot_id)},
+        {"$set": {"detail_etag": "\"lot-etag-1\""}},
+    )
+
+    unchanged_monitoring = MonitoringService(
+        database,
+        provider_factory=lambda: EtagAwareProvider(None, not_modified=True, etag="\"lot-etag-2\""),
+        notification_service=notification_service,
+    )
+    unchanged_monitoring.poll_due_lots(now=datetime(2026, 3, 20, 16, 0, tzinfo=timezone.utc))
+
+    rescheduled_snapshot = CopartLotSnapshot(
+        lot_number="12345678",
+        title="2020 TOYOTA CAMRY SE",
+        url="https://www.copart.com/lot/12345678",
+        thumbnail_url=None,
+        image_urls=[],
+        odometer="10,000 ACTUAL",
+        primary_damage="FRONT END",
+        estimated_retail_value=35500.0,
+        has_key=False,
+        drivetrain="FWD",
+        highlights=["Run and Drive"],
+        vin="1FA6P8TH0J5100001",
+        status="upcoming",
+        raw_status="Upcoming",
+        sale_date=datetime(2026, 3, 20, 18, 30, tzinfo=timezone.utc),
+        current_bid=1000.0,
+        buy_now_price=None,
+        currency="USD",
+    )
+    changed_monitoring = MonitoringService(
+        database,
+        provider_factory=lambda: FakeProvider([rescheduled_snapshot]),
+        notification_service=notification_service,
+    )
+
+    changed_result = changed_monitoring.poll_due_lots(now=datetime(2026, 3, 20, 16, 10, tzinfo=timezone.utc))
+    resumed_result = unchanged_monitoring.poll_due_lots(now=datetime(2026, 3, 20, 17, 30, tzinfo=timezone.utc))
+
+    assert changed_result["updated"] == 1
+    assert changed_result["reminded"] == 0
+    assert resumed_result["reminded"] == 1
+    assert [event["reminder_offset_minutes"] for event in notification_service.reminder_events] == [60, 60]
+    tracked_lot = database["tracked_lots"].find_one({"_id": ObjectId(tracked_lot_id)})
+    assert tracked_lot["sale_date"] == datetime(2026, 3, 20, 18, 30, tzinfo=timezone.utc)
+    assert tracked_lot["auction_reminder_sale_date"] == datetime(2026, 3, 20, 18, 30, tzinfo=timezone.utc)
+    assert tracked_lot["auction_reminder_sent_minutes"] == [60]

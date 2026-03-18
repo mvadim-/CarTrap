@@ -88,7 +88,7 @@ def run_polling_loop(sleep_seconds: int = 30) -> None:
         notification_service=notification_service,
         default_poll_interval_minutes=settings.watchlist_default_poll_interval_minutes,
         near_auction_poll_interval_minutes=settings.watchlist_near_auction_poll_interval_minutes,
-        near_auction_window_hours=settings.watchlist_near_auction_window_hours,
+        near_auction_window_minutes=settings.watchlist_near_auction_window_minutes,
     )
     search_service = SearchService(
         mongo.database,

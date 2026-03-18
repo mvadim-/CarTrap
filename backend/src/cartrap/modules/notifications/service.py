@@ -185,6 +185,17 @@ class NotificationService:
         }
         return self._send_payload_to_owner(event["owner_user_id"], payload)
 
+    def send_auction_reminder_notification(self, event: dict) -> dict:
+        payload = {
+            "title": f"{event['title']} ({event['lot_number']})",
+            "body": self._format_auction_reminder_body(event["reminder_offset_minutes"]),
+            "tracked_lot_id": event["tracked_lot_id"],
+            "sale_date": event.get("sale_date"),
+            "reminder_offset_minutes": event["reminder_offset_minutes"],
+            "notification_type": "auction_reminder",
+        }
+        return self._send_payload_to_owner(event["owner_user_id"], payload)
+
     def _send_payload_to_owner(self, owner_user_id: str, payload: dict) -> dict:
         if self._sender is None:
             LOGGER.warning(
@@ -304,6 +315,14 @@ class NotificationService:
                 return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
             return str(value)
         return str(value)
+
+    @staticmethod
+    def _format_auction_reminder_body(reminder_offset_minutes: int) -> str:
+        if reminder_offset_minutes == 0:
+            return "Auction started."
+        if reminder_offset_minutes == 60:
+            return "Auction starts in 1 hour."
+        return f"Auction starts in {reminder_offset_minutes} min."
 
     @staticmethod
     def _now() -> datetime:

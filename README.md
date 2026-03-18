@@ -10,6 +10,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 - Watchlist management for tracked lots, including Copart thumbnails and lot photo gallery modal
 - Adaptive polling before auction start
 - Web Push notifications for significant lot changes
+- Auction reminder push notifications at 60 minutes, 15 minutes, and auction start
 
 ## Repository Layout
 - `backend/` - FastAPI application, worker, shared Python code, tests
@@ -35,7 +36,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 10. Configure Copart API headers in `.env`: `COPART_API_DEVICE_NAME`, `COPART_API_D_TOKEN`, `COPART_API_COOKIE`, and optionally override `COPART_API_BASE_URL`, `COPART_API_SEARCH_PATH`, `COPART_API_SITECODE`.
 11. `COPART_HTTP_TIMEOUT_SECONDS`, `COPART_HTTP_CONNECT_TIMEOUT_SECONDS`, `COPART_HTTP_KEEPALIVE_EXPIRY_SECONDS`, `COPART_HTTP_MAX_CONNECTIONS`, and `COPART_HTTP_MAX_KEEPALIVE_CONNECTIONS` tune reusable HTTP clients for both direct Copart access and NAS gateway transport.
 12. `SAVED_SEARCH_POLL_INTERVAL_MINUTES` controls how often the worker refreshes cached results for saved searches.
-13. `WATCHLIST_DEFAULT_POLL_INTERVAL_MINUTES`, `WATCHLIST_NEAR_AUCTION_POLL_INTERVAL_MINUTES`, and `WATCHLIST_NEAR_AUCTION_WINDOW_HOURS` control tracked-lot polling cadence, including the faster near-auction mode.
+13. `WATCHLIST_DEFAULT_POLL_INTERVAL_MINUTES`, `WATCHLIST_NEAR_AUCTION_POLL_INTERVAL_MINUTES`, and `WATCHLIST_NEAR_AUCTION_WINDOW_MINUTES` control tracked-lot polling cadence, including the faster near-auction mode.
 14. On the primary backend, set `COPART_GATEWAY_BASE_URL` and `COPART_GATEWAY_TOKEN` to route all live Copart traffic through NAS. Leave `COPART_GATEWAY_BASE_URL` empty on the NAS gateway itself.
 15. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
 16. If you use backend-driven catalog refresh, `COPART_API_SEARCH_KEYWORDS_PATH` defaults to `/mcs/v2/public/data/search/keywords`.

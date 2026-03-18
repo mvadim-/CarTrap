@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 DEFAULT_INTERVAL_MINUTES = 15
 NEAR_AUCTION_INTERVAL_MINUTES = 1
-NEAR_AUCTION_WINDOW_HOURS = 2
+NEAR_AUCTION_WINDOW_MINUTES = 120
 
 
 def get_poll_interval_minutes(
@@ -16,7 +16,7 @@ def get_poll_interval_minutes(
     *,
     default_interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
     near_auction_interval_minutes: int = NEAR_AUCTION_INTERVAL_MINUTES,
-    near_auction_window_hours: int = NEAR_AUCTION_WINDOW_HOURS,
+    near_auction_window_minutes: int = NEAR_AUCTION_WINDOW_MINUTES,
 ) -> int:
     current_time = now or datetime.now(timezone.utc)
     sale_date = tracked_lot.get("sale_date")
@@ -27,7 +27,7 @@ def get_poll_interval_minutes(
         sale_date = sale_date.replace(tzinfo=timezone.utc)
 
     time_until_sale = sale_date - current_time
-    if timedelta(0) <= time_until_sale <= timedelta(hours=near_auction_window_hours):
+    if timedelta(0) <= time_until_sale <= timedelta(minutes=near_auction_window_minutes):
         return near_auction_interval_minutes
     return default_interval_minutes
 
@@ -38,7 +38,7 @@ def is_due_for_poll(
     *,
     default_interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
     near_auction_interval_minutes: int = NEAR_AUCTION_INTERVAL_MINUTES,
-    near_auction_window_hours: int = NEAR_AUCTION_WINDOW_HOURS,
+    near_auction_window_minutes: int = NEAR_AUCTION_WINDOW_MINUTES,
 ) -> bool:
     current_time = now or datetime.now(timezone.utc)
     last_checked_at = tracked_lot.get("last_checked_at")
@@ -52,7 +52,7 @@ def is_due_for_poll(
             current_time,
             default_interval_minutes=default_interval_minutes,
             near_auction_interval_minutes=near_auction_interval_minutes,
-            near_auction_window_hours=near_auction_window_hours,
+            near_auction_window_minutes=near_auction_window_minutes,
         )
     )
     return current_time - last_checked_at >= interval

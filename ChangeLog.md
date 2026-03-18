@@ -1,5 +1,10 @@
 # Change Log
 
+## [2026-03-18 14:27] Add auction reminder pushes and switch near-auction window config to minutes
+- Оновлено `backend/src/cartrap/modules/{monitoring/service.py,notifications/service.py,watchlist/service.py}`: worker тепер надсилає одноразові watchlist push-нагадування за 60 хв, 15 хв і в момент старту аукціону, з persisted marker-ами в `tracked_lots`, щоб reminder-и не дублювалися між poll cycles та коректно скидалися при зміні `sale_date`.
+- Оновлено `backend/src/cartrap/{config.py,worker/main.py}` і `backend/src/cartrap/modules/monitoring/polling_policy.py`: near-auction window переведено з `WATCHLIST_NEAR_AUCTION_WINDOW_HOURS` на `WATCHLIST_NEAR_AUCTION_WINDOW_MINUTES` із хвилинним контрактом по всьому runtime.
+- Оновлено `backend/tests/{monitoring/test_change_detection.py,monitoring/test_polling_policy.py,notifications/test_push_delivery.py,test_config.py}`, `README.md`, `.env`, `.env.example` і `docs/database-schema.md` під нові reminder flows та minute-based config.
+
 ## [2026-03-17 16:02] Tighten lot-change push copy for minimal informative text
 - Оновлено `backend/src/cartrap/modules/notifications/service.py`: title lot-change push тепер має більш компактний формат `<title> (<lot_number>)`, а body скорочено до мінімалістичного diff без зайвого повтору валюти, наприклад `Status: Upcoming -> Live; Bid: 1,000 -> 1,800 USD`.
 - Оновлено `backend/tests/notifications/test_push_delivery.py` під новий copy contract.

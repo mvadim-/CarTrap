@@ -115,6 +115,8 @@ Typical document:
   "buy_now_price": null,
   "currency": "USD",
   "last_checked_at": "2026-03-13T10:00:00Z",
+  "auction_reminder_sale_date": "2026-03-20T17:00:00Z",
+  "auction_reminder_sent_minutes": [60, 15],
   "active": true,
   "created_at": "2026-03-13T10:00:00Z",
   "updated_at": "2026-03-13T10:00:00Z"
@@ -129,6 +131,8 @@ Key fields:
 - `status` and `raw_status`: normalized and original sale state
 - `active`: used by monitoring worker to select live tracked lots
 - `last_checked_at`: worker scheduling input
+- `auction_reminder_sale_date` and `auction_reminder_sent_minutes`: persisted once-only reminder state for 60-minute, 15-minute, and started pushes
+
 
 Indexes:
 

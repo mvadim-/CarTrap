@@ -59,9 +59,9 @@ class Settings(BaseSettings):
         alias="WATCHLIST_NEAR_AUCTION_POLL_INTERVAL_MINUTES",
         ge=1,
     )
-    watchlist_near_auction_window_hours: int = Field(
-        default=2,
-        alias="WATCHLIST_NEAR_AUCTION_WINDOW_HOURS",
+    watchlist_near_auction_window_minutes: int = Field(
+        default=120,
+        alias="WATCHLIST_NEAR_AUCTION_WINDOW_MINUTES",
         ge=1,
     )
     bootstrap_admin_email: Optional[str] = Field(default=None, alias="BOOTSTRAP_ADMIN_EMAIL")
