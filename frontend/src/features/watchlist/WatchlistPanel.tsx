@@ -34,6 +34,7 @@ export function WatchlistPanel({
   const [selectedLot, setSelectedLot] = useState<WatchlistItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -109,6 +110,29 @@ export function WatchlistPanel({
     }).format(new Date(value));
   }
 
+  function getSaleUrgency(value: string | null): { label: string; tone: "live" | "soon" | "today" } | null {
+    if (!value) {
+      return null;
+    }
+    const saleDate = new Date(value);
+    const diffMs = saleDate.getTime() - Date.now();
+    if (diffMs <= 0) {
+      return { label: "Auction live", tone: "live" };
+    }
+    if (diffMs <= 120 * 60 * 1000) {
+      return { label: "Sale soon", tone: "soon" };
+    }
+    const now = new Date();
+    const isSameDay =
+      saleDate.getFullYear() === now.getFullYear() &&
+      saleDate.getMonth() === now.getMonth() &&
+      saleDate.getDate() === now.getDate();
+    if (isSameDay) {
+      return { label: "Today", tone: "today" };
+    }
+    return null;
+  }
+
   function formatChangeValue(item: WatchlistItem, field: string, value: unknown): string {
     if (value === null || value === undefined || value === "") {
       return "none";
@@ -167,41 +191,13 @@ export function WatchlistPanel({
   function getTrackedLotDetails(item: WatchlistItem) {
     return [
       { label: "Status", value: formatDetailValue(item.raw_status), emphasis: true },
-      { label: "Last checked", value: formatLastChecked(item.last_checked_at) },
-      { label: "Odometer", value: formatDetailValue(item.odometer) },
       { label: "Primary damage", value: formatDetailValue(item.primary_damage) },
       { label: "Retail", value: formatMoney(item.estimated_retail_value, item.currency) },
       { label: "Has Key", value: formatHasKey(item.has_key) },
       { label: "Drivetrain", value: formatDetailValue(item.drivetrain) },
+      { label: "Buy now", value: formatMoney(item.buy_now_price, item.currency) },
       { label: "Highlights", value: item.highlights.length > 0 ? item.highlights.join(" · ") : "—", full: true },
       { label: "Vin", value: formatDetailValue(item.vin), full: true },
-    ];
-  }
-
-  function getTrackedLotSummary(item: WatchlistItem) {
-    return [
-      {
-        label: "Lot",
-        value: (
-          <a
-            className="watchlist-card__lot-link"
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`Open Copart lot ${item.lot_number}`}
-          >
-            {item.lot_number}
-          </a>
-        ),
-      },
-      {
-        label: "Bid",
-        value: formatMoney(item.current_bid, item.currency),
-      },
-      {
-        label: "Sale",
-        value: formatLocalAuctionStart(item.sale_date),
-      },
     ];
   }
 
@@ -282,62 +278,112 @@ export function WatchlistPanel({
               key={item.id}
               className={`result-card result-card--media watchlist-card${item.has_unseen_update ? " watchlist-card--updated" : ""}`}
             >
-              <LotThumbnail
-                title={item.title}
-                thumbnailUrl={item.thumbnail_url}
-                onClick={item.image_urls.length > 0 ? () => setSelectedLot(item) : undefined}
-              />
-              <div className="result-copy watchlist-card__body">
-                <div className="watchlist-card__header">
-                  <strong>{item.title}</strong>
-                  <div className="watchlist-card__header-badges">
-                    {item.has_unseen_update ? <span className="watchlist-card__update-badge">Updated</span> : null}
-                    <span className="status-pill">{item.status}</span>
-                  </div>
-                </div>
-                {item.has_unseen_update ? (
-                  <div className="watchlist-card__update-callout" role="status" aria-live="polite">
-                    <p className="watchlist-card__update-summary">{formatLatestChangeSummary(item).join(" · ")}</p>
-                    {item.latest_change_at ? (
-                      <p className="watchlist-card__update-meta">Detected {formatLastChecked(item.latest_change_at)}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-                <dl className="watchlist-card__summary">
-                  {getTrackedLotSummary(item).map((detail) => (
-                    <div key={detail.label} className="watchlist-card__detail detail-item">
-                      <dt className="watchlist-card__detail-label detail-label">{detail.label}:</dt>
-                      <dd className="watchlist-card__detail-value detail-value">{detail.value}</dd>
+              {(() => {
+                const urgency = getSaleUrgency(item.sale_date);
+                const isExpanded = expandedItems[item.id] ?? false;
+
+                return (
+                  <>
+                    <LotThumbnail
+                      title={item.title}
+                      thumbnailUrl={item.thumbnail_url}
+                      variant="watchlist"
+                      onClick={item.image_urls.length > 0 ? () => setSelectedLot(item) : undefined}
+                    />
+                    <div className="result-copy watchlist-card__body">
+                      <div className="watchlist-card__header">
+                        <div className="watchlist-card__title-block">
+                          <div className="watchlist-card__meta-row">
+                            <a
+                              className="watchlist-card__lot-link"
+                              href={item.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`Open Copart lot ${item.lot_number}`}
+                            >
+                              Lot {item.lot_number}
+                            </a>
+                            {urgency ? (
+                              <span className={`watchlist-card__urgency-badge watchlist-card__urgency-badge--${urgency.tone}`}>
+                                {urgency.label}
+                              </span>
+                            ) : null}
+                          </div>
+                          <strong>{item.title}</strong>
+                          <p className="watchlist-card__sale-time">Sale {formatLocalAuctionStart(item.sale_date)}</p>
+                        </div>
+                        <div className="watchlist-card__header-badges">
+                          {item.has_unseen_update ? <span className="watchlist-card__update-badge">Updated</span> : null}
+                          <span className="status-pill">{item.raw_status || item.status}</span>
+                        </div>
+                      </div>
+                      <dl className="watchlist-card__signals">
+                        <div className="watchlist-card__signal">
+                          <dt className="detail-label">Current bid</dt>
+                          <dd className="detail-value">{formatMoney(item.current_bid, item.currency)}</dd>
+                        </div>
+                        <div className="watchlist-card__signal">
+                          <dt className="detail-label">Last checked</dt>
+                          <dd className="detail-value">{formatLastChecked(item.last_checked_at)}</dd>
+                        </div>
+                        <div className="watchlist-card__signal">
+                          <dt className="detail-label">Odometer</dt>
+                          <dd className="detail-value">{formatDetailValue(item.odometer)}</dd>
+                        </div>
+                      </dl>
+                      {item.has_unseen_update ? (
+                        <div className="watchlist-card__update-callout" role="status" aria-live="polite">
+                          <p className="watchlist-card__update-summary">{formatLatestChangeSummary(item).join(" · ")}</p>
+                          {item.latest_change_at ? (
+                            <p className="watchlist-card__update-meta">Detected {formatLastChecked(item.latest_change_at)}</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {isExpanded ? (
+                        <dl className="watchlist-card__details">
+                          {getTrackedLotDetails(item).map((detail) => (
+                            <div
+                              key={detail.label}
+                              className={`watchlist-card__detail detail-item${detail.full ? " watchlist-card__detail--full" : ""}`}
+                            >
+                              <dt className="watchlist-card__detail-label detail-label">{detail.label}:</dt>
+                              <dd
+                                className={`watchlist-card__detail-value detail-value${detail.emphasis ? " watchlist-card__detail-value--emphasis" : ""}`}
+                              >
+                                {detail.value}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      ) : null}
                     </div>
-                  ))}
-                </dl>
-                <dl className="watchlist-card__details">
-                  {getTrackedLotDetails(item).map((detail) => (
-                    <div
-                      key={detail.label}
-                      className={`watchlist-card__detail detail-item${detail.full ? " watchlist-card__detail--full" : ""}`}
-                    >
-                      <dt className="watchlist-card__detail-label detail-label">{detail.label}:</dt>
-                      <dd
-                        className={`watchlist-card__detail-value detail-value${detail.emphasis ? " watchlist-card__detail-value--emphasis" : ""}`}
+                    <div className="watchlist-card__actions">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        aria-expanded={isExpanded}
+                        onClick={() =>
+                          setExpandedItems((current) => ({
+                            ...current,
+                            [item.id]: !isExpanded,
+                          }))
+                        }
                       >
-                        {detail.value}
-                      </dd>
+                        {isExpanded ? "Hide details" : "Show details"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => void handleRemove(item.id)}
+                        disabled={removingItemId === item.id}
+                        aria-busy={removingItemId === item.id}
+                      >
+                        {removingItemId === item.id ? "Removing..." : "Remove"}
+                      </button>
                     </div>
-                  ))}
-                </dl>
-              </div>
-              <div className="watchlist-card__actions">
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => void handleRemove(item.id)}
-                  disabled={removingItemId === item.id}
-                  aria-busy={removingItemId === item.id}
-                >
-                  {removingItemId === item.id ? "Removing..." : "Remove"}
-                </button>
-              </div>
+                  </>
+                );
+              })()}
             </article>
           ))}
         </div>

@@ -78,7 +78,6 @@ export function SearchResultsModal({
             {canSave ? (
               <button
                 type="button"
-                className="ghost-button"
                 onClick={() => void onSaveSearch()}
                 disabled={!canSave || isSavingSearch}
                 aria-busy={isSavingSearch}
@@ -89,7 +88,6 @@ export function SearchResultsModal({
             {canRefreshLive ? (
               <button
                 type="button"
-                className="ghost-button"
                 onClick={() => void onRefreshLive?.()}
                 disabled={isRefreshingLive}
                 aria-busy={isRefreshingLive}

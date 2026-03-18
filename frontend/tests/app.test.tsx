@@ -585,6 +585,7 @@ describe("CarTrap app", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -685,12 +686,12 @@ describe("CarTrap app", () => {
     expect(await screen.findAllByText(/1 lot found/i)).toHaveLength(2);
     expect(liveSearchCallCount).toBe(1);
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
-    fireEvent.click(screen.getByRole("button", { name: /run search/i }));
+    fireEvent.click(screen.getByRole("button", { name: /open results/i }));
 
     await screen.findByRole("dialog", { name: /search results/i });
     expect(savedSearchViewCallCount).toBe(1);
     expect(liveSearchCallCount).toBe(1);
-    expect(screen.getByText(/last synced/i)).toBeTruthy();
+    expect(screen.getAllByText(/last synced/i).length).toBeGreaterThan(0);
   });
 
   it("shows NEW badges for cached saved-search results and clears list-level new count after opening", async () => {
@@ -705,7 +706,7 @@ describe("CarTrap app", () => {
 
     expect(await screen.findByText(/1 NEW/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
-    fireEvent.click(screen.getByRole("button", { name: /run search/i }));
+    fireEvent.click(screen.getByRole("button", { name: /open results/i }));
 
     await screen.findByRole("dialog", { name: /search results/i });
     expect(screen.getByText(/^NEW$/i)).toBeTruthy();
@@ -724,7 +725,7 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /save search/i }));
     await screen.findByText(/FORD MUSTANG MACH-E 2025-2027/i);
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
-    fireEvent.click(screen.getByRole("button", { name: /run search/i }));
+    fireEvent.click(screen.getByRole("button", { name: /open results/i }));
 
     await screen.findByRole("dialog", { name: /search results/i });
     fireEvent.click(screen.getByRole("button", { name: /refresh live/i }));
@@ -777,16 +778,20 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
 
     await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
-    expect(screen.getByText(/Odometer:/i)).toBeTruthy();
+    expect(screen.getByText(/Current bid/i)).toBeTruthy();
+    expect(screen.getByText(/Odometer/i)).toBeTruthy();
     expect(screen.getByText(/12,345 ACTUAL/i)).toBeTruthy();
+    expect(screen.getAllByText((_, element) => element?.textContent?.includes(localAuctionStart) ?? false).length).toBeGreaterThan(0);
+    const detailsToggle = screen.getByRole("button", { name: /show details/i });
+    expect(detailsToggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(detailsToggle);
+    expect(detailsToggle.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText(/Primary damage:/i)).toBeTruthy();
     expect(screen.getByText(/FRONT END/i)).toBeTruthy();
     expect(screen.getByText(/Retail:/i)).toBeTruthy();
     expect(screen.getByText(/36,500 USD/i)).toBeTruthy();
     expect(screen.getByText(/Has Key:/i)).toBeTruthy();
     expect(screen.getByText(/^Yes$/i)).toBeTruthy();
-    expect(screen.getByText(/Sale:/i)).toBeTruthy();
-    expect(screen.getByText(localAuctionStart)).toBeTruthy();
     expect(screen.getByText(/Drivetrain:/i)).toBeTruthy();
     expect(screen.getByText(/^AWD$/i)).toBeTruthy();
     expect(screen.getByText(/Highlights:/i)).toBeTruthy();
@@ -830,6 +835,24 @@ describe("CarTrap app", () => {
     expect(screen.getByText(/^Updated$/i)).toBeTruthy();
     expect(screen.getByText(/Status: On Approval -> Live/i)).toBeTruthy();
     expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
+  });
+
+  it("marks near-auction tracked lots as sale soon", async () => {
+    watchlistItems = [
+      buildTrackedLot({
+        id: "tracked-soon",
+        lot_number: "99251295",
+        title: "2025 FORD MUSTANG MACH-E PREMIUM",
+        url: "https://www.copart.com/lot/99251295",
+        sale_date: new Date(Date.now() + 90 * 60 * 1000).toISOString(),
+      }),
+    ];
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await screen.findByText(/cartrap dispatch board/i);
+    expect(screen.getByText(/sale soon/i)).toBeTruthy();
   });
 
   it("enables browser push subscription on this device", async () => {

@@ -1,5 +1,21 @@
 # Change Log
 
+## [2026-03-18 15:01] Implement search/watchlist UI hierarchy refresh
+- Оновлено `frontend/src/{App.tsx,styles.css}`: `Search` і `Watchlist` піднято як primary workflows у dashboard grid, введено сильніший visual hierarchy для карток, кнопок, summary bars і responsive stacking без зміни backend contract.
+- Оновлено `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx}`: manual search тепер має один домінантний action flow, compact criteria summary bar, а saved-search cards отримали явні primary/secondary actions з кращою scanability.
+- Оновлено `frontend/src/features/{watchlist/WatchlistPanel.tsx,shared/LotThumbnail.tsx}`: tracked lot cards стали compact-first, додано disclosure для другорядних деталей, urgency badges (`Auction live` / `Sale soon` / `Today`), тихіші destructive actions і більший thumbnail contract для watchlist.
+- Оновлено `frontend/tests/app.test.tsx` під новий DOM/UI contract, додано покриття для details toggle та near-auction urgency state.
+- Оновлено planning artifacts: `docs/plans/completed/20260318-search-watchlist-ui-ux-refresh.md` синхронізовано з фактичним execution і перенесено в completed.
+- Verification: `npm run test --prefix frontend` -> `24 passed`; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-18 14:53] Tighten UI-UX refresh plan around watchlist urgency and shared thumbnail scope
+- Оновлено `docs/plans/completed/20260318-search-watchlist-ui-ux-refresh.md`: у план додано явне покриття для `frontend/src/features/shared/LotThumbnail.tsx`, зафіксовано потребу визначити source of truth для watchlist urgency tiers і розширено manual verification під near-auction сценарії.
+- План став менш двозначним для реалізації compact watchlist card без drift між frontend urgency UX і backend near-auction логікою.
+
+## [2026-03-18 14:49] Add implementation plan for search/watchlist UI-UX refresh
+- Додано `docs/plans/completed/20260318-search-watchlist-ui-ux-refresh.md`: зафіксовано discovery-контекст, рекомендований hierarchy-first підхід і покроковий implementation plan для оновлення `Search`, `Watchlist`, visual system, responsive/accessibility polish та verification.
+- Цикл змін обмежено planning/documentation scope без змін runtime-коду.
+
 ## [2026-03-18 14:27] Add auction reminder pushes and switch near-auction window config to minutes
 - Оновлено `backend/src/cartrap/modules/{monitoring/service.py,notifications/service.py,watchlist/service.py}`: worker тепер надсилає одноразові watchlist push-нагадування за 60 хв, 15 хв і в момент старту аукціону, з persisted marker-ами в `tracked_lots`, щоб reminder-и не дублювалися між poll cycles та коректно скидалися при зміні `sale_date`.
 - Оновлено `backend/src/cartrap/{config.py,worker/main.py}` і `backend/src/cartrap/modules/monitoring/polling_policy.py`: near-auction window переведено з `WATCHLIST_NEAR_AUCTION_WINDOW_HOURS` на `WATCHLIST_NEAR_AUCTION_WINDOW_MINUTES` із хвилинним контрактом по всьому runtime.

@@ -188,6 +188,10 @@ function formatYearRange(from?: string, to?: string): string {
   return from || to || "—";
 }
 
+function formatFilterSummary(labels: string[]): string {
+  return labels.length > 0 ? labels.join(" · ") : "No filters";
+}
+
 export function SearchPanel({
   catalog,
   isLoadingCatalog,
@@ -467,6 +471,25 @@ export function SearchPanel({
     return formatYearRange(item.criteria.year_from?.toString(), item.criteria.year_to?.toString());
   }
 
+  function formatSavedSearchCriteriaSummary(item: SavedSearch): string {
+    return [item.criteria.make ?? "Any make", item.criteria.model ?? "Any model", formatSavedSearchYears(item)].join(
+      " / ",
+    );
+  }
+
+  function formatSavedSearchFilterSummary(item: SavedSearch): string {
+    return formatFilterSummary(
+      getSearchFilterLabels({
+        driveType: item.criteria.drive_type,
+        primaryDamage: item.criteria.primary_damage,
+        titleType: item.criteria.title_type,
+        fuelType: item.criteria.fuel_type,
+        lotCondition: item.criteria.lot_condition,
+        odometerRange: item.criteria.odometer_range,
+      }),
+    );
+  }
+
   function getSavedSearchSyncState(item: SavedSearch): string {
     if (refreshingSavedSearchId === item.id) {
       return "Refreshing live now";
@@ -493,15 +516,12 @@ export function SearchPanel({
   });
 
   return (
-    <section className="panel">
+    <section className="panel panel--search">
       <div className="panel-header">
         <div>
           <p className="eyebrow">Search</p>
           <h2>Manual Copart Search</h2>
         </div>
-        <button type="button" className="ghost-button" onClick={() => setIsFiltersOpen(true)}>
-          Filters{activeFilterLabels.length > 0 ? ` (${activeFilterLabels.length})` : ""}
-        </button>
       </div>
       {isLoadingCatalog && !catalog ? (
         <AsyncStatus
@@ -588,9 +608,14 @@ export function SearchPanel({
             />
           </label>
         </div>
-        <button type="submit" disabled={!selectedMake || isSearching} aria-busy={isSearching}>
-          {isSearching ? "Searching..." : "Search Lots"}
-        </button>
+        <div className="search-grid__actions">
+          <button type="submit" disabled={!selectedMake || isSearching} aria-busy={isSearching}>
+            {isSearching ? "Searching..." : "Search Lots"}
+          </button>
+          <button type="button" className="ghost-button" onClick={() => setIsFiltersOpen(true)}>
+            Filters{activeFilterLabels.length > 0 ? ` (${activeFilterLabels.length})` : ""}
+          </button>
+        </div>
       </form>
       {isSearching ? (
         <AsyncStatus
@@ -601,24 +626,12 @@ export function SearchPanel({
           className="panel-status"
         />
       ) : null}
-      <dl className="detail-grid detail-grid--search search-summary">
-        <div className="detail-item">
-          <dt className="detail-label">Make:</dt>
-          <dd className="detail-value">{selectedMake?.name ?? "—"}</dd>
-        </div>
-        <div className="detail-item">
-          <dt className="detail-label">Model:</dt>
-          <dd className="detail-value">{selectedModel?.name ?? "—"}</dd>
-        </div>
-        <div className="detail-item">
-          <dt className="detail-label">Years:</dt>
-          <dd className="detail-value">{formatYearRange(yearFrom, yearTo)}</dd>
-        </div>
-        <div className="detail-item detail-item--stack">
-          <dt className="detail-label">Filters:</dt>
-          <dd className="detail-value">{activeFilterLabels.length > 0 ? activeFilterLabels.join(" · ") : "None"}</dd>
-        </div>
-      </dl>
+      <div className="search-summary-bar" aria-live="polite">
+        <p className="search-summary-bar__headline">
+          {selectedMake?.name ?? "Any make"} / {selectedModel?.name ?? "Any model"} / {formatYearRange(yearFrom, yearTo)}
+        </p>
+        <p className="search-summary-bar__meta">Filters: {formatFilterSummary(activeFilterLabels)}</p>
+      </div>
       {!catalog && !isLoadingCatalog && !catalogError ? <p className="muted">Search catalog is unavailable.</p> : null}
 
       <div className="saved-searches">
@@ -658,71 +671,40 @@ export function SearchPanel({
           ) : (
             savedSearches.map((item) => (
               <article key={item.id} className="result-card saved-search-card">
-                <div className="result-copy">
+                <div className="saved-search-card__body">
                   <div className="saved-search-card__header">
-                    <strong>{item.label}</strong>
+                    <div className="saved-search-card__title-block">
+                      <strong>{item.label}</strong>
+                      <p className="saved-search-card__criteria">{formatSavedSearchCriteriaSummary(item)}</p>
+                    </div>
                     {item.new_count > 0 ? <span className="new-badge">{item.new_count} NEW</span> : null}
                   </div>
-                  <dl className="detail-grid detail-grid--saved-search saved-search-card__details">
-                    <div className="detail-item">
-                      <dt className="detail-label">Make:</dt>
-                      <dd className="detail-value">{item.criteria.make ?? "Unknown make"}</dd>
-                    </div>
-                    <div className="detail-item">
-                      <dt className="detail-label">Model:</dt>
-                      <dd className="detail-value">{item.criteria.model ?? "—"}</dd>
-                    </div>
-                    <div className="detail-item">
-                      <dt className="detail-label">Years:</dt>
-                      <dd className="detail-value">{formatSavedSearchYears(item)}</dd>
-                    </div>
-                    <div className="detail-item detail-item--stack saved-search-card__detail--full">
-                      <dt className="detail-label">Filters:</dt>
-                      <dd className="detail-value">
-                        {getSearchFilterLabels({
-                          driveType: item.criteria.drive_type,
-                          primaryDamage: item.criteria.primary_damage,
-                          titleType: item.criteria.title_type,
-                          fuelType: item.criteria.fuel_type,
-                          lotCondition: item.criteria.lot_condition,
-                          odometerRange: item.criteria.odometer_range,
-                        }).length > 0
-                          ? getSearchFilterLabels({
-                              driveType: item.criteria.drive_type,
-                              primaryDamage: item.criteria.primary_damage,
-                              titleType: item.criteria.title_type,
-                              fuelType: item.criteria.fuel_type,
-                              lotCondition: item.criteria.lot_condition,
-                              odometerRange: item.criteria.odometer_range,
-                            }).join(" · ")
-                          : "None"}
-                      </dd>
-                    </div>
-                    <div className="detail-item">
-                      <dt className="detail-label">Matches:</dt>
+                  <p className="saved-search-card__filters">Filters: {formatSavedSearchFilterSummary(item)}</p>
+                  <dl className="saved-search-card__metrics">
+                    <div className="saved-search-card__metric">
+                      <dt className="detail-label">Matches</dt>
                       <dd className="detail-value">{formatLotCount(item.cached_result_count ?? item.result_count)}</dd>
                     </div>
-                    <div className="detail-item">
-                      <dt className="detail-label">Freshness:</dt>
+                    <div className="saved-search-card__metric">
+                      <dt className="detail-label">Freshness</dt>
                       <dd className="detail-value">{getSavedSearchSyncState(item)}</dd>
                     </div>
-                    <div className="detail-item saved-search-card__detail--full">
-                      <dt className="detail-label">Synced:</dt>
+                    <div className="saved-search-card__metric">
+                      <dt className="detail-label">Last synced</dt>
                       <dd className="detail-value">
                         {item.last_synced_at ? new Date(item.last_synced_at).toLocaleString() : "Not yet"}
                       </dd>
                     </div>
                   </dl>
                 </div>
-                <div className="result-actions">
+                <div className="saved-search-card__actions">
                   <button
                     type="button"
-                    className="ghost-button"
                     onClick={() => void handleRunSavedSearch(item)}
                     disabled={openingSavedSearchId === item.id}
                     aria-busy={openingSavedSearchId === item.id}
                   >
-                    {openingSavedSearchId === item.id ? "Opening..." : "Run Search"}
+                    {openingSavedSearchId === item.id ? "Opening..." : "Open Results"}
                   </button>
                   <a className="ghost-button" href={item.external_url} target="_blank" rel="noreferrer">
                     Open URL

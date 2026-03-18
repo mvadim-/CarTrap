@@ -819,24 +819,6 @@ export function App() {
             className="dashboard-status"
           />
         ) : null}
-        {isAdmin ? (
-          <>
-            <AdminInvitesPanel
-              inviteLink={inviteLink}
-              latestInvite={latestInvite}
-              isCreatingInvite={actionState.isCreatingInvite}
-              onCreateInvite={handleCreateInvite}
-            />
-            <AdminSearchCatalogPanel
-              catalog={searchCatalog}
-              loadError={dashboardErrors.searchCatalog}
-              isLoading={dashboardLoading.searchCatalog}
-              isRefreshing={actionState.isRefreshingCatalog}
-              onRefresh={handleRefreshSearchCatalog}
-              onRetryLoad={() => (session.accessToken ? loadSearchCatalogResource(session.accessToken) : Promise.resolve())}
-            />
-          </>
-        ) : null}
         <SearchPanel
           catalog={searchCatalog}
           isLoadingCatalog={dashboardLoading.searchCatalog}
@@ -875,6 +857,24 @@ export function App() {
           onAddByLotNumber={handleAddByLotNumber}
           onRemove={handleRemoveWatchlistItem}
         />
+        {isAdmin ? (
+          <>
+            <AdminInvitesPanel
+              inviteLink={inviteLink}
+              latestInvite={latestInvite}
+              isCreatingInvite={actionState.isCreatingInvite}
+              onCreateInvite={handleCreateInvite}
+            />
+            <AdminSearchCatalogPanel
+              catalog={searchCatalog}
+              loadError={dashboardErrors.searchCatalog}
+              isLoading={dashboardLoading.searchCatalog}
+              isRefreshing={actionState.isRefreshingCatalog}
+              onRefresh={handleRefreshSearchCatalog}
+              onRetryLoad={() => (session.accessToken ? loadSearchCatalogResource(session.accessToken) : Promise.resolve())}
+            />
+          </>
+        ) : null}
       </DashboardShell>
       <PushSettingsModal
         isOpen={isSettingsOpen}
