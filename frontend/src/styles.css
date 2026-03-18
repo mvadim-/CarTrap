@@ -956,17 +956,18 @@ button:focus-visible,
 }
 
 .lot-thumb {
-  width: 4.75rem;
-  height: 4.75rem;
+  width: 6.25rem;
+  height: auto;
+  aspect-ratio: 4 / 3;
   object-fit: cover;
   border-radius: 0.8rem;
   background: rgba(19, 38, 47, 0.08);
   flex-shrink: 0;
+  display: block;
 }
 
 .lot-thumb--watchlist {
-  width: 5rem;
-  height: 5rem;
+  width: 6.75rem;
   border-radius: 0.9rem;
 }
 
@@ -1075,6 +1076,8 @@ button:focus-visible,
 
 .gallery-hero {
   width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
   max-height: 60vh;
   object-fit: contain;
   border-radius: 1rem;
@@ -1083,12 +1086,14 @@ button:focus-visible,
 
 .gallery-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
   gap: 0.75rem;
 }
 
 .gallery-thumb-button {
   border: 2px solid transparent;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
 }
 
 .gallery-thumb-button.is-active {
@@ -1097,7 +1102,7 @@ button:focus-visible,
 
 .gallery-thumb {
   width: 100%;
-  height: 5rem;
+  height: 100%;
   object-fit: cover;
   border-radius: 0.8rem;
   display: block;

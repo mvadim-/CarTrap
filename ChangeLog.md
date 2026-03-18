@@ -488,6 +488,10 @@
 - Оновлено `frontend/src/styles.css`: для search form додано явний нижній відступ під `Search Lots`, а saved-search details отримали власний compact detail-grid з тим самим шрифтовим контрактом.
 - Verification: `npm run test --prefix frontend -- app.test.tsx` -> `12 passed`, `npm run build --prefix frontend` -> успішно.
 
+## [2026-03-18 16:31] Align lot preview aspect ratios with Copart image sizes
+- Оновлено `frontend/src/styles.css`: search/watchlist thumbnail-и `LotThumbnail` переведено з квадратного контейнера на `4 / 3` aspect ratio, що відповідає Copart preview `144x108` і прибирає некоректне відображення прев’ю.
+- Оновлено gallery styles для lot photos: hero image та thumbnail strip тепер також використовують `4 / 3`, що відповідає lot image size `960x720` і стабілізує відображення в modal.
+
 ## [2026-03-18 16:24] Remove prefilled login credentials and add admin email link
 - Оновлено `frontend/src/features/auth/LoginScreen.tsx`: поля `Email` і `Password` на login screen тепер стартують порожніми замість predefined `admin@example.com` / `AdminPass123`.
 - Оновлено текст invite hint на login screen: слово `administrator` тепер є `mailto:`-посиланням на `vpm2000@gmail.com` з підготовленими subject/body для запиту invite link.
