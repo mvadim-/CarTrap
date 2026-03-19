@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import type { SearchResult } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
 import { LotThumbnail } from "../shared/LotThumbnail";
+import { shouldUseMobileFullscreen } from "../shared/mobileFullscreen";
 import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 type Props = {
@@ -25,15 +26,6 @@ type Props = {
   statusMessage?: string | null;
   mobileFullscreen?: boolean;
 };
-
-function shouldUseMobileFullscreen(enabled: boolean): boolean {
-  if (!enabled || typeof window === "undefined") {
-    return false;
-  }
-  const hasCoarsePointer =
-    typeof window.matchMedia === "function" ? window.matchMedia("(pointer: coarse)").matches : "ontouchstart" in window;
-  return hasCoarsePointer && window.innerWidth <= 900;
-}
 
 export function SearchResultsModal({
   isOpen,

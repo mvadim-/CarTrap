@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { AsyncStatus } from "../shared/AsyncStatus";
 import { useBodyScrollLock } from "../shared/useBodyScrollLock";
@@ -44,8 +45,11 @@ function SearchableSelector({
         <input
           aria-label={ariaLabel}
           autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
           disabled={disabled}
           placeholder={placeholder}
+          spellCheck={false}
           value={displayValue}
           onChange={(event) => {
             if (!isOpen) {
@@ -163,7 +167,7 @@ export function ManualSearchScreen({
     return null;
   }
 
-  return (
+  const screen = (
     <div className="manual-search-screen" role="dialog" aria-modal="true" aria-label="New Search">
       <header className="manual-search-screen__header">
         <div>
@@ -246,6 +250,7 @@ export function ManualSearchScreen({
               <input
                 inputMode="numeric"
                 maxLength={4}
+                pattern="[0-9]*"
                 value={yearFrom}
                 onChange={(event) => onYearFromChange(event.target.value)}
                 placeholder="2025"
@@ -256,6 +261,7 @@ export function ManualSearchScreen({
               <input
                 inputMode="numeric"
                 maxLength={4}
+                pattern="[0-9]*"
                 value={yearTo}
                 onChange={(event) => onYearToChange(event.target.value)}
                 placeholder="2027"
@@ -295,4 +301,6 @@ export function ManualSearchScreen({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(screen, document.body) : screen;
 }

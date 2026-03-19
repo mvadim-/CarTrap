@@ -705,6 +705,27 @@ describe("CarTrap app", () => {
     expect(screen.getByText("abc123")).toBeTruthy();
   });
 
+  it("renders manual search as a portal outside the pullable app shell after dashboard scroll", async () => {
+    mockMobileViewport();
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 420,
+    });
+
+    await openManualSearch();
+
+    const manualSearchDialog = screen.getByRole("dialog", { name: /new search/i });
+    const appShell = document.querySelector(".app-shell");
+    expect(appShell?.contains(manualSearchDialog)).toBe(false);
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+  });
+
   it("runs manual search and adds result to watchlist", async () => {
     render(<App />);
     submitLoginForm();
@@ -769,6 +790,26 @@ describe("CarTrap app", () => {
     expect(lastSearchPayload?.fuel_type).toBe("electric");
     expect(lastSearchPayload?.lot_condition).toBe("run_and_drive");
     expect(lastSearchPayload?.odometer_range).toBe("under_25000");
+  });
+
+  it("renders search filters as a mobile fullscreen overlay outside the app shell", async () => {
+    mockMobileViewport();
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 360,
+    });
+    await openManualSearch();
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+
+    const filtersDialog = await screen.findByRole("dialog", { name: /search filters/i });
+    const appShell = document.querySelector(".app-shell");
+    expect(appShell?.contains(filtersDialog)).toBe(false);
+    expect(filtersDialog.className).toContain("modal-card--mobile-screen");
   });
 
   it("saves a search, seeds cached results, and reruns it from the saved searches list without live search", async () => {
@@ -1165,6 +1206,46 @@ describe("CarTrap app", () => {
     expect(document.documentElement.style.overflow).toBe("");
   });
 
+  it("renders account menu as a portal sheet outside the app shell after dashboard scroll", async () => {
+    mockMobileViewport();
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 520,
+    });
+    openAccountMenu();
+
+    const accountDialog = await screen.findByRole("dialog", { name: /account menu/i });
+    const appShell = document.querySelector(".app-shell");
+    expect(appShell?.contains(accountDialog)).toBe(false);
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+  });
+
+  it("renders push settings outside the app shell after dashboard scroll on mobile", async () => {
+    mockMobileViewport();
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 520,
+    });
+    openSettingsFromAccountMenu();
+
+    const settingsDialog = await screen.findByRole("dialog", { name: /settings/i });
+    const appShell = document.querySelector(".app-shell");
+    expect(appShell?.contains(settingsDialog)).toBe(false);
+    expect(settingsDialog.className).toContain("modal-card--mobile-screen");
+    expect(document.body.style.position).toBe("fixed");
+  });
+
   it("retries a partial bootstrap failure for saved searches without reloading the whole dashboard", async () => {
     savedSearchesShouldFail = true;
 
@@ -1360,6 +1441,30 @@ describe("CarTrap app", () => {
     await screen.findByRole("dialog", { name: /2025 ford mustang mach-e premium photo gallery/i });
     expect(screen.getByAltText(/2025 ford mustang mach-e premium photo 1/i)).toBeTruthy();
     expect(screen.getByAltText(/2025 ford mustang mach-e premium thumbnail 2/i)).toBeTruthy();
+  });
+
+  it("renders gallery modal as a fullscreen mobile overlay outside the app shell after scroll", async () => {
+    mockMobileViewport();
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "99251295" } });
+    fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
+
+    await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 560,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /open gallery for 2025 ford mustang mach-e premium/i }));
+
+    const galleryDialog = await screen.findByRole("dialog", { name: /2025 ford mustang mach-e premium photo gallery/i });
+    const appShell = document.querySelector(".app-shell");
+    expect(appShell?.contains(galleryDialog)).toBe(false);
+    expect(galleryDialog.className).toContain("modal-card--mobile-screen");
+    expect(document.body.style.position).toBe("fixed");
   });
 
   it("refreshes expired access token and keeps the session active", async () => {

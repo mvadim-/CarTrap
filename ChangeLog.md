@@ -615,3 +615,16 @@
 - Оновлено `frontend/src/styles.css`: додано окремий layout для `search-results-modal` з `chrome/body` секціями та mobile collapsed state, щоб results list отримував більше корисної висоти під час scroll без втрати `Refresh Live / Close`.
 - Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для fullscreen results modal поза `.app-shell`, collapse/un-collapse header chrome при scroll і тестовий stub `window.scrollTo`, щоб suite залишався чистим у JSDOM.
 - Verification: `npm run test --prefix frontend -- app.test.tsx` -> `32 passed`; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-19 14:37] Harden mobile overlays and input ergonomics across frontend
+- Оновлено `frontend/src/features/search/{ManualSearchScreen.tsx,SearchFiltersModal.tsx}` і додано `frontend/src/features/shared/mobileFullscreen.ts`: mobile overlays тепер визначають coarse-pointer fullscreen mode через shared helper, а `New Search` і `Search Filters` рендеряться через portal у `document.body`, щоб fixed layout не ламався після scroll всередині pull-to-refresh shell.
+- Оновлено `frontend/src/features/watchlist/{LotGalleryModal.tsx,WatchlistPanel.tsx}` та `frontend/src/styles.css`: gallery modal також винесено в portal і переведено в mobile fullscreen surface, filter/gallery mobile layouts отримали safe-area-friendly fullscreen стилі, а lot-number input тепер відкриває numeric keyboard без autocorrect noise.
+- Оновлено `frontend/src/features/auth/{LoginScreen.tsx,InviteAcceptScreen.tsx}` і `frontend/src/features/search/ManualSearchScreen.tsx`: додано auth autocomplete hints (`email`, `current-password`, `new-password`), вимкнено небажаний mobile autocorrect/spellcheck для make/model search inputs і підсилено numeric year fields через `pattern="[0-9]*"`.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для portal rendering manual-search / filters / gallery overlays у mobile режимі після scroll основного dashboard.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `35 passed`; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-19 14:42] Fix production-discovered mobile overlay drift for account and settings
+- Після live mobile перевірки production `https://cartrapapp.pp.ua/` під user session підтверджено системний drift overlays після dashboard scroll: `Account menu`, `Search filters` і `Gallery` рендерились усередині прокрученого shell замість незалежного mobile surface.
+- Оновлено `frontend/src/features/dashboard/AccountMenuSheet.tsx` і `frontend/src/features/push/PushSettingsModal.tsx`: обидва overlays тепер використовують `createPortal(..., document.body)` і `useBodyScrollLock`, тож більше не плавають усередині `app-shell` після mobile scroll.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для mobile account menu та push settings after-scroll portal rendering поза `.app-shell`, щоб production-симптом не повернувся.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `37 passed`; `npm run build --prefix frontend` -> успішно.

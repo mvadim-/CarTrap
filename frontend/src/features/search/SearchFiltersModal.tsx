@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   DRIVE_TYPE_OPTIONS,
@@ -9,6 +10,8 @@ import {
   SearchFilterValues,
   TITLE_TYPE_OPTIONS,
 } from "./searchFilters";
+import { shouldUseMobileFullscreen } from "../shared/mobileFullscreen";
+import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 type Props = {
   isOpen: boolean;
@@ -24,6 +27,9 @@ export function SearchFiltersModal({ isOpen, filters, onApply, onClose }: Props)
   const [draftFuelType, setDraftFuelType] = useState(filters.fuelType ?? "");
   const [draftLotCondition, setDraftLotCondition] = useState(filters.lotCondition ?? "");
   const [draftOdometerRange, setDraftOdometerRange] = useState(filters.odometerRange ?? "");
+  const isMobileFullscreen = shouldUseMobileFullscreen();
+
+  useBodyScrollLock(isOpen);
 
   useEffect(() => {
     if (!isOpen) {
@@ -73,11 +79,11 @@ export function SearchFiltersModal({ isOpen, filters, onApply, onClose }: Props)
     draftOdometerRange,
   ].filter(Boolean).length;
 
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
+  const modal = (
+    <div className={`modal-backdrop${isMobileFullscreen ? " modal-backdrop--mobile-screen" : ""}`} onClick={onClose}>
       <div
         aria-modal="true"
-        className="modal-card filter-modal"
+        className={`modal-card filter-modal${isMobileFullscreen ? " modal-card--mobile-screen filter-modal--mobile" : ""}`}
         role="dialog"
         aria-label="Search filters"
         onClick={(event) => event.stopPropagation()}
@@ -202,4 +208,6 @@ export function SearchFiltersModal({ isOpen, filters, onApply, onClose }: Props)
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : modal;
 }

@@ -30,11 +30,27 @@ export function LoginScreen({ error, onSubmit }: Props) {
       <form className="stack" onSubmit={handleSubmit}>
         <label>
           Email
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
+          <input
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            type="email"
+            autoComplete="email"
+            autoCapitalize="off"
+            autoCorrect="off"
+            inputMode="email"
+            spellCheck={false}
+            required
+          />
         </label>
         <label>
           Password
-          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" required />
+          <input
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            type="password"
+            autoComplete="current-password"
+            required
+          />
         </label>
         {error ? <p className="error">{error}</p> : null}
         <button type="submit" disabled={pending}>

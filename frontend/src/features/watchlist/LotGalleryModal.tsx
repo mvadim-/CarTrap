@@ -1,4 +1,8 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+
+import { shouldUseMobileFullscreen } from "../shared/mobileFullscreen";
+import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 type Props = {
   title: string;
@@ -9,6 +13,9 @@ type Props = {
 
 export function LotGalleryModal({ title, imageUrls, isOpen, onClose }: Props) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const isMobileFullscreen = shouldUseMobileFullscreen();
+
+  useBodyScrollLock(isOpen);
 
   useEffect(() => {
     if (!isOpen) {
@@ -36,12 +43,12 @@ export function LotGalleryModal({ title, imageUrls, isOpen, onClose }: Props) {
     return null;
   }
 
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
+  const modal = (
+    <div className={`modal-backdrop${isMobileFullscreen ? " modal-backdrop--mobile-screen" : ""}`} onClick={onClose}>
       <div
         aria-modal="true"
         aria-label={`${title} photo gallery`}
-        className="modal-card gallery-modal"
+        className={`modal-card gallery-modal${isMobileFullscreen ? " modal-card--mobile-screen gallery-modal--mobile" : ""}`}
         role="dialog"
         onClick={(event) => event.stopPropagation()}
       >
@@ -72,4 +79,6 @@ export function LotGalleryModal({ title, imageUrls, isOpen, onClose }: Props) {
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : modal;
 }

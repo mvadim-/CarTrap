@@ -1,6 +1,8 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 import type { LiveSyncStatus, User } from "../../types";
+import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 type Props = {
   isOpen: boolean;
@@ -24,6 +26,8 @@ function formatTimestamp(value: string | null): string {
 }
 
 export function AccountMenuSheet({ isOpen, user, liveSyncStatus, onClose, onOpenSettings, onLogout }: Props) {
+  useBodyScrollLock(isOpen);
+
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -46,7 +50,7 @@ export function AccountMenuSheet({ isOpen, user, liveSyncStatus, onClose, onOpen
   const isAdmin = user.role === "admin";
   const liveSyncTone = liveSyncStatus?.status === "degraded" ? "Degraded" : "Available";
 
-  return (
+  const sheet = (
     <div className="modal-backdrop modal-backdrop--sheet" onClick={onClose}>
       <div
         aria-modal="true"
@@ -131,4 +135,6 @@ export function AccountMenuSheet({ isOpen, user, liveSyncStatus, onClose, onOpen
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(sheet, document.body) : sheet;
 }

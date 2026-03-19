@@ -245,6 +245,12 @@ export function WatchlistPanel({
           <input
             value={lotNumber}
             onChange={(event) => setLotNumber(event.target.value)}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
             placeholder="99251295"
           />
         </label>

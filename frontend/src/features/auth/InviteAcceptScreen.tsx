@@ -33,6 +33,7 @@ export function InviteAcceptScreen({ inviteToken, error, onSubmit }: Props) {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             type="password"
+            autoComplete="new-password"
             minLength={8}
             required
           />

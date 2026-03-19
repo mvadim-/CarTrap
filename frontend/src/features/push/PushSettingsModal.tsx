@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { PushDeliveryResult, PushSubscriptionConfig, PushSubscriptionItem } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
+import { shouldUseMobileFullscreen } from "../shared/mobileFullscreen";
 import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 type Props = {
@@ -41,15 +43,6 @@ function maskEndpoint(endpoint: string): string {
     return endpoint;
   }
   return `${endpoint.slice(0, 28)}...${endpoint.slice(-18)}`;
-}
-
-function shouldUseMobileFullscreen(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  const hasCoarsePointer =
-    typeof window.matchMedia === "function" ? window.matchMedia("(pointer: coarse)").matches : "ontouchstart" in window;
-  return hasCoarsePointer && window.innerWidth <= 900;
 }
 
 export function PushSettingsModal({
@@ -143,7 +136,7 @@ export function PushSettingsModal({
       ? "Loading diagnostics"
       : "Unknown";
 
-  return (
+  const modal = (
     <div
       className={`modal-backdrop${isMobileFullscreen ? " modal-backdrop--mobile-screen" : ""}`}
       onClick={onClose}
@@ -301,4 +294,6 @@ export function PushSettingsModal({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : modal;
 }
