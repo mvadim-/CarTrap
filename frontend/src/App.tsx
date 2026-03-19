@@ -6,6 +6,7 @@ import { AdminInvitesPanel } from "./features/admin/AdminInvitesPanel";
 import { AdminSearchCatalogPanel } from "./features/admin/AdminSearchCatalogPanel";
 import { InviteAcceptScreen } from "./features/auth/InviteAcceptScreen";
 import { LoginScreen } from "./features/auth/LoginScreen";
+import { AccountMenuSheet } from "./features/dashboard/AccountMenuSheet";
 import { DashboardShell } from "./features/dashboard/DashboardShell";
 import { PushSettingsModal } from "./features/push/PushSettingsModal";
 import { SearchPanel } from "./features/search/SearchPanel";
@@ -230,6 +231,8 @@ export function App() {
   const [searchCatalog, setSearchCatalog] = useState<SearchCatalog | null>(null);
   const [permissionState, setPermissionState] = useState(getNotificationPermission());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isManualSearchOpen, setIsManualSearchOpen] = useState(false);
   const [liveSyncStatus, setLiveSyncStatus] = useState<LiveSyncStatus | null>(null);
   const [pushConfig, setPushConfig] = useState<PushSubscriptionConfig | null>(null);
   const [pushConfigError, setPushConfigError] = useState<string | null>(null);
@@ -255,7 +258,11 @@ export function App() {
   const isSecurePushContext = typeof window !== "undefined" ? window.isSecureContext : false;
   const isAdmin = session.user?.role === "admin";
   const isMobilePullToRefreshEnabled =
-    session.isAuthenticated && !isSettingsOpen && typeof window !== "undefined" && supportsMobilePullToRefresh();
+    session.isAuthenticated &&
+    !isSettingsOpen &&
+    !isManualSearchOpen &&
+    typeof window !== "undefined" &&
+    supportsMobilePullToRefresh();
   const pullToRefreshStyle = {
     "--pull-offset": `${pullToRefreshOffset}px`,
     "--pull-progress": `${Math.min(pullToRefreshOffset / PULL_TO_REFRESH_THRESHOLD, 1)}`,
@@ -296,6 +303,9 @@ export function App() {
     setDashboardErrors(INITIAL_DASHBOARD_ERRORS);
     setDashboardLoading(INITIAL_DASHBOARD_LOADING);
     setActionState(INITIAL_ACTION_STATE);
+    setIsAccountMenuOpen(false);
+    setIsSettingsOpen(false);
+    setIsManualSearchOpen(false);
     setPullToRefreshOffset(0);
     setPullToRefreshPhase("idle");
   }
@@ -466,7 +476,7 @@ export function App() {
   }, [pullToRefreshPhase]);
 
   useEffect(() => {
-    if (!session.isAuthenticated || !session.accessToken || isSettingsOpen) {
+    if (!session.isAuthenticated || !session.accessToken || isSettingsOpen || isManualSearchOpen) {
       setPullToRefreshOffset(0);
       if (pullToRefreshPhaseRef.current !== "refreshing") {
         setPullToRefreshPhase("idle");
@@ -564,6 +574,7 @@ export function App() {
   }, [
     isBootstrapping,
     isBrowserOffline,
+    isManualSearchOpen,
     isSettingsOpen,
     session.accessToken,
     session.isAuthenticated,
@@ -1037,6 +1048,7 @@ export function App() {
   }
 
   function handleOpenSettings() {
+    setIsAccountMenuOpen(false);
     setIsSettingsOpen(true);
   }
 
@@ -1066,14 +1078,13 @@ export function App() {
     <>
       <DashboardShell
         user={session.user!}
-        liveSyncStatus={liveSyncStatus}
         isBrowserOffline={isBrowserOffline}
         isBootstrapping={isBootstrapping}
         isPullToRefreshEnabled={isMobilePullToRefreshEnabled}
         pullToRefreshPhase={pullToRefreshPhase}
         pullToRefreshStyle={pullToRefreshStyle}
-        onLogout={handleLogout}
-        onOpenSettings={handleOpenSettings}
+        isAccountMenuOpen={isAccountMenuOpen}
+        onToggleAccountMenu={() => setIsAccountMenuOpen((current) => !current)}
       >
         {globalError ? (
           <AsyncStatus
@@ -1102,6 +1113,9 @@ export function App() {
           addingFromSearchLotUrl={actionState.addingFromSearchLotUrl}
           isBrowserOffline={isBrowserOffline}
           liveSyncStatus={liveSyncStatus}
+          isManualSearchOpen={isManualSearchOpen}
+          onOpenManualSearch={() => setIsManualSearchOpen(true)}
+          onCloseManualSearch={() => setIsManualSearchOpen(false)}
           onSearch={handleSearch}
           onSaveSearch={handleSaveSearch}
           onViewSavedSearch={handleViewSavedSearch}
@@ -1140,6 +1154,14 @@ export function App() {
           </div>
         ) : null}
       </DashboardShell>
+      <AccountMenuSheet
+        isOpen={isAccountMenuOpen}
+        user={session.user!}
+        liveSyncStatus={liveSyncStatus}
+        onClose={() => setIsAccountMenuOpen(false)}
+        onOpenSettings={handleOpenSettings}
+        onLogout={handleLogout}
+      />
       <PushSettingsModal
         isOpen={isSettingsOpen}
         isAdmin={isAdmin}

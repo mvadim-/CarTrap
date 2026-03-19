@@ -580,3 +580,20 @@
 - Оновлено `frontend/public/icons/{cartrap-icon.svg,cartrap-icon-maskable.svg}`: внутрішній помаранчевий знак перемальовано з двозначної форми в просту й чітку `t` з окремою вертикаллю та перекладиною, щоб монограма стабільно читалась як `C + t` на favicon і PWA розмірах.
 - Перегенеровано `frontend/public/{favicon.ico,favicon-16x16.png,favicon-32x32.png,apple-touch-icon.png}` та `frontend/public/icons/{icon-192.png,icon-512.png,icon-maskable-192.png,icon-maskable-512.png}` під оновлений знак.
 - Verification: `python3 scripts/generate_frontend_icons.py` -> успішно; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-19 13:14] Add implementation plan for saved-search inbox mobile refresh
+- Додано `docs/plans/20260319-saved-search-inbox-mobile-refresh.md` з frontend-only планом редизайну dashboard під mobile saved-search-first usage: компактний header, сендвіч-меню для account actions і secondary full-screen flow для `New Search`.
+- У плані зафіксовано обраний UX-напрямок `Saved-first inbox`: `Saved Searches` стають першим екраном, `Open Results` замінюється на tappable title block, quick filters `All / New / Needs refresh` працюють поверх існуючих saved-search metadata без backend contract changes.
+- Окремо винесено вимоги до role-aware поведінки: admin system status ховається в account menu, а device-offline/degraded messaging лишається тільки як глобальний actionable state; для кожного task додано явні test expectations і фінальну build/test verification.
+
+## [2026-03-19 13:18] Tighten saved-search inbox plan after self-review
+- Оновлено `docs/plans/20260319-saved-search-inbox-mobile-refresh.md` після технічного self-review: додано explicit coordination з `App.tsx` для вимкнення pull-to-refresh під час full-screen `New Search`, щоб новий mobile flow не конфліктував з існуючим touch gesture.
+- Уточнено UX-правила, які раніше лишались неявними: `Needs refresh` тепер зафіксований як deterministic UI heuristic (`last_synced_at` відсутній або старший за 24 години), а порожній inbox повинен показувати явний CTA до `New Search`.
+- Скориговано role-aware degraded-state scope: dashboard-level live-sync banner більше не вважається частиною цільового UX, натомість admin бачить system status лише в account menu, а non-admin отримує пояснення через offline/error states на рівні конкретних дій.
+
+## [2026-03-19 13:41] Implement saved-search inbox mobile refresh
+- Оновлено `frontend/src/{App.tsx,styles.css}` і додано `frontend/src/features/dashboard/AccountMenuSheet.tsx`: hero shell замінено на compact header з hamburger account menu, admin-only system status перенесено в sheet, а dashboard-level degraded live-sync banner прибрано при збереженні глобального offline messaging та pull-to-refresh suppression під час full-screen `New Search`.
+- Додано `frontend/src/features/search/ManualSearchScreen.tsx` і суттєво перероблено `frontend/src/features/search/SearchPanel.tsx`: dashboard тепер saved-search-first, підтримує quick filters `All / New / Needs refresh`, tappable title block замість `Open Results`, overflow menu для `Refresh Live / Open URL / Delete`, sticky `New Search` CTA та повернення в inbox після save/cancel.
+- Оновлено `frontend/tests/app.test.tsx`: suite переведено на новий mobile flow, додано покриття для account menu, inbox filters/order, overflow actions, title-block open, full-screen manual-search flow і блокування pull-to-refresh під час composer.
+- Оновлено `docs/plans/20260319-saved-search-inbox-mobile-refresh.md`: усі task-и позначені виконаними перед переміщенням у `docs/plans/completed/`.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `29 passed`; `npm run test --prefix frontend` -> `29 passed`; `npm run build --prefix frontend` -> успішно.

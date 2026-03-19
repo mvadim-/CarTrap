@@ -10,116 +10,10 @@ import type {
   SearchResult,
 } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
+import { ManualSearchScreen, type SearchableOption } from "./ManualSearchScreen";
 import { SearchFiltersModal } from "./SearchFiltersModal";
 import { SearchResultsModal } from "./SearchResultsModal";
-import { getSearchFilterLabels, SearchFilterValues } from "./searchFilters";
-
-type SearchableOption = {
-  slug: string;
-  name: string;
-};
-
-function normalizeSearchValue(value: string): string {
-  return value.trim().toUpperCase();
-}
-
-function tokenizeSearchValue(value: string): string[] {
-  return normalizeSearchValue(value)
-    .split(/[^A-Z0-9]+/)
-    .filter(Boolean);
-}
-
-function matchesMakeQuery(name: string, query: string): boolean {
-  const normalizedQuery = normalizeSearchValue(query);
-  if (!normalizedQuery) {
-    return true;
-  }
-  return normalizeSearchValue(name).startsWith(normalizedQuery);
-}
-
-function matchesModelQuery(name: string, query: string): boolean {
-  const queryTokens = tokenizeSearchValue(query);
-  if (queryTokens.length === 0) {
-    return true;
-  }
-  const nameTokens = tokenizeSearchValue(name);
-  return queryTokens.every((queryToken) => nameTokens.some((nameToken) => nameToken.startsWith(queryToken)));
-}
-
-type SearchableSelectorProps = {
-  label: string;
-  ariaLabel: string;
-  placeholder: string;
-  query: string;
-  selectedLabel?: string;
-  options: SearchableOption[];
-  emptyMessage: string;
-  disabled?: boolean;
-  onQueryChange: (value: string) => void;
-  onSelect: (option: SearchableOption) => void;
-};
-
-function SearchableSelector({
-  label,
-  ariaLabel,
-  placeholder,
-  query,
-  selectedLabel,
-  options,
-  emptyMessage,
-  disabled = false,
-  onQueryChange,
-  onSelect,
-}: SearchableSelectorProps) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  const displayValue = isOpen ? query : query || selectedLabel || "";
-
-  return (
-    <label className="searchable-select">
-      {label}
-      <div className="searchable-select__field">
-        <input
-          aria-label={ariaLabel}
-          autoComplete="off"
-          disabled={disabled}
-          placeholder={placeholder}
-          value={displayValue}
-          onChange={(event) => {
-            if (!isOpen) {
-              setIsOpen(true);
-            }
-            onQueryChange(event.target.value);
-          }}
-          onFocus={() => setIsOpen(true)}
-          onBlur={() => window.setTimeout(() => setIsOpen(false), 120)}
-        />
-        {isOpen ? (
-          <div className="searchable-select__menu" role="listbox" aria-label={`${label} options`}>
-            {options.length === 0 ? (
-              <p className="searchable-select__empty muted">{emptyMessage}</p>
-            ) : (
-              options.map((option) => (
-                <button
-                  key={option.slug}
-                  type="button"
-                  className="searchable-select__option"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    onSelect(option);
-                    setIsOpen(false);
-                  }}
-                >
-                  {option.name}
-                </button>
-              ))
-            )}
-          </div>
-        ) : null}
-      </div>
-    </label>
-  );
-}
+import { getSearchFilterLabels } from "./searchFilters";
 
 type SearchPayload = {
   make?: string;
@@ -153,6 +47,9 @@ type Props = {
   addingFromSearchLotUrl: string | null;
   isBrowserOffline: boolean;
   liveSyncStatus: LiveSyncStatus | null;
+  isManualSearchOpen: boolean;
+  onOpenManualSearch: () => void;
+  onCloseManualSearch: () => void;
   onSearch: (payload: SearchPayload) => Promise<{ results: SearchResult[]; total_results: number }>;
   onSaveSearch: (payload: SearchPayload & { seedResults?: SearchResult[]; totalResults?: number }) => Promise<SavedSearch>;
   onViewSavedSearch: (id: string) => Promise<SavedSearchResultsResponse>;
@@ -174,6 +71,37 @@ type SearchModalState = {
   statusMessage: string | null;
 };
 
+type SavedSearchQuickFilter = "all" | "new" | "needs-refresh";
+
+const SAVED_SEARCH_REFRESH_STALE_MS = 24 * 60 * 60 * 1000;
+
+function normalizeSearchValue(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+function tokenizeSearchValue(value: string): string[] {
+  return normalizeSearchValue(value)
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean);
+}
+
+function matchesMakeQuery(name: string, query: string): boolean {
+  const normalizedQuery = normalizeSearchValue(query);
+  if (!normalizedQuery) {
+    return true;
+  }
+  return normalizeSearchValue(name).startsWith(normalizedQuery);
+}
+
+function matchesModelQuery(name: string, query: string): boolean {
+  const queryTokens = tokenizeSearchValue(query);
+  if (queryTokens.length === 0) {
+    return true;
+  }
+  const nameTokens = tokenizeSearchValue(name);
+  return queryTokens.every((queryToken) => nameTokens.some((nameToken) => nameToken.startsWith(queryToken)));
+}
+
 function formatLotCount(count: number | null | undefined): string {
   if (count === null || count === undefined) {
     return "Lot count unavailable";
@@ -190,6 +118,98 @@ function formatYearRange(from?: string, to?: string): string {
 
 function formatFilterSummary(labels: string[]): string {
   return labels.length > 0 ? labels.join(" · ") : "No filters";
+}
+
+function isSavedSearchNeedingRefresh(item: SavedSearch, now: number): boolean {
+  if (!item.last_synced_at) {
+    return true;
+  }
+  const lastSyncedAt = new Date(item.last_synced_at).getTime();
+  if (Number.isNaN(lastSyncedAt)) {
+    return true;
+  }
+  return now - lastSyncedAt >= SAVED_SEARCH_REFRESH_STALE_MS;
+}
+
+function getSavedSearchSortTimestamp(item: SavedSearch): number {
+  return new Date(item.last_synced_at ?? item.created_at).getTime() || 0;
+}
+
+function getSavedSearchPriority(item: SavedSearch, now: number): number {
+  if (item.new_count > 0) {
+    return 0;
+  }
+  if (isSavedSearchNeedingRefresh(item, now)) {
+    return 1;
+  }
+  return 2;
+}
+
+function formatSavedSearchYears(item: SavedSearch): string {
+  return formatYearRange(item.criteria.year_from?.toString(), item.criteria.year_to?.toString());
+}
+
+function formatSavedSearchCriteriaSummary(item: SavedSearch): string {
+  return [item.criteria.make ?? "Any make", item.criteria.model ?? "Any model", formatSavedSearchYears(item)].join(
+    " / ",
+  );
+}
+
+function formatSavedSearchFilterSummary(item: SavedSearch): string {
+  return formatFilterSummary(
+    getSearchFilterLabels({
+      driveType: item.criteria.drive_type,
+      primaryDamage: item.criteria.primary_damage,
+      titleType: item.criteria.title_type,
+      fuelType: item.criteria.fuel_type,
+      lotCondition: item.criteria.lot_condition,
+      odometerRange: item.criteria.odometer_range,
+    }),
+  );
+}
+
+function formatLastSyncedLabel(value: string | null): string {
+  return value ? new Date(value).toLocaleString() : "Not yet";
+}
+
+function filterMatchesSavedSearch(item: SavedSearch, filter: SavedSearchQuickFilter, now: number): boolean {
+  switch (filter) {
+    case "new":
+      return item.new_count > 0;
+    case "needs-refresh":
+      return isSavedSearchNeedingRefresh(item, now);
+    default:
+      return true;
+  }
+}
+
+function getSavedSearchSyncState(
+  item: SavedSearch,
+  now: number,
+  refreshingSavedSearchId: string | null,
+  isBrowserOffline: boolean,
+  isLiveSyncUnavailable: boolean,
+): string {
+  if (refreshingSavedSearchId === item.id) {
+    return "Refreshing live now";
+  }
+  if (item.new_count > 0) {
+    return "NEW matches ready";
+  }
+  if (isBrowserOffline) {
+    return "Device offline";
+  }
+  if (isLiveSyncUnavailable) {
+    return "Live refresh unavailable";
+  }
+  if (isSavedSearchNeedingRefresh(item, now)) {
+    return "Needs refresh";
+  }
+  return "Cached results ready";
+}
+
+function buildSavedSearchTitleButtonLabel(item: SavedSearch): string {
+  return `${item.label} ${formatSavedSearchCriteriaSummary(item)}`;
 }
 
 export function SearchPanel({
@@ -209,6 +229,9 @@ export function SearchPanel({
   addingFromSearchLotUrl,
   isBrowserOffline,
   liveSyncStatus,
+  isManualSearchOpen,
+  onOpenManualSearch,
+  onCloseManualSearch,
   onSearch,
   onSaveSearch,
   onViewSavedSearch,
@@ -234,6 +257,9 @@ export function SearchPanel({
   const [manualSearchError, setManualSearchError] = useState<string | null>(null);
   const [savedSearchError, setSavedSearchError] = useState<string | null>(null);
   const [savedSearchNotice, setSavedSearchNotice] = useState<string | null>(null);
+  const [quickFilter, setQuickFilter] = useState<SavedSearchQuickFilter>("all");
+  const [openSavedSearchMenuId, setOpenSavedSearchMenuId] = useState<string | null>(null);
+  const [highlightedSavedSearchId, setHighlightedSavedSearchId] = useState<string | null>(null);
   const [searchModal, setSearchModal] = useState<SearchModalState>({
     isOpen: false,
     mode: "manual",
@@ -252,6 +278,7 @@ export function SearchPanel({
   const filteredModels = selectedMake?.models.filter((item) => matchesModelQuery(item.name, modelQuery)) ?? [];
   const selectedModel: SearchCatalogModel | null = selectedMake?.models.find((item) => item.slug === selectedModelSlug) ?? null;
   const isLiveSyncUnavailable = liveSyncStatus?.status === "degraded";
+  const now = Date.now();
 
   useEffect(() => {
     if (!catalog || catalog.makes.length === 0) {
@@ -307,6 +334,36 @@ export function SearchPanel({
     setSelectedModelSlug(filteredModels[0].slug);
   }, [filteredModels, modelQuery, selectedMake, selectedModelSlug]);
 
+  useEffect(() => {
+    if (!openSavedSearchMenuId) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (target.closest("[data-saved-search-menu]") || target.closest("[data-saved-search-menu-trigger]")) {
+        return;
+      }
+      setOpenSavedSearchMenuId(null);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenSavedSearchMenuId(null);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openSavedSearchMenuId]);
+
   function buildPayload(makeOverride?: SearchCatalogMake | null, modelOverride?: SearchCatalogModel | null): SearchPayload {
     const resolvedMake = makeOverride ?? selectedMake;
     const resolvedModel = modelOverride ?? selectedModel;
@@ -324,6 +381,22 @@ export function SearchPanel({
       yearFrom,
       yearTo,
     };
+  }
+
+  function openSavedSearchModal(response: SavedSearchResultsResponse, statusMessage: string | null) {
+    setSearchModal({
+      isOpen: true,
+      mode: "saved",
+      title: response.saved_search.label,
+      results: response.results,
+      totalResults: response.cached_result_count,
+      canSave: false,
+      savedSearchId: response.saved_search.id,
+      lastSyncedAt: response.last_synced_at,
+      refreshError: null,
+      statusMessage,
+    });
+    setIsResultsOpen(true);
   }
 
   async function runSearch(payload: SearchPayload) {
@@ -380,22 +453,12 @@ export function SearchPanel({
     setOdometerRange(savedSearch.criteria.odometer_range);
     setSavedSearchError(null);
     setSavedSearchNotice(null);
+    setOpenSavedSearchMenuId(null);
+    setHighlightedSavedSearchId(null);
 
     try {
       const response = await onViewSavedSearch(savedSearch.id);
-      setSearchModal({
-        isOpen: true,
-        mode: "saved",
-        title: response.saved_search.label,
-        results: response.results,
-        totalResults: response.cached_result_count,
-        canSave: false,
-        savedSearchId: savedSearch.id,
-        lastSyncedAt: response.last_synced_at,
-        refreshError: null,
-        statusMessage: "Opened cached results. Live refresh stays available from this modal.",
-      });
-      setIsResultsOpen(true);
+      openSavedSearchModal(response, "Opened cached results. Live refresh stays available from this modal.");
     } catch (error) {
       setSearchModal((current) => ({ ...current, isOpen: false }));
       setIsResultsOpen(false);
@@ -410,16 +473,22 @@ export function SearchPanel({
     setManualSearchError(null);
     setSavedSearchError(null);
     try {
-      await onSaveSearch({
+      const saved = await onSaveSearch({
         ...lastSubmittedPayload,
         seedResults: searchModal.results,
         totalResults: searchModal.totalResults,
       });
+      setQuickFilter("all");
       setSavedSearchNotice("Saved search ready.");
+      setHighlightedSavedSearchId(saved.id);
       setSearchModal((current) => ({
         ...current,
-        statusMessage: "Saved search ready. Cached results can be reopened from the saved list.",
+        isOpen: false,
+        refreshError: null,
+        statusMessage: null,
       }));
+      setIsResultsOpen(false);
+      onCloseManualSearch();
     } catch (error) {
       setManualSearchError(error instanceof Error ? error.message : "Could not save search.");
     }
@@ -432,18 +501,7 @@ export function SearchPanel({
     setSavedSearchError(null);
     try {
       const response = await onRefreshSavedSearch(searchModal.savedSearchId);
-      setSearchModal({
-        isOpen: true,
-        mode: "saved",
-        title: response.saved_search.label,
-        results: response.results,
-        totalResults: response.cached_result_count,
-        canSave: false,
-        savedSearchId: response.saved_search.id,
-        lastSyncedAt: response.last_synced_at,
-        refreshError: null,
-        statusMessage: "Live refresh completed. Cached results are now up to date.",
-      });
+      openSavedSearchModal(response, "Live refresh completed. Cached results are now up to date.");
       setSavedSearchNotice(`Live refresh completed for ${response.saved_search.label}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not refresh saved search.";
@@ -456,54 +514,32 @@ export function SearchPanel({
     }
   }
 
+  async function handleRefreshSavedSearchFromList(savedSearch: SavedSearch) {
+    setSavedSearchError(null);
+    setSavedSearchNotice(null);
+    setOpenSavedSearchMenuId(null);
+    try {
+      const response = await onRefreshSavedSearch(savedSearch.id);
+      openSavedSearchModal(response, "Live refresh completed. Cached results are now up to date.");
+      setSavedSearchNotice(`Live refresh completed for ${response.saved_search.label}.`);
+    } catch (error) {
+      setSavedSearchError(error instanceof Error ? error.message : "Could not refresh saved search.");
+    }
+  }
+
   async function handleDeleteSavedSearch(id: string) {
     setSavedSearchError(null);
     setSavedSearchNotice(null);
+    setOpenSavedSearchMenuId(null);
     try {
       await onDeleteSavedSearch(id);
+      if (highlightedSavedSearchId === id) {
+        setHighlightedSavedSearchId(null);
+      }
       setSavedSearchNotice("Saved search removed.");
     } catch (error) {
       setSavedSearchError(error instanceof Error ? error.message : "Could not delete saved search.");
     }
-  }
-
-  function formatSavedSearchYears(item: SavedSearch): string {
-    return formatYearRange(item.criteria.year_from?.toString(), item.criteria.year_to?.toString());
-  }
-
-  function formatSavedSearchCriteriaSummary(item: SavedSearch): string {
-    return [item.criteria.make ?? "Any make", item.criteria.model ?? "Any model", formatSavedSearchYears(item)].join(
-      " / ",
-    );
-  }
-
-  function formatSavedSearchFilterSummary(item: SavedSearch): string {
-    return formatFilterSummary(
-      getSearchFilterLabels({
-        driveType: item.criteria.drive_type,
-        primaryDamage: item.criteria.primary_damage,
-        titleType: item.criteria.title_type,
-        fuelType: item.criteria.fuel_type,
-        lotCondition: item.criteria.lot_condition,
-        odometerRange: item.criteria.odometer_range,
-      }),
-    );
-  }
-
-  function getSavedSearchSyncState(item: SavedSearch): string {
-    if (refreshingSavedSearchId === item.id) {
-      return "Refreshing live now";
-    }
-    if (isBrowserOffline) {
-      return "Device offline";
-    }
-    if (isLiveSyncUnavailable) {
-      return "Live sync unavailable";
-    }
-    if (!item.last_synced_at) {
-      return "Never synced";
-    }
-    return "Cached results ready";
   }
 
   const activeFilterLabels = getSearchFilterLabels({
@@ -515,145 +551,87 @@ export function SearchPanel({
     odometerRange,
   });
 
-  return (
-    <section className="panel panel--search panel--operational">
-      <div className="panel-header">
-        <div>
-          <p className="eyebrow">Search</p>
-          <h2>Manual Copart Search</h2>
-        </div>
-      </div>
-      {isLoadingCatalog && !catalog ? (
-        <AsyncStatus
-          progress="bar"
-          title="Loading search catalog"
-          message="Make and model options are loading for this device."
-          className="panel-status"
-        />
-      ) : null}
-      {catalogError ? (
-        <AsyncStatus
-          tone="error"
-          title="Search catalog unavailable"
-          message={catalogError}
-          action={
-            <button type="button" className="ghost-button" onClick={() => void onRetryCatalog()}>
-              Retry catalog
-            </button>
-          }
-          className="panel-status"
-        />
-      ) : null}
-      {manualSearchError ? (
-        <AsyncStatus tone="error" title="Search request failed" message={manualSearchError} className="panel-status" />
-      ) : null}
-      {savedSearchNotice ? (
-        <AsyncStatus tone="success" compact message={savedSearchNotice} className="panel-status" />
-      ) : null}
-      <form className="search-grid search-grid--panel" onSubmit={handleSubmit} aria-busy={isSearching}>
-        <SearchableSelector
-          label="Make"
-          ariaLabel="Make"
-          query={makeQuery}
-          selectedLabel={selectedMake?.name}
-          placeholder="Type make prefix"
-          options={filteredMakes}
-          emptyMessage={catalog ? "No makes found." : "Loading catalog..."}
-          disabled={isLoadingCatalog || !catalog}
-          onQueryChange={(value) => {
-            setMakeQuery(value);
-            setModelQuery("");
-          }}
-          onSelect={(option) => {
-            setSelectedMakeSlug(option.slug);
-            setMakeQuery("");
-            setSelectedModelSlug("");
-            setModelQuery("");
-          }}
-        />
-        <SearchableSelector
-          label="Model"
-          ariaLabel="Model"
-          query={modelQuery}
-          selectedLabel={selectedModel?.name}
-          placeholder="Type model word"
-          options={filteredModels}
-          emptyMessage={selectedMake ? "No models found." : "Select make first."}
-          disabled={!selectedMake || selectedMake.models.length === 0}
-          onQueryChange={(value) => setModelQuery(value)}
-          onSelect={(option) => {
-            setSelectedModelSlug(option.slug);
-            setModelQuery("");
-          }}
-        />
-        <div className="search-grid__year-group">
-          <label className="search-grid__year-field">
-            Year From
-            <input
-              inputMode="numeric"
-              maxLength={4}
-              value={yearFrom}
-              onChange={(event) => setYearFrom(event.target.value)}
-              placeholder="2025"
-            />
-          </label>
-          <label className="search-grid__year-field">
-            Year To
-            <input
-              inputMode="numeric"
-              maxLength={4}
-              value={yearTo}
-              onChange={(event) => setYearTo(event.target.value)}
-              placeholder="2027"
-            />
-          </label>
-        </div>
-        <div className="search-grid__actions">
-          <button type="submit" disabled={!selectedMake || isSearching} aria-busy={isSearching}>
-            {isSearching ? "Searching..." : "Search Lots"}
-          </button>
-          <button
-            type="button"
-            className="ghost-button search-grid__filters-button"
-            aria-label={activeFilterLabels.length > 0 ? `Filters (${activeFilterLabels.length} active)` : "Filters"}
-            onClick={() => setIsFiltersOpen(true)}
-          >
-            <span>Filters</span>
-            {activeFilterLabels.length > 0 ? (
-              <span className="search-grid__filters-count" aria-hidden="true">
-                {activeFilterLabels.length}
-              </span>
-            ) : null}
-          </button>
-        </div>
-      </form>
-      {isSearching ? (
-        <AsyncStatus
-          compact
-          progress="bar"
-          title="Searching Copart"
-          message="Current filters stay in place while live results load."
-          className="panel-status"
-        />
-      ) : null}
-      <div className="search-summary-bar" aria-live="polite">
-        <p className="search-summary-bar__headline">
-          {selectedMake?.name ?? "Any make"} / {selectedModel?.name ?? "Any model"} / {formatYearRange(yearFrom, yearTo)}
-        </p>
-        <p className="search-summary-bar__meta">Filters: {formatFilterSummary(activeFilterLabels)}</p>
-      </div>
-      {!catalog && !isLoadingCatalog && !catalogError ? <p className="muted">Search catalog is unavailable.</p> : null}
+  const summaryLabel = `${selectedMake?.name ?? "Any make"} / ${selectedModel?.name ?? "Any model"} / ${formatYearRange(
+    yearFrom,
+    yearTo,
+  )}`;
+  const quickFilterCounts = {
+    all: savedSearches.length,
+    new: savedSearches.filter((item) => item.new_count > 0).length,
+    "needs-refresh": savedSearches.filter((item) => isSavedSearchNeedingRefresh(item, now)).length,
+  };
+  const visibleSavedSearches = [...savedSearches]
+    .sort((left, right) => {
+      const priorityDelta = getSavedSearchPriority(left, now) - getSavedSearchPriority(right, now);
+      if (priorityDelta !== 0) {
+        return priorityDelta;
+      }
+      const timestampDelta = getSavedSearchSortTimestamp(right) - getSavedSearchSortTimestamp(left);
+      if (timestampDelta !== 0) {
+        return timestampDelta;
+      }
+      return left.label.localeCompare(right.label);
+    })
+    .filter((item) => filterMatchesSavedSearch(item, quickFilter, now));
+  const hasVisibleSavedSearches = visibleSavedSearches.length > 0;
 
-      <div className="saved-searches">
-        <div className="panel-header">
+  const makeOptions: SearchableOption[] = filteredMakes.map((item) => ({ slug: item.slug, name: item.name }));
+  const modelOptions: SearchableOption[] = filteredModels.map((item) => ({ slug: item.slug, name: item.name }));
+
+  return (
+    <>
+      <section className="panel panel--search panel--operational search-panel">
+        <div className="panel-header search-panel__header">
           <div>
-            <p className="eyebrow">Saved</p>
-            <h3>Saved Searches</h3>
+            <p className="eyebrow">Inbox</p>
+            <h2>Saved Searches</h2>
+            <p className="muted search-panel__lede">
+              Open cached results from the title block, surface new matches first, and push manual search into a
+              secondary flow.
+            </p>
           </div>
+          <button type="button" className="ghost-button search-panel__new-search-button" onClick={onOpenManualSearch}>
+            New Search
+          </button>
         </div>
+
+        {savedSearchNotice ? (
+          <AsyncStatus tone="success" compact message={savedSearchNotice} className="panel-status" />
+        ) : null}
         {savedSearchError ? (
           <AsyncStatus tone="error" title="Saved-search action failed" message={savedSearchError} className="panel-status" />
         ) : null}
+
+        <div className="saved-search-inbox-toolbar" aria-label="Saved search filters">
+          <button
+            type="button"
+            className={`saved-search-filter-chip${quickFilter === "all" ? " is-active" : ""}`}
+            aria-pressed={quickFilter === "all"}
+            onClick={() => setQuickFilter("all")}
+          >
+            All
+            <span aria-hidden="true">{quickFilterCounts.all}</span>
+          </button>
+          <button
+            type="button"
+            className={`saved-search-filter-chip${quickFilter === "new" ? " is-active" : ""}`}
+            aria-pressed={quickFilter === "new"}
+            onClick={() => setQuickFilter("new")}
+          >
+            New
+            <span aria-hidden="true">{quickFilterCounts.new}</span>
+          </button>
+          <button
+            type="button"
+            className={`saved-search-filter-chip${quickFilter === "needs-refresh" ? " is-active" : ""}`}
+            aria-pressed={quickFilter === "needs-refresh"}
+            onClick={() => setQuickFilter("needs-refresh")}
+          >
+            Needs refresh
+            <span aria-hidden="true">{quickFilterCounts["needs-refresh"]}</span>
+          </button>
+        </div>
+
         {isLoadingSavedSearches && savedSearches.length === 0 ? (
           <AsyncStatus
             progress="spinner"
@@ -662,6 +640,7 @@ export function SearchPanel({
             className="panel-status"
           />
         ) : null}
+
         {savedSearchesError ? (
           <AsyncStatus
             tone="error"
@@ -675,21 +654,77 @@ export function SearchPanel({
             className="panel-status"
           />
         ) : null}
-        <div className="result-list">
+
+        <div className="result-list saved-search-inbox">
           {!isLoadingSavedSearches && savedSearches.length === 0 && !savedSearchesError ? (
-            <p className="muted">No saved searches yet.</p>
-          ) : (
-            savedSearches.map((item) => (
-              <article key={item.id} className="result-card saved-search-card">
+            <div className="saved-search-empty-state">
+              <p className="saved-search-empty-state__title">No saved searches yet.</p>
+              <p className="muted">
+                Start with a manual search, then save the result set you want this inbox to monitor.
+              </p>
+              <button type="button" onClick={onOpenManualSearch}>
+                New Search
+              </button>
+            </div>
+          ) : null}
+
+          {!savedSearchesError && savedSearches.length > 0 && !hasVisibleSavedSearches ? (
+            <div className="saved-search-empty-state saved-search-empty-state--filtered">
+              <p className="saved-search-empty-state__title">No searches match this filter.</p>
+              <p className="muted">Try another inbox filter or start a new saved search.</p>
+              <div className="saved-search-empty-state__actions">
+                <button type="button" className="ghost-button" onClick={() => setQuickFilter("all")}>
+                  Show all
+                </button>
+                <button type="button" onClick={onOpenManualSearch}>
+                  New Search
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {visibleSavedSearches.map((item) => {
+            const isMenuOpen = openSavedSearchMenuId === item.id;
+            const isHighlighted = highlightedSavedSearchId === item.id;
+            const syncState = getSavedSearchSyncState(
+              item,
+              now,
+              refreshingSavedSearchId,
+              isBrowserOffline,
+              isLiveSyncUnavailable,
+            );
+
+            return (
+              <article
+                key={item.id}
+                className={`result-card saved-search-card${isHighlighted ? " saved-search-card--highlighted" : ""}`}
+              >
                 <div className="saved-search-card__body">
                   <div className="saved-search-card__header">
-                    <div className="saved-search-card__title-block">
-                      <strong>{item.label}</strong>
-                      <p className="saved-search-card__criteria">{formatSavedSearchCriteriaSummary(item)}</p>
+                    <button
+                      type="button"
+                      className="saved-search-card__title-button"
+                      onClick={() => void handleRunSavedSearch(item)}
+                      disabled={openingSavedSearchId === item.id}
+                      aria-busy={openingSavedSearchId === item.id}
+                    >
+                      <div className="saved-search-card__title-block">
+                        <strong>{item.label}</strong>
+                        <p className="saved-search-card__criteria">{formatSavedSearchCriteriaSummary(item)}</p>
+                      </div>
+                      <span className="saved-search-card__open-label">
+                        {openingSavedSearchId === item.id ? "Opening..." : "Open cached results"}
+                      </span>
+                      <span className="sr-only">{buildSavedSearchTitleButtonLabel(item)}</span>
+                    </button>
+                    <div className="saved-search-card__header-badges">
+                      {isHighlighted ? <span className="saved-search-card__saved-badge">Just saved</span> : null}
+                      {item.new_count > 0 ? <span className="new-badge">{item.new_count} NEW</span> : null}
                     </div>
-                    {item.new_count > 0 ? <span className="new-badge">{item.new_count} NEW</span> : null}
                   </div>
+
                   <p className="saved-search-card__filters">Filters: {formatSavedSearchFilterSummary(item)}</p>
+
                   <dl className="saved-search-card__metrics">
                     <div className="saved-search-card__metric">
                       <dt className="detail-label">Matches</dt>
@@ -697,45 +732,113 @@ export function SearchPanel({
                     </div>
                     <div className="saved-search-card__metric">
                       <dt className="detail-label">Freshness</dt>
-                      <dd className="detail-value">{getSavedSearchSyncState(item)}</dd>
+                      <dd className="detail-value">{syncState}</dd>
                     </div>
                     <div className="saved-search-card__metric">
                       <dt className="detail-label">Last synced</dt>
-                      <dd className="detail-value">
-                        {item.last_synced_at ? new Date(item.last_synced_at).toLocaleString() : "Not yet"}
-                      </dd>
+                      <dd className="detail-value">{formatLastSyncedLabel(item.last_synced_at)}</dd>
                     </div>
                   </dl>
                 </div>
+
                 <div className="saved-search-card__actions">
                   <button
                     type="button"
-                    onClick={() => void handleRunSavedSearch(item)}
-                    disabled={openingSavedSearchId === item.id}
-                    aria-busy={openingSavedSearchId === item.id}
+                    className="ghost-button saved-search-card__menu-trigger"
+                    data-saved-search-menu-trigger="true"
+                    aria-expanded={isMenuOpen}
+                    aria-haspopup="menu"
+                    aria-label={`More actions for ${item.label}`}
+                    onClick={() => setOpenSavedSearchMenuId((current) => (current === item.id ? null : item.id))}
                   >
-                    {openingSavedSearchId === item.id ? "Opening..." : "Open Results"}
+                    More
                   </button>
-                  <div className="saved-search-card__secondary-actions">
-                    <a className="ghost-button" href={item.external_url} target="_blank" rel="noreferrer">
-                      Open URL
-                    </a>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={() => void handleDeleteSavedSearch(item.id)}
-                      disabled={deletingSavedSearchId === item.id}
-                      aria-busy={deletingSavedSearchId === item.id}
-                    >
-                      {deletingSavedSearchId === item.id ? "Deleting..." : "Delete"}
-                    </button>
-                  </div>
+
+                  {isMenuOpen ? (
+                    <div className="saved-search-actions-menu" role="menu" data-saved-search-menu="true">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="saved-search-actions-menu__item"
+                        onClick={() => void handleRefreshSavedSearchFromList(item)}
+                        disabled={refreshingSavedSearchId === item.id}
+                      >
+                        {refreshingSavedSearchId === item.id ? "Refreshing..." : "Refresh Live"}
+                      </button>
+                      <a
+                        role="menuitem"
+                        className="saved-search-actions-menu__item"
+                        href={item.external_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={() => setOpenSavedSearchMenuId(null)}
+                      >
+                        Open URL
+                      </a>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="saved-search-actions-menu__item saved-search-actions-menu__item--danger"
+                        onClick={() => void handleDeleteSavedSearch(item.id)}
+                        disabled={deletingSavedSearchId === item.id}
+                      >
+                        {deletingSavedSearchId === item.id ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </article>
-            ))
-          )}
+            );
+          })}
         </div>
-      </div>
+
+        <div className="search-panel__sticky-cta">
+          <button type="button" className="search-panel__sticky-button" onClick={onOpenManualSearch}>
+            New Search
+          </button>
+        </div>
+      </section>
+
+      <ManualSearchScreen
+        isOpen={isManualSearchOpen}
+        isLoadingCatalog={isLoadingCatalog}
+        catalogReady={catalog !== null}
+        catalogError={catalogError}
+        onRetryCatalog={onRetryCatalog}
+        manualSearchError={manualSearchError}
+        isSearching={isSearching}
+        makeQuery={makeQuery}
+        selectedMakeLabel={selectedMake?.name}
+        makeOptions={makeOptions}
+        onMakeQueryChange={(value) => {
+          setMakeQuery(value);
+          setModelQuery("");
+        }}
+        onMakeSelect={(option) => {
+          setSelectedMakeSlug(option.slug);
+          setMakeQuery("");
+          setSelectedModelSlug("");
+          setModelQuery("");
+        }}
+        modelQuery={modelQuery}
+        selectedModelLabel={selectedModel?.name}
+        modelOptions={modelOptions}
+        onModelQueryChange={(value) => setModelQuery(value)}
+        onModelSelect={(option) => {
+          setSelectedModelSlug(option.slug);
+          setModelQuery("");
+        }}
+        isModelDisabled={!selectedMake || selectedMake.models.length === 0}
+        yearFrom={yearFrom}
+        yearTo={yearTo}
+        onYearFromChange={setYearFrom}
+        onYearToChange={setYearTo}
+        activeFilterLabels={activeFilterLabels}
+        summaryLabel={summaryLabel}
+        onOpenFilters={() => setIsFiltersOpen(true)}
+        onClose={onCloseManualSearch}
+        onSubmit={handleSubmit}
+      />
 
       <SearchResultsModal
         isOpen={isResultsOpen && searchModal.isOpen}
@@ -758,31 +861,34 @@ export function SearchPanel({
         addingFromSearchLotUrl={addingFromSearchLotUrl}
         canRefreshLive={searchModal.mode === "saved" && searchModal.savedSearchId !== null}
         onRefreshLive={handleRefreshCurrentSavedSearch}
-        isRefreshingLive={searchModal.savedSearchId !== null && refreshingSavedSearchId === searchModal.savedSearchId}
+        isRefreshingLive={
+          searchModal.savedSearchId !== null && refreshingSavedSearchId === searchModal.savedSearchId
+        }
         lastSyncedAt={searchModal.lastSyncedAt}
         refreshError={searchModal.refreshError}
         statusMessage={searchModal.statusMessage}
       />
+
       <SearchFiltersModal
         isOpen={isFiltersOpen}
-        filters={{ driveType, primaryDamage, titleType, fuelType, lotCondition, odometerRange }}
-        onApply={({
-          driveType: nextDriveType,
-          primaryDamage: nextPrimaryDamage,
-          titleType: nextTitleType,
-          fuelType: nextFuelType,
-          lotCondition: nextLotCondition,
-          odometerRange: nextOdometerRange,
-        }: SearchFilterValues) => {
-          setDriveType(nextDriveType);
-          setPrimaryDamage(nextPrimaryDamage);
-          setTitleType(nextTitleType);
-          setFuelType(nextFuelType);
-          setLotCondition(nextLotCondition);
-          setOdometerRange(nextOdometerRange);
+        filters={{
+          driveType,
+          primaryDamage,
+          titleType,
+          fuelType,
+          lotCondition,
+          odometerRange,
+        }}
+        onApply={(filters) => {
+          setDriveType(filters.driveType);
+          setPrimaryDamage(filters.primaryDamage);
+          setTitleType(filters.titleType);
+          setFuelType(filters.fuelType);
+          setLotCondition(filters.lotCondition);
+          setOdometerRange(filters.odometerRange);
         }}
         onClose={() => setIsFiltersOpen(false)}
       />
-    </section>
+    </>
   );
 }

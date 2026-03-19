@@ -1,55 +1,31 @@
 import type { CSSProperties, ReactNode } from "react";
 
 import { AsyncStatus } from "../shared/AsyncStatus";
-import type { LiveSyncStatus, User } from "../../types";
+import type { User } from "../../types";
 
 type Props = {
   user: User;
-  liveSyncStatus: LiveSyncStatus | null;
   isBrowserOffline: boolean;
   isBootstrapping: boolean;
   isPullToRefreshEnabled: boolean;
   pullToRefreshPhase: "idle" | "pulling" | "armed" | "refreshing";
   pullToRefreshStyle: CSSProperties;
-  onLogout: () => void;
-  onOpenSettings: () => void;
+  isAccountMenuOpen: boolean;
+  onToggleAccountMenu: () => void;
   children: ReactNode;
 };
 
-function formatLastSyncLabel(status: LiveSyncStatus): string | null {
-  if (status.last_success_at) {
-    return `Last successful sync: ${new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(status.last_success_at))}`;
-  }
-  if (status.last_failure_at) {
-    return `Last failure: ${new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(status.last_failure_at))}`;
-  }
-  return null;
-}
-
 export function DashboardShell({
   user,
-  liveSyncStatus,
   isBrowserOffline,
   isBootstrapping,
   isPullToRefreshEnabled,
   pullToRefreshPhase,
   pullToRefreshStyle,
-  onLogout,
-  onOpenSettings,
+  isAccountMenuOpen,
+  onToggleAccountMenu,
   children,
 }: Props) {
-  const showOfflineBanner = liveSyncStatus?.status === "degraded";
-  const syncTimestampLabel = liveSyncStatus ? formatLastSyncLabel(liveSyncStatus) : null;
   const isPullToRefreshVisible = isPullToRefreshEnabled && pullToRefreshPhase !== "idle";
   const pullToRefreshTitle =
     pullToRefreshPhase === "refreshing"
@@ -81,32 +57,25 @@ export function DashboardShell({
         }`}
         style={pullToRefreshStyle}
       >
-        <header className="hero">
-          <div className="hero-copy">
+        <header className="dashboard-header">
+          <div className="dashboard-header__copy">
             <p className="eyebrow">Auction Control</p>
             <h1>CarTrap dispatch board</h1>
-            <p className="lede">
-              Track live lots, promote the right findings to watchlists, and keep every invited user in sync.
-            </p>
+            <p className="lede">Saved-search inbox, watchlist urgency, and account controls for this device.</p>
           </div>
-          <aside className="hero-card" aria-label="User summary">
-            <div className="hero-card__header">
-              <p className="eyebrow">User</p>
-              <span className="status-pill">{user.role}</span>
-            </div>
-            <div className="hero-card__identity">
-              <p className="detail-label">Email</p>
-              <p className="hero-card__email">{user.email}</p>
-            </div>
-            <div className="hero-card__actions">
-              <button type="button" className="ghost-button" onClick={onOpenSettings}>
-                Settings
-              </button>
-              <button type="button" className="ghost-button" onClick={onLogout}>
-                Log Out
-              </button>
-            </div>
-          </aside>
+          <div className="dashboard-header__actions">
+            <span className="status-pill">{user.role}</span>
+            <button
+              type="button"
+              className="ghost-button dashboard-header__menu-button"
+              aria-expanded={isAccountMenuOpen}
+              aria-haspopup="dialog"
+              aria-label="Open account menu"
+              onClick={onToggleAccountMenu}
+            >
+              Menu
+            </button>
+          </div>
         </header>
         {isBootstrapping ? (
           <AsyncStatus
@@ -129,22 +98,6 @@ export function DashboardShell({
             </div>
             <div className="live-sync-banner__meta">
               <p>Reconnect to resume live Copart actions and retry failed requests.</p>
-            </div>
-          </section>
-        ) : null}
-        {showOfflineBanner ? (
-          <section className="live-sync-banner" aria-live="polite">
-            <div>
-              <p className="eyebrow">Live Sync</p>
-              <h2>Live Copart sync is temporarily unavailable.</h2>
-              <p className="lede live-sync-banner__copy">
-                Search and watchlist actions that need fresh Copart data may fail. Cached Mongo-backed data remains
-                available.
-              </p>
-            </div>
-            <div className="live-sync-banner__meta">
-              {syncTimestampLabel ? <p>{syncTimestampLabel}</p> : null}
-              {liveSyncStatus?.last_error_message ? <p>{liveSyncStatus.last_error_message}</p> : null}
             </div>
           </section>
         ) : null}

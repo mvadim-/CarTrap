@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/App";
@@ -84,6 +84,26 @@ function submitLoginForm() {
   fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "admin@example.com" } });
   fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "secret123" } });
   fireEvent.submit(screen.getByRole("button", { name: /sign in/i }).closest("form")!);
+}
+
+function openAccountMenu() {
+  fireEvent.click(screen.getByRole("button", { name: /open account menu/i }));
+}
+
+function openSettingsFromAccountMenu() {
+  openAccountMenu();
+  fireEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+}
+
+async function openManualSearch() {
+  fireEvent.click(screen.getAllByRole("button", { name: /^new search$/i })[0]!);
+  await screen.findByRole("dialog", { name: /new search/i });
+}
+
+async function runDefaultManualSearch() {
+  await openManualSearch();
+  fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+  await screen.findByRole("dialog", { name: /search results/i });
 }
 
 describe("CarTrap app", () => {
@@ -632,13 +652,15 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    expect(screen.getByLabelText(/user summary/i)).toBeTruthy();
-    const searchHeading = screen.getByRole("heading", { name: /manual copart search/i });
+    expect(screen.queryByLabelText(/user summary/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /open account menu/i })).toBeTruthy();
+    const searchHeading = screen.getByRole("heading", { name: /saved searches/i });
     const watchlistHeading = screen.getByRole("heading", { name: /tracked lots/i });
     const invitesHeading = screen.getByRole("heading", { name: /generate invites/i });
     expect(screen.getByText(/generate invites/i)).toBeTruthy();
     expect(searchHeading.compareDocumentPosition(invitesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(watchlistHeading.compareDocumentPosition(invitesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText(/no saved searches yet/i)).toBeTruthy();
   });
 
   it("renders invite acceptance screen from hash route", () => {
@@ -655,9 +677,7 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
-
-    await screen.findByRole("dialog", { name: /search results/i });
+    await runDefaultManualSearch();
     fireEvent.click(screen.getByRole("button", { name: /add to watchlist/i }));
 
     await waitFor(() => {
@@ -671,6 +691,7 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
+    await openManualSearch();
 
     fireEvent.focus(screen.getByLabelText("Make"));
     fireEvent.change(screen.getByLabelText("Make"), { target: { value: "F" } });
@@ -691,6 +712,7 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
+    await openManualSearch();
     fireEvent.click(screen.getByRole("button", { name: /filters/i }));
     await screen.findByRole("dialog", { name: /search filters/i });
 
@@ -721,16 +743,14 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
-
-    await screen.findByRole("dialog", { name: /search results/i });
+    await runDefaultManualSearch();
     fireEvent.click(screen.getByRole("button", { name: /save search/i }));
 
-    await screen.findByText(/FORD MUSTANG MACH-E 2025-2027/i);
-    expect(await screen.findAllByText(/1 lot found/i)).toHaveLength(2);
+    await screen.findByText(/just saved/i);
+    expect(await screen.findByRole("button", { name: /^ford mustang mach-e 2025-2027/i })).toBeTruthy();
+    expect(await screen.findByText(/1 lot found/i)).toBeTruthy();
     expect(liveSearchCallCount).toBe(1);
-    fireEvent.click(screen.getByRole("button", { name: /close/i }));
-    fireEvent.click(screen.getByRole("button", { name: /open results/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i }));
 
     await screen.findByRole("dialog", { name: /search results/i });
     expect(savedSearchViewCallCount).toBe(1);
@@ -744,16 +764,14 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
-    await screen.findByRole("dialog", { name: /search results/i });
+    await runDefaultManualSearch();
     fireEvent.click(screen.getByRole("button", { name: /save search/i }));
 
     expect(await screen.findByText(/1 NEW/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /close/i }));
-    fireEvent.click(screen.getByRole("button", { name: /open results/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i }));
 
-    await screen.findByRole("dialog", { name: /search results/i });
-    expect(screen.getByText(/^NEW$/i)).toBeTruthy();
+    const resultsDialog = await screen.findByRole("dialog", { name: /search results/i });
+    expect(within(resultsDialog).getByText(/^NEW$/i)).toBeTruthy();
     await waitFor(() => {
       expect(screen.queryByText(/1 NEW/i)).toBeNull();
     });
@@ -764,12 +782,10 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
-    await screen.findByRole("dialog", { name: /search results/i });
+    await runDefaultManualSearch();
     fireEvent.click(screen.getByRole("button", { name: /save search/i }));
-    await screen.findByText(/FORD MUSTANG MACH-E 2025-2027/i);
-    fireEvent.click(screen.getByRole("button", { name: /close/i }));
-    fireEvent.click(screen.getByRole("button", { name: /open results/i }));
+    await screen.findByRole("button", { name: /^ford mustang mach-e 2025-2027/i });
+    fireEvent.click(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i }));
 
     await screen.findByRole("dialog", { name: /search results/i });
     fireEvent.click(screen.getByRole("button", { name: /refresh live/i }));
@@ -784,11 +800,11 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
-    await screen.findByRole("dialog", { name: /search results/i });
+    await runDefaultManualSearch();
     fireEvent.click(screen.getByRole("button", { name: /save search/i }));
 
-    const link = await screen.findByRole("link", { name: /open url/i });
+    fireEvent.click(await screen.findByRole("button", { name: /more actions for ford mustang mach-e 2025-2027/i }));
+    const link = await screen.findByRole("menuitem", { name: /open url/i });
     expect(link.getAttribute("href")).toContain("https://www.copart.com/lotSearchResults?free=true&displayStr=FORD%20MUSTANG%20MACH-E%202025-2027");
     expect(link.getAttribute("href")).toContain("qId=test-qid-1");
     expect(link.getAttribute("href")).toContain("DRIV");
@@ -799,17 +815,48 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
-
-    await screen.findByRole("dialog", { name: /search results/i });
+    await runDefaultManualSearch();
     fireEvent.click(screen.getByRole("button", { name: /save search/i }));
-    await screen.findByText(/FORD MUSTANG MACH-E 2025-2027/i);
+    await screen.findByRole("button", { name: /^ford mustang mach-e 2025-2027/i });
 
-    fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+    fireEvent.click(screen.getByRole("button", { name: /more actions for ford mustang mach-e 2025-2027/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /delete/i }));
 
     await waitFor(() => {
       expect(screen.queryByText(/FORD MUSTANG MACH-E 2025-2027/i)).toBeNull();
     });
+  });
+
+  it("prioritizes inbox filters and keeps NEW searches ahead of older rows", async () => {
+    nextSavedSearchSeedNewLotNumbers = ["12345678"];
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    await runDefaultManualSearch();
+    fireEvent.click(screen.getByRole("button", { name: /save search/i }));
+    await screen.findByRole("button", { name: /^ford mustang mach-e 2025-2027/i });
+
+    await openManualSearch();
+    fireEvent.focus(screen.getByLabelText("Make"));
+    fireEvent.change(screen.getByLabelText("Make"), { target: { value: "FI" } });
+    fireEvent.click(screen.getByRole("button", { name: "FIAT" }));
+    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+    await screen.findByRole("dialog", { name: /search results/i });
+    fireEvent.click(screen.getByRole("button", { name: /save search/i }));
+    await screen.findByRole("button", { name: /^fiat/i });
+
+    const cardTitles = Array.from(document.querySelectorAll(".saved-search-card strong")).map((node) => node.textContent);
+    expect(cardTitles[0]).toContain("FORD MUSTANG MACH-E 2025-2027");
+    expect(cardTitles[1]).toContain("FIAT");
+
+    fireEvent.click(screen.getByRole("button", { name: /^new$/i }));
+    expect(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^fiat/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /needs refresh/i }));
+    expect(screen.getByRole("button", { name: /^fiat/i })).toBeTruthy();
   });
 
   it("adds lot to watchlist by lot number", async () => {
@@ -954,7 +1001,7 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.click(screen.getByRole("button", { name: /settings/i }));
+    openSettingsFromAccountMenu();
     await screen.findByRole("dialog", { name: /settings/i });
     fireEvent.click(screen.getByRole("button", { name: /enable push on this device/i }));
 
@@ -983,7 +1030,7 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.click(screen.getByRole("button", { name: /settings/i }));
+    openSettingsFromAccountMenu();
     await screen.findByRole("dialog", { name: /settings/i });
     fireEvent.click(screen.getByRole("button", { name: /send test push/i }));
 
@@ -1074,6 +1121,52 @@ describe("CarTrap app", () => {
     });
   });
 
+  it("suppresses mobile pull to refresh while the new-search screen is open", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 390,
+    });
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 0,
+    });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn((query: string) => ({
+        matches: query === "(pointer: coarse)",
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    const initialWatchlistLoads = watchlistListCallCount;
+    const initialSavedSearchLoads = savedSearchesListCallCount;
+    const initialSystemStatusLoads = systemStatusCallCount;
+
+    await openManualSearch();
+    fireEvent.touchStart(window, {
+      touches: [{ clientY: 8 }],
+    });
+    fireEvent.touchMove(window, {
+      touches: [{ clientY: 180 }],
+    });
+    fireEvent.touchEnd(window);
+
+    expect(screen.queryByText(/release to refresh/i)).toBeNull();
+    expect(watchlistListCallCount).toBe(initialWatchlistLoads);
+    expect(savedSearchesListCallCount).toBe(initialSavedSearchLoads);
+    expect(systemStatusCallCount).toBe(initialSystemStatusLoads);
+  });
+
   it("hides admin-only push diagnostics for non-admin accounts", async () => {
     loginRole = "user";
 
@@ -1081,7 +1174,11 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.click(screen.getByRole("button", { name: /settings/i }));
+    openAccountMenu();
+    await screen.findByRole("dialog", { name: /account menu/i });
+    expect(screen.queryByText(/system status/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /close/i }));
+    openSettingsFromAccountMenu();
     await screen.findByRole("dialog", { name: /settings/i });
 
     expect(screen.queryByRole("button", { name: /send test push/i })).toBeNull();
@@ -1150,17 +1247,21 @@ describe("CarTrap app", () => {
     render(<App />);
     submitLoginForm();
 
-    await screen.findByText(/live copart sync is temporarily unavailable/i);
-    expect(screen.getByText(/cached mongo-backed data remains available/i)).toBeTruthy();
+    await screen.findByText(/cartrap dispatch board/i);
+    expect(screen.queryByText(/live copart sync is temporarily unavailable/i)).toBeNull();
+    openAccountMenu();
+    await screen.findByRole("dialog", { name: /account menu/i });
+    expect(screen.getByText(/system status/i)).toBeTruthy();
+    expect(screen.getByText(/live sync degraded/i)).toBeTruthy();
     expect(screen.getByText(/gateway unavailable/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /close/i }));
 
     liveSyncStatus = buildLiveSyncStatus();
+    await openManualSearch();
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
 
     await screen.findByRole("dialog", { name: /search results/i });
-    await waitFor(() => {
-      expect(screen.queryByText(/live copart sync is temporarily unavailable/i)).toBeNull();
-    });
+    expect(screen.queryByText(/live copart sync is temporarily unavailable/i)).toBeNull();
   });
 
   it("shows degraded-mode message when manual search fails while live sync is offline", async () => {
@@ -1175,7 +1276,8 @@ describe("CarTrap app", () => {
     render(<App />);
     submitLoginForm();
 
-    await screen.findByText(/live copart sync is temporarily unavailable/i);
+    await screen.findByText(/cartrap dispatch board/i);
+    await openManualSearch();
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
 
     expect(
@@ -1198,7 +1300,7 @@ describe("CarTrap app", () => {
     render(<App />);
     submitLoginForm();
 
-    await screen.findByText(/live copart sync is temporarily unavailable/i);
+    await screen.findByText(/cartrap dispatch board/i);
     fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "12345678" } });
     fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
 
@@ -1220,6 +1322,7 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByRole("heading", { name: /this device is offline/i });
+    await openManualSearch();
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
 
     expect(
