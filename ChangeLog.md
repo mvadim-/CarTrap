@@ -634,3 +634,7 @@
 - Оновлено `frontend/src/styles.css`: додано окремі `topbar/collapsible` стилі для `search-results-modal`, де верхній action menu лишається pinned, а intro chrome плавно зсувається й згасає в темпі scroll, ближче до поведінки native large-title surfaces.
 - Оновлено `frontend/tests/app.test.tsx`: regression тепер перевіряє реальне зменшення/відновлення висоти mobile collapsible chrome під час scroll, а не лише наявність CSS toggle class.
 - Verification: `npm run test --prefix frontend -- app.test.tsx` -> `37 passed`; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-19 15:12] Remove saved-search mobile scroll jank from React scroll-loop updates
+- Оновлено `frontend/src/features/search/SearchResultsModal.tsx`: scroll-linked collapse для mobile saved-search modal більше не проходить через `setState` на кожен `scroll` event; inline `height` і CSS progress var тепер оновлюються напряму через `requestAnimationFrame`, щоб зняти re-render pressure і повернути smooth inertial scroll на iPhone.
+- Verification: `npm run test --prefix frontend -- app.test.tsx`; `npm run build --prefix frontend`.

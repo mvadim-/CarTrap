@@ -927,13 +927,21 @@ describe("CarTrap app", () => {
     fireEvent.scroll(resultsBody!, {
       target: { scrollTop: 72 },
     });
-    const collapsedHeight = Number.parseFloat(collapsibleChrome?.style.height ?? "0");
+    let collapsedHeight = Number.parseFloat(collapsibleChrome?.style.height ?? "0");
+    await waitFor(() => {
+      collapsedHeight = Number.parseFloat(collapsibleChrome?.style.height ?? "0");
+      expect(collapsedHeight).toBeLessThan(expandedHeight);
+    });
     expect(collapsedHeight).toBeLessThan(expandedHeight);
 
     fireEvent.scroll(resultsBody!, {
       target: { scrollTop: 0 },
     });
-    const restoredHeight = Number.parseFloat(collapsibleChrome?.style.height ?? "0");
+    let restoredHeight = Number.parseFloat(collapsibleChrome?.style.height ?? "0");
+    await waitFor(() => {
+      restoredHeight = Number.parseFloat(collapsibleChrome?.style.height ?? "0");
+      expect(restoredHeight).toBe(expandedHeight);
+    });
     expect(restoredHeight).toBe(expandedHeight);
   });
 

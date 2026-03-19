@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type UIEvent } from "react";
+import { useEffect, useRef, type UIEvent } from "react";
 import { createPortal } from "react-dom";
 
 import type { SearchResult } from "../../types";
@@ -49,11 +49,56 @@ export function SearchResultsModal({
   mobileFullscreen = false,
 }: Props) {
   const isMobileFullscreen = shouldUseMobileFullscreen(mobileFullscreen);
-  const [collapseOffset, setCollapseOffset] = useState(0);
-  const [collapsibleHeight, setCollapsibleHeight] = useState(0);
   const modalBodyRef = useRef<HTMLDivElement | null>(null);
   const collapsibleRef = useRef<HTMLDivElement | null>(null);
+  const collapseFrameRef = useRef<number | null>(null);
+  const scheduledCollapseOffsetRef = useRef<number | null>(null);
+  const collapseOffsetRef = useRef(0);
+  const collapsibleHeightRef = useRef(0);
   useBodyScrollLock(isOpen);
+
+  function resetCollapsibleInlineStyles() {
+    const collapsible = collapsibleRef.current;
+    if (!collapsible) {
+      return;
+    }
+
+    collapsible.style.removeProperty("height");
+    collapsible.style.removeProperty("--search-results-collapse-progress");
+  }
+
+  function getEffectiveCollapsibleHeight() {
+    return collapsibleHeightRef.current > 0
+      ? collapsibleHeightRef.current
+      : isMobileFullscreen
+        ? FALLBACK_MOBILE_COLLAPSIBLE_HEIGHT
+        : 0;
+  }
+
+  function applyCollapseOffset(nextOffset: number) {
+    const collapsible = collapsibleRef.current;
+    if (!collapsible || !isMobileFullscreen) {
+      return;
+    }
+
+    const effectiveCollapsibleHeight = getEffectiveCollapsibleHeight();
+    const boundedOffset = Math.min(Math.max(nextOffset, 0), effectiveCollapsibleHeight);
+    const collapseProgress =
+      effectiveCollapsibleHeight > 0 ? Math.min(boundedOffset / effectiveCollapsibleHeight, 1) : 0;
+
+    collapseOffsetRef.current = boundedOffset;
+    collapsible.style.height = `${Math.max(effectiveCollapsibleHeight - boundedOffset, 0)}px`;
+    collapsible.style.setProperty("--search-results-collapse-progress", collapseProgress.toString());
+  }
+
+  function cancelScheduledCollapseFrame() {
+    if (collapseFrameRef.current === null) {
+      return;
+    }
+
+    window.cancelAnimationFrame(collapseFrameRef.current);
+    collapseFrameRef.current = null;
+  }
 
   useEffect(() => {
     if (!isOpen) {
@@ -72,22 +117,37 @@ export function SearchResultsModal({
 
   useEffect(() => {
     if (!isOpen) {
-      setCollapseOffset(0);
+      collapseOffsetRef.current = 0;
+      collapsibleHeightRef.current = 0;
+      scheduledCollapseOffsetRef.current = null;
+      cancelScheduledCollapseFrame();
+      resetCollapsibleInlineStyles();
       return;
     }
 
-    setCollapseOffset(0);
+    collapseOffsetRef.current = 0;
+    scheduledCollapseOffsetRef.current = null;
+    cancelScheduledCollapseFrame();
     const modalBody = modalBodyRef.current;
     if (!modalBody) {
       return;
     }
 
     modalBody.scrollTop = 0;
+    if (isMobileFullscreen) {
+      applyCollapseOffset(0);
+    } else {
+      resetCollapsibleInlineStyles();
+    }
   }, [isOpen, isMobileFullscreen, results.length, title]);
 
   useEffect(() => {
     if (!isOpen || !isMobileFullscreen) {
-      setCollapsibleHeight(0);
+      collapsibleHeightRef.current = 0;
+      collapseOffsetRef.current = 0;
+      scheduledCollapseOffsetRef.current = null;
+      cancelScheduledCollapseFrame();
+      resetCollapsibleInlineStyles();
       return;
     }
 
@@ -98,8 +158,8 @@ export function SearchResultsModal({
 
     const measure = () => {
       const nextHeight = Math.max(collapsible.scrollHeight, collapsible.getBoundingClientRect().height);
-      setCollapsibleHeight(nextHeight);
-      setCollapseOffset((current) => Math.min(current, nextHeight));
+      collapsibleHeightRef.current = nextHeight;
+      applyCollapseOffset(collapseOffsetRef.current);
     };
 
     measure();
@@ -113,32 +173,44 @@ export function SearchResultsModal({
     return () => observer.disconnect();
   }, [isOpen, isMobileFullscreen, totalResults, lastSyncedAt, isRefreshingLive, statusMessage, refreshError, title]);
 
+  useEffect(() => {
+    return () => {
+      cancelScheduledCollapseFrame();
+    };
+  }, []);
+
   if (!isOpen) {
     return null;
   }
 
   function handleBodyScroll(event: UIEvent<HTMLDivElement>) {
     if (!isMobileFullscreen) {
-      if (collapseOffset !== 0) {
-        setCollapseOffset(0);
-      }
+      collapseOffsetRef.current = 0;
+      scheduledCollapseOffsetRef.current = null;
+      cancelScheduledCollapseFrame();
+      resetCollapsibleInlineStyles();
       return;
     }
 
-    setCollapseOffset(Math.min(event.currentTarget.scrollTop, effectiveCollapsibleHeight));
+    const nextOffset = Math.min(event.currentTarget.scrollTop, getEffectiveCollapsibleHeight());
+    if (nextOffset === collapseOffsetRef.current && collapseFrameRef.current === null) {
+      return;
+    }
+
+    scheduledCollapseOffsetRef.current = nextOffset;
+    if (collapseFrameRef.current !== null) {
+      return;
+    }
+
+    collapseFrameRef.current = window.requestAnimationFrame(() => {
+      collapseFrameRef.current = null;
+      const scheduledOffset = scheduledCollapseOffsetRef.current;
+      scheduledCollapseOffsetRef.current = null;
+      applyCollapseOffset(scheduledOffset ?? 0);
+    });
   }
 
   const hasStatusPanels = isRefreshingLive || Boolean(statusMessage) || Boolean(refreshError);
-  const effectiveCollapsibleHeight =
-    collapsibleHeight > 0 ? collapsibleHeight : isMobileFullscreen ? FALLBACK_MOBILE_COLLAPSIBLE_HEIGHT : 0;
-  const collapseProgress =
-    effectiveCollapsibleHeight > 0 ? Math.min(collapseOffset / effectiveCollapsibleHeight, 1) : 0;
-  const collapsibleStyle: CSSProperties | undefined = isMobileFullscreen
-    ? {
-        height: `${Math.max(effectiveCollapsibleHeight - collapseOffset, 0)}px`,
-        "--search-results-collapse-progress": collapseProgress.toString(),
-      }
-    : undefined;
 
   const modal = (
     <div
@@ -185,7 +257,7 @@ export function SearchResultsModal({
                   </button>
                 </div>
               </div>
-              <div ref={collapsibleRef} className="search-results-modal__collapsible" style={collapsibleStyle}>
+              <div ref={collapsibleRef} className="search-results-modal__collapsible">
                 <div className="search-results-modal__collapsible-inner">
                   <div className="search-results-modal__heading search-results-modal__heading--mobile">
                     <h3>{title}</h3>
