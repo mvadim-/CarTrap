@@ -917,16 +917,24 @@ describe("CarTrap app", () => {
     expect(screen.getByRole("button", { name: /close/i })).toBeTruthy();
 
     const resultsBody = resultsDialog.querySelector(".search-results-modal__body");
+    const collapsibleChrome = resultsDialog.querySelector(".search-results-modal__collapsible") as HTMLElement | null;
     expect(resultsBody).toBeTruthy();
+    expect(collapsibleChrome).toBeTruthy();
+    await waitFor(() => {
+      expect(Number.parseFloat(collapsibleChrome?.style.height ?? "0")).toBeGreaterThan(0);
+    });
+    const expandedHeight = Number.parseFloat(collapsibleChrome?.style.height ?? "0");
     fireEvent.scroll(resultsBody!, {
       target: { scrollTop: 72 },
     });
-    expect(resultsDialog.className).toContain("search-results-modal--collapsed");
+    const collapsedHeight = Number.parseFloat(collapsibleChrome?.style.height ?? "0");
+    expect(collapsedHeight).toBeLessThan(expandedHeight);
 
     fireEvent.scroll(resultsBody!, {
       target: { scrollTop: 0 },
     });
-    expect(resultsDialog.className).not.toContain("search-results-modal--collapsed");
+    const restoredHeight = Number.parseFloat(collapsibleChrome?.style.height ?? "0");
+    expect(restoredHeight).toBe(expandedHeight);
   });
 
   it("renders external url link for saved search", async () => {

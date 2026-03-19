@@ -1357,6 +1357,17 @@ button:focus-visible,
   min-height: 0;
 }
 
+.search-results-modal__topbar {
+  align-items: start;
+  padding: max(1rem, calc(env(safe-area-inset-top) + 0.4rem)) 1.1rem 0.9rem;
+}
+
+.search-results-modal__topbar-copy {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
 .search-results-modal__header {
   align-items: start;
 }
@@ -1371,14 +1382,21 @@ button:focus-visible,
   width: 100%;
 }
 
-.search-results-modal__meta,
-.search-results-modal__status-stack {
-  transition:
-    max-height 180ms ease,
-    opacity 140ms ease,
-    padding 180ms ease,
-    margin 180ms ease,
-    border-width 180ms ease;
+.search-results-modal__collapsible {
+  overflow: hidden;
+  min-height: 0;
+  will-change: height;
+}
+
+.search-results-modal__collapsible-inner {
+  display: grid;
+  min-height: 0;
+  opacity: calc(1 - var(--search-results-collapse-progress, 0));
+  transform: translateY(calc(var(--search-results-collapse-progress, 0) * -12px));
+}
+
+.search-results-modal__heading--mobile {
+  padding: 0 1.1rem 0.8rem;
 }
 
 .search-results-modal__status-stack {
@@ -1412,38 +1430,10 @@ button:focus-visible,
   overscroll-behavior: contain;
 }
 
-.modal-card--mobile-screen.search-results-modal .search-results-modal__header {
-  padding-bottom: 0.8rem;
-}
-
 .modal-card--mobile-screen.search-results-modal .search-results-modal__heading h3 {
   margin: 0;
   font-size: clamp(1.65rem, 6vw, 2.35rem);
   line-height: 1.04;
-}
-
-.modal-card--mobile-screen.search-results-modal.search-results-modal--collapsed .search-results-modal__heading,
-.modal-card--mobile-screen.search-results-modal.search-results-modal--collapsed .search-results-modal__meta,
-.modal-card--mobile-screen.search-results-modal.search-results-modal--collapsed .search-results-modal__status-stack {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.modal-card--mobile-screen.search-results-modal.search-results-modal--collapsed .search-results-modal__header {
-  padding-bottom: 0.9rem;
-}
-
-.modal-card--mobile-screen.search-results-modal.search-results-modal--collapsed .search-results-modal__meta {
-  padding-top: 0;
-  padding-bottom: 0;
-  border-width: 0;
-}
-
-.modal-card--mobile-screen.search-results-modal.search-results-modal--collapsed .search-results-modal__status-stack {
-  padding-top: 0;
-  padding-bottom: 0;
 }
 
 .filter-modal {

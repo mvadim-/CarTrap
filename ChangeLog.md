@@ -628,3 +628,9 @@
 - Оновлено `frontend/src/features/dashboard/AccountMenuSheet.tsx` і `frontend/src/features/push/PushSettingsModal.tsx`: обидва overlays тепер використовують `createPortal(..., document.body)` і `useBodyScrollLock`, тож більше не плавають усередині `app-shell` після mobile scroll.
 - Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для mobile account menu та push settings after-scroll portal rendering поза `.app-shell`, щоб production-симптом не повернувся.
 - Verification: `npm run test --prefix frontend -- app.test.tsx` -> `37 passed`; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-19 15:03] Smooth saved-search mobile header collapse with scroll-linked motion
+- Оновлено `frontend/src/features/search/SearchResultsModal.tsx`: замість threshold-based toggle saved-search fullscreen modal тепер використовує scroll-linked collapse offset для mobile intro chrome, тому title/meta/status блок схлопується пропорційно scroll gesture, а не ривком після одного порогу.
+- Оновлено `frontend/src/styles.css`: додано окремі `topbar/collapsible` стилі для `search-results-modal`, де верхній action menu лишається pinned, а intro chrome плавно зсувається й згасає в темпі scroll, ближче до поведінки native large-title surfaces.
+- Оновлено `frontend/tests/app.test.tsx`: regression тепер перевіряє реальне зменшення/відновлення висоти mobile collapsible chrome під час scroll, а не лише наявність CSS toggle class.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `37 passed`; `npm run build --prefix frontend` -> успішно.

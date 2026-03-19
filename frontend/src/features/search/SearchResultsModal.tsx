@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type UIEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type UIEvent } from "react";
 import { createPortal } from "react-dom";
 
 import type { SearchResult } from "../../types";
@@ -27,6 +27,8 @@ type Props = {
   mobileFullscreen?: boolean;
 };
 
+const FALLBACK_MOBILE_COLLAPSIBLE_HEIGHT = 220;
+
 export function SearchResultsModal({
   isOpen,
   title,
@@ -47,8 +49,10 @@ export function SearchResultsModal({
   mobileFullscreen = false,
 }: Props) {
   const isMobileFullscreen = shouldUseMobileFullscreen(mobileFullscreen);
-  const [isChromeCollapsed, setIsChromeCollapsed] = useState(false);
+  const [collapseOffset, setCollapseOffset] = useState(0);
+  const [collapsibleHeight, setCollapsibleHeight] = useState(0);
   const modalBodyRef = useRef<HTMLDivElement | null>(null);
+  const collapsibleRef = useRef<HTMLDivElement | null>(null);
   useBodyScrollLock(isOpen);
 
   useEffect(() => {
@@ -68,11 +72,11 @@ export function SearchResultsModal({
 
   useEffect(() => {
     if (!isOpen) {
-      setIsChromeCollapsed(false);
+      setCollapseOffset(0);
       return;
     }
 
-    setIsChromeCollapsed(false);
+    setCollapseOffset(0);
     const modalBody = modalBodyRef.current;
     if (!modalBody) {
       return;
@@ -81,22 +85,60 @@ export function SearchResultsModal({
     modalBody.scrollTop = 0;
   }, [isOpen, isMobileFullscreen, results.length, title]);
 
+  useEffect(() => {
+    if (!isOpen || !isMobileFullscreen) {
+      setCollapsibleHeight(0);
+      return;
+    }
+
+    const collapsible = collapsibleRef.current;
+    if (!collapsible) {
+      return;
+    }
+
+    const measure = () => {
+      const nextHeight = Math.max(collapsible.scrollHeight, collapsible.getBoundingClientRect().height);
+      setCollapsibleHeight(nextHeight);
+      setCollapseOffset((current) => Math.min(current, nextHeight));
+    };
+
+    measure();
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => measure());
+    observer.observe(collapsible);
+    return () => observer.disconnect();
+  }, [isOpen, isMobileFullscreen, totalResults, lastSyncedAt, isRefreshingLive, statusMessage, refreshError, title]);
+
   if (!isOpen) {
     return null;
   }
 
   function handleBodyScroll(event: UIEvent<HTMLDivElement>) {
     if (!isMobileFullscreen) {
-      if (isChromeCollapsed) {
-        setIsChromeCollapsed(false);
+      if (collapseOffset !== 0) {
+        setCollapseOffset(0);
       }
       return;
     }
 
-    setIsChromeCollapsed(event.currentTarget.scrollTop > 20);
+    setCollapseOffset(Math.min(event.currentTarget.scrollTop, effectiveCollapsibleHeight));
   }
 
   const hasStatusPanels = isRefreshingLive || Boolean(statusMessage) || Boolean(refreshError);
+  const effectiveCollapsibleHeight =
+    collapsibleHeight > 0 ? collapsibleHeight : isMobileFullscreen ? FALLBACK_MOBILE_COLLAPSIBLE_HEIGHT : 0;
+  const collapseProgress =
+    effectiveCollapsibleHeight > 0 ? Math.min(collapseOffset / effectiveCollapsibleHeight, 1) : 0;
+  const collapsibleStyle: CSSProperties | undefined = isMobileFullscreen
+    ? {
+        height: `${Math.max(effectiveCollapsibleHeight - collapseOffset, 0)}px`,
+        "--search-results-collapse-progress": collapseProgress.toString(),
+      }
+    : undefined;
 
   const modal = (
     <div
@@ -105,74 +147,149 @@ export function SearchResultsModal({
     >
       <div
         aria-modal="true"
-        className={`modal-card search-results-modal${isMobileFullscreen ? " modal-card--mobile-screen" : ""}${isChromeCollapsed ? " search-results-modal--collapsed" : ""}`}
+        className={`modal-card search-results-modal${isMobileFullscreen ? " modal-card--mobile-screen" : ""}`}
         role="dialog"
         aria-label="Search results"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="search-results-modal__chrome">
-          <div className="modal-header search-results-modal__header">
-            <div className="search-results-modal__heading">
-              <p className="eyebrow">Results</p>
-              <h3>{title}</h3>
-            </div>
-            <div className="modal-toolbar modal-toolbar--results search-results-modal__actions">
-              {canSave ? (
-                <button
-                  type="button"
-                  onClick={() => void onSaveSearch()}
-                  disabled={!canSave || isSavingSearch}
-                  aria-busy={isSavingSearch}
-                >
-                  {isSavingSearch ? "Saving..." : "Save Search"}
-                </button>
+          {isMobileFullscreen ? (
+            <>
+              <div className="modal-toolbar modal-toolbar--results search-results-modal__topbar">
+                <div className="search-results-modal__topbar-copy">
+                  <p className="eyebrow">Results</p>
+                </div>
+                <div className="search-results-modal__actions">
+                  {canSave ? (
+                    <button
+                      type="button"
+                      onClick={() => void onSaveSearch()}
+                      disabled={!canSave || isSavingSearch}
+                      aria-busy={isSavingSearch}
+                    >
+                      {isSavingSearch ? "Saving..." : "Save Search"}
+                    </button>
+                  ) : null}
+                  {canRefreshLive ? (
+                    <button
+                      type="button"
+                      onClick={() => void onRefreshLive?.()}
+                      disabled={isRefreshingLive}
+                      aria-busy={isRefreshingLive}
+                    >
+                      {isRefreshingLive ? "Refreshing..." : "Refresh Live"}
+                    </button>
+                  ) : null}
+                  <button type="button" className="ghost-button" onClick={onClose}>
+                    Close
+                  </button>
+                </div>
+              </div>
+              <div ref={collapsibleRef} className="search-results-modal__collapsible" style={collapsibleStyle}>
+                <div className="search-results-modal__collapsible-inner">
+                  <div className="search-results-modal__heading search-results-modal__heading--mobile">
+                    <h3>{title}</h3>
+                  </div>
+                  <div className="modal-filter-bar search-results-modal__meta">
+                    <span className="muted">
+                      {totalResults} {totalResults === 1 ? "lot" : "lots"} found. Current result set stays reopenable until you close it.
+                    </span>
+                    {lastSyncedAt ? <span className="muted">Last synced {new Date(lastSyncedAt).toLocaleString()}</span> : null}
+                  </div>
+                  {hasStatusPanels ? (
+                    <div className="search-results-modal__status-stack">
+                      {isRefreshingLive ? (
+                        <AsyncStatus
+                          compact
+                          progress="bar"
+                          title="Refreshing live results"
+                          message="Cached results stay visible while the latest Copart data loads."
+                          className="modal-status"
+                        />
+                      ) : null}
+                      {statusMessage ? (
+                        <AsyncStatus compact tone="success" message={statusMessage} className="modal-status" />
+                      ) : null}
+                      {refreshError ? (
+                        <AsyncStatus
+                          compact
+                          tone="error"
+                          title="Live refresh unavailable"
+                          message={refreshError}
+                          className="modal-status"
+                        />
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="modal-header search-results-modal__header">
+                <div className="search-results-modal__heading">
+                  <p className="eyebrow">Results</p>
+                  <h3>{title}</h3>
+                </div>
+                <div className="modal-toolbar modal-toolbar--results search-results-modal__actions">
+                  {canSave ? (
+                    <button
+                      type="button"
+                      onClick={() => void onSaveSearch()}
+                      disabled={!canSave || isSavingSearch}
+                      aria-busy={isSavingSearch}
+                    >
+                      {isSavingSearch ? "Saving..." : "Save Search"}
+                    </button>
+                  ) : null}
+                  {canRefreshLive ? (
+                    <button
+                      type="button"
+                      onClick={() => void onRefreshLive?.()}
+                      disabled={isRefreshingLive}
+                      aria-busy={isRefreshingLive}
+                    >
+                      {isRefreshingLive ? "Refreshing..." : "Refresh Live"}
+                    </button>
+                  ) : null}
+                  <button type="button" className="ghost-button" onClick={onClose}>
+                    Close
+                  </button>
+                </div>
+              </div>
+              <div className="modal-filter-bar search-results-modal__meta">
+                <span className="muted">
+                  {totalResults} {totalResults === 1 ? "lot" : "lots"} found. Current result set stays reopenable until you close it.
+                </span>
+                {lastSyncedAt ? <span className="muted">Last synced {new Date(lastSyncedAt).toLocaleString()}</span> : null}
+              </div>
+              {hasStatusPanels ? (
+                <div className="search-results-modal__status-stack">
+                  {isRefreshingLive ? (
+                    <AsyncStatus
+                      compact
+                      progress="bar"
+                      title="Refreshing live results"
+                      message="Cached results stay visible while the latest Copart data loads."
+                      className="modal-status"
+                    />
+                  ) : null}
+                  {statusMessage ? (
+                    <AsyncStatus compact tone="success" message={statusMessage} className="modal-status" />
+                  ) : null}
+                  {refreshError ? (
+                    <AsyncStatus
+                      compact
+                      tone="error"
+                      title="Live refresh unavailable"
+                      message={refreshError}
+                      className="modal-status"
+                    />
+                  ) : null}
+                </div>
               ) : null}
-              {canRefreshLive ? (
-                <button
-                  type="button"
-                  onClick={() => void onRefreshLive?.()}
-                  disabled={isRefreshingLive}
-                  aria-busy={isRefreshingLive}
-                >
-                  {isRefreshingLive ? "Refreshing..." : "Refresh Live"}
-                </button>
-              ) : null}
-              <button type="button" className="ghost-button" onClick={onClose}>
-                Close
-              </button>
-            </div>
-          </div>
-          <div className="modal-filter-bar search-results-modal__meta">
-            <span className="muted">
-              {totalResults} {totalResults === 1 ? "lot" : "lots"} found. Current result set stays reopenable until you close it.
-            </span>
-            {lastSyncedAt ? <span className="muted">Last synced {new Date(lastSyncedAt).toLocaleString()}</span> : null}
-          </div>
-          {hasStatusPanels ? (
-            <div className="search-results-modal__status-stack">
-              {isRefreshingLive ? (
-                <AsyncStatus
-                  compact
-                  progress="bar"
-                  title="Refreshing live results"
-                  message="Cached results stay visible while the latest Copart data loads."
-                  className="modal-status"
-                />
-              ) : null}
-              {statusMessage ? (
-                <AsyncStatus compact tone="success" message={statusMessage} className="modal-status" />
-              ) : null}
-              {refreshError ? (
-                <AsyncStatus
-                  compact
-                  tone="error"
-                  title="Live refresh unavailable"
-                  message={refreshError}
-                  className="modal-status"
-                />
-              ) : null}
-            </div>
-          ) : null}
+            </>
+          )}
         </div>
         <div ref={modalBodyRef} className="modal-body result-list search-results-modal__body" onScroll={handleBodyScroll}>
           {results.length === 0 ? (
