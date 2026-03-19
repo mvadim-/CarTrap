@@ -1,5 +1,13 @@
 # Change Log
 
+## [2026-03-19 16:16] Add explicit lot-open link and plus affordance in search rows
+- Оновлено `frontend/src/features/search/SearchResultsModal.tsx` і `frontend/src/styles.css`: у results rows назва лоту тепер відкриває Copart lot page в новій вкладці, а add-to-watchlist CTA змінено зі стрілки на `+`, щоб дія читалась як додавання, а не навігація.
+- Оновлено `frontend/tests/app.test.tsx`: додано assertion на зовнішнє lot-link посилання в search results.
+
+## [2026-03-19 16:08] Format search odometer from Copart reading fields and soften list emphasis
+- Оновлено `backend/src/cartrap/modules/copart_provider/normalizer.py` і `backend/tests/copart/test_api_normalizer.py`: search-result odometer тепер формується з `odometer_reading_received` та `odometer_brand_calculated` / `odometer_reading_desc`, щоб у list results приходили значення на кшталт `347 N`, а не порожнє `N/A`.
+- Оновлено `frontend/src/styles.css`: зменшено візуальну вагу назви лоту і countdown/timer у rows search results, щоб mobile list був ближчий до референсу й не виглядав надмірно жирним.
+
 ## [2026-03-19 15:51] Force stable lot thumbnail ratio in results rows
 - Оновлено `frontend/src/styles.css`: thumbnail у search-result rows тепер має явні width/height і `object-fit: cover`, щоб на реальному мобільному девайсі не ламався в портретну геометрію через intrinsic image ratio.
 - Оновлено `backend/src/cartrap/modules/copart_provider/normalizer.py`: parse odometer для search docs розширено додатковими варіантами ключів навколо `odometer_reading_received`, щоб не втрачати значення через дрібні відмінності payload shape.

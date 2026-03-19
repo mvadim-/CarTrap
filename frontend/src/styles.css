@@ -1470,10 +1470,23 @@ button:focus-visible,
   min-width: 0;
 }
 
+.search-result-row__title-link {
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.search-result-row__title-link:hover .search-result-row__title {
+  color: var(--ink-strong);
+  text-decoration: underline;
+  text-decoration-color: rgba(19, 38, 47, 0.28);
+  text-underline-offset: 0.12em;
+}
+
 .search-result-row__title {
   color: #2d3139;
   font-size: clamp(0.98rem, 3.2vw, 1.12rem);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.02;
   text-transform: uppercase;
@@ -1528,7 +1541,7 @@ button:focus-visible,
 .search-result-row__market-timer {
   color: #d8291f;
   font-size: clamp(0.92rem, 3vw, 1rem);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .search-result-row__market-meta {
@@ -1553,8 +1566,8 @@ button:focus-visible,
   background: transparent;
   box-shadow: none;
   color: rgba(122, 129, 141, 0.94);
-  font-size: 1.95rem;
-  font-weight: 600;
+  font-size: 1.8rem;
+  font-weight: 500;
   line-height: 1;
 }
 

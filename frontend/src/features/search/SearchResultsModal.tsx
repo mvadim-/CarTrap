@@ -458,7 +458,16 @@ export function SearchResultsModal({
                       <LotThumbnail title={result.title} thumbnailUrl={result.thumbnail_url} />
                       <div className="search-result-row__body">
                         <div className="search-result-row__title-line">
-                          <strong className="search-result-row__title">{result.title}</strong>
+                          <a
+                            className="search-result-row__title-link"
+                            href={result.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`Open Copart lot ${result.lot_number}`}
+                            title="Open Copart lot page"
+                          >
+                            <strong className="search-result-row__title">{result.title}</strong>
+                          </a>
                           {result.is_new ? <span className="new-badge">NEW</span> : null}
                         </div>
                         <p className="search-result-row__meta">Lot#: {result.lot_number}</p>
@@ -479,7 +488,7 @@ export function SearchResultsModal({
                         aria-label={isAdding ? `Adding ${result.title} to watchlist` : `Add to watchlist: ${result.title}`}
                         title={isAdding ? "Adding to watchlist" : "Add to watchlist"}
                       >
-                        {isAdding ? "..." : ">"}
+                        {isAdding ? "..." : "+"}
                       </button>
                     </article>
                   );

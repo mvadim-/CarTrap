@@ -30,7 +30,9 @@ SAMPLE_RESPONSE = {
                 "yard_name": "MI - DETROIT",
                 "auction_host_name": "MI - DETROIT",
                 "auction_date_utc": "2026-03-13T14:00:00Z",
-                "odometer_reading_received": {"formattedValue": "12,399 ACTUAL"},
+                "odometer_reading_received": 12399,
+                "odometer_brand_calculated": "A",
+                "odometer_reading_desc": "ACTUAL",
                 "current_high_bid": 0,
                 "buy_it_now_price": 11500,
                 "currency_code": "USD",
@@ -42,6 +44,9 @@ SAMPLE_RESPONSE = {
                 "yard_name": "NJ - TRENTON",
                 "auction_host_name": "NJ - TRENTON",
                 "auction_date_utc": "2026-04-06T14:00:00Z",
+                "odometer_reading_received": 347,
+                "odometer_brand_calculated": "N",
+                "odometer_reading_desc": "NOT ACTUAL",
                 "current_high_bid": 275,
                 "buy_it_now_price": 0,
                 "currency_code": "USD",
@@ -115,7 +120,7 @@ def test_normalize_search_results_maps_api_fields() -> None:
     assert str(results[0].url) == "https://www.copart.com/lot/99251295"
     assert str(results[0].thumbnail_url) == "https://img.copart.com/99251295.jpg"
     assert results[0].location == "MI - DETROIT"
-    assert results[0].odometer == "12,399 ACTUAL"
+    assert results[0].odometer == "12,399 A"
     assert results[0].current_bid == 0.0
     assert results[0].buy_now_price == 11500.0
     assert results[0].currency == "USD"
@@ -130,6 +135,12 @@ def test_normalize_lot_payload_maps_single_doc() -> None:
     assert str(snapshot.url) == "https://www.copart.com/lot/76880725"
     assert snapshot.current_bid == 275.0
     assert snapshot.buy_now_price == 0.0
+
+
+def test_normalize_search_results_formats_odometer_from_reading_and_brand() -> None:
+    results = normalize_search_results(extract_search_documents(SAMPLE_RESPONSE))
+
+    assert results[1].odometer == "347 N"
 
 
 def test_extract_lot_details_returns_details_object() -> None:

@@ -764,6 +764,10 @@ describe("CarTrap app", () => {
     await waitFor(() => {
       expect(screen.getAllByText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);
     });
+    const resultsDialog = screen.getByRole("dialog", { name: /search results/i });
+    const lotLink = within(resultsDialog).getByRole("link", { name: /open copart lot 12345678/i });
+    expect(lotLink.getAttribute("href")).toBe("https://www.copart.com/lot/12345678");
+    expect(lotLink.getAttribute("target")).toBe("_blank");
     expect(screen.getByText(/Lot#: 12345678/i)).toBeTruthy();
     expect(screen.getByText(/Odo: 12,345 ACTUAL/i)).toBeTruthy();
     expect(screen.getAllByAltText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);

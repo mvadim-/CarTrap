@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any, Optional
 
 from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSearchResult
@@ -382,6 +383,23 @@ def normalize_text(value: Any) -> Optional[str]:
 
 
 def extract_odometer(payload: dict[str, Any]) -> Optional[str]:
+    if parse_boolish(first_present(payload, "hide_odometer", "hideOdometer")) is True:
+        return None
+
+    reading_value = first_present(
+        payload,
+        "odometer_reading_received",
+        "odometerReadingReceived",
+        "odometerReadingReceivedValue",
+        "odometer_received",
+    )
+    formatted_reading = format_odometer_reading(reading_value)
+    if formatted_reading:
+        if re.search(r"[A-Za-z]", formatted_reading):
+            return formatted_reading
+        brand = extract_odometer_brand(payload)
+        return f"{formatted_reading} {brand}".strip() if brand else formatted_reading
+
     value = first_present(
         payload,
         "odometer",
@@ -393,6 +411,52 @@ def extract_odometer(payload: dict[str, Any]) -> Optional[str]:
         "odometerValue",
     )
     return normalize_text(value)
+
+
+def format_odometer_reading(value: Any) -> Optional[str]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return f"{value:,}"
+    if isinstance(value, float):
+        return f"{int(value):,}" if value.is_integer() else f"{value:,.1f}".rstrip("0").rstrip(".")
+
+    text = normalize_text(value)
+    if not text:
+        return None
+
+    normalized = text.replace(",", "").strip()
+    if re.fullmatch(r"\d+(?:\.\d+)?", normalized):
+        numeric_value = float(normalized)
+        return f"{int(numeric_value):,}" if numeric_value.is_integer() else f"{numeric_value:,.1f}".rstrip("0").rstrip(".")
+    return text
+
+
+def extract_odometer_brand(payload: dict[str, Any]) -> Optional[str]:
+    brand = normalize_text(
+        first_present(
+            payload,
+            "odometer_brand_calculated",
+            "odometerBrandCalculated",
+            "odometer_brand",
+            "odometerBrand",
+        )
+    )
+    if brand:
+        return brand.upper()
+
+    description = normalize_text(first_present(payload, "odometer_reading_desc", "odometerReadingDesc"))
+    if not description:
+        return None
+
+    normalized_description = description.strip().upper()
+    return {
+        "ACTUAL": "A",
+        "NOT ACTUAL": "N",
+        "EXEMPT": "E",
+    }.get(normalized_description, normalized_description)
 
 
 def extract_highlights(payload: dict[str, Any]) -> list[str]:
