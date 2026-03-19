@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { AsyncStatus } from "../shared/AsyncStatus";
 import type { LiveSyncStatus, User } from "../../types";
@@ -8,6 +8,9 @@ type Props = {
   liveSyncStatus: LiveSyncStatus | null;
   isBrowserOffline: boolean;
   isBootstrapping: boolean;
+  isPullToRefreshEnabled: boolean;
+  pullToRefreshPhase: "idle" | "pulling" | "armed" | "refreshing";
+  pullToRefreshStyle: CSSProperties;
   onLogout: () => void;
   onOpenSettings: () => void;
   children: ReactNode;
@@ -38,83 +41,115 @@ export function DashboardShell({
   liveSyncStatus,
   isBrowserOffline,
   isBootstrapping,
+  isPullToRefreshEnabled,
+  pullToRefreshPhase,
+  pullToRefreshStyle,
   onLogout,
   onOpenSettings,
   children,
 }: Props) {
   const showOfflineBanner = liveSyncStatus?.status === "degraded";
   const syncTimestampLabel = liveSyncStatus ? formatLastSyncLabel(liveSyncStatus) : null;
+  const isPullToRefreshVisible = isPullToRefreshEnabled && pullToRefreshPhase !== "idle";
+  const pullToRefreshTitle =
+    pullToRefreshPhase === "refreshing"
+      ? "Refreshing dashboard"
+      : pullToRefreshPhase === "armed"
+        ? "Release to refresh"
+        : "Pull to refresh";
+  const pullToRefreshMessage =
+    pullToRefreshPhase === "refreshing"
+      ? "Reloading watchlist, saved searches, and live-sync status."
+      : "Drag down from the top edge to reload dashboard data.";
 
   return (
-    <main className="app-shell app-shell--premium">
-      <header className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">Auction Control</p>
-          <h1>CarTrap dispatch board</h1>
-          <p className="lede">
-            Track live lots, promote the right findings to watchlists, and keep every invited user in sync.
-          </p>
+    <>
+      {isPullToRefreshEnabled ? (
+        <div
+          className={`pull-refresh-indicator${isPullToRefreshVisible ? " pull-refresh-indicator--visible" : ""}`}
+          style={pullToRefreshStyle}
+          aria-live="polite"
+        >
+          <p className="pull-refresh-indicator__title">{pullToRefreshTitle}</p>
+          <p className="pull-refresh-indicator__message">{pullToRefreshMessage}</p>
+          <span className="pull-refresh-indicator__bar" aria-hidden="true" />
         </div>
-        <aside className="hero-card" aria-label="User summary">
-          <div className="hero-card__header">
-            <p className="eyebrow">User</p>
-            <span className="status-pill">{user.role}</span>
-          </div>
-          <div className="hero-card__identity">
-            <p className="detail-label">Email</p>
-            <p className="hero-card__email">{user.email}</p>
-          </div>
-          <div className="hero-card__actions">
-            <button type="button" className="ghost-button" onClick={onOpenSettings}>
-              Settings
-            </button>
-            <button type="button" className="ghost-button" onClick={onLogout}>
-              Log Out
-            </button>
-          </div>
-        </aside>
-      </header>
-      {isBootstrapping ? (
-        <AsyncStatus
-          compact
-          progress="bar"
-          title="Updating dashboard"
-          message="Loading the latest saved searches, watchlist, and device diagnostics."
-          className="dashboard-status"
-        />
       ) : null}
-      {isBrowserOffline ? (
-        <section className="live-sync-banner live-sync-banner--offline" aria-live="polite">
-          <div>
-            <p className="eyebrow">Connection</p>
-            <h2>This device is offline.</h2>
-            <p className="lede live-sync-banner__copy">
-              Previously loaded data stays visible, but live search, watchlist updates, and push diagnostics need a
-              connection.
+      <main
+        className={`app-shell app-shell--premium${isPullToRefreshEnabled ? " app-shell--pullable" : ""}${
+          pullToRefreshPhase === "pulling" || pullToRefreshPhase === "armed" ? " app-shell--pulling" : ""
+        }`}
+        style={pullToRefreshStyle}
+      >
+        <header className="hero">
+          <div className="hero-copy">
+            <p className="eyebrow">Auction Control</p>
+            <h1>CarTrap dispatch board</h1>
+            <p className="lede">
+              Track live lots, promote the right findings to watchlists, and keep every invited user in sync.
             </p>
           </div>
-          <div className="live-sync-banner__meta">
-            <p>Reconnect to resume live Copart actions and retry failed requests.</p>
-          </div>
-        </section>
-      ) : null}
-      {showOfflineBanner ? (
-        <section className="live-sync-banner" aria-live="polite">
-          <div>
-            <p className="eyebrow">Live Sync</p>
-            <h2>Live Copart sync is temporarily unavailable.</h2>
-            <p className="lede live-sync-banner__copy">
-              Search and watchlist actions that need fresh Copart data may fail. Cached Mongo-backed data remains
-              available.
-            </p>
-          </div>
-          <div className="live-sync-banner__meta">
-            {syncTimestampLabel ? <p>{syncTimestampLabel}</p> : null}
-            {liveSyncStatus?.last_error_message ? <p>{liveSyncStatus.last_error_message}</p> : null}
-          </div>
-        </section>
-      ) : null}
-      <section className="dashboard-grid">{children}</section>
-    </main>
+          <aside className="hero-card" aria-label="User summary">
+            <div className="hero-card__header">
+              <p className="eyebrow">User</p>
+              <span className="status-pill">{user.role}</span>
+            </div>
+            <div className="hero-card__identity">
+              <p className="detail-label">Email</p>
+              <p className="hero-card__email">{user.email}</p>
+            </div>
+            <div className="hero-card__actions">
+              <button type="button" className="ghost-button" onClick={onOpenSettings}>
+                Settings
+              </button>
+              <button type="button" className="ghost-button" onClick={onLogout}>
+                Log Out
+              </button>
+            </div>
+          </aside>
+        </header>
+        {isBootstrapping ? (
+          <AsyncStatus
+            compact
+            progress="bar"
+            title="Updating dashboard"
+            message="Loading the latest saved searches, watchlist, and device diagnostics."
+            className="dashboard-status"
+          />
+        ) : null}
+        {isBrowserOffline ? (
+          <section className="live-sync-banner live-sync-banner--offline" aria-live="polite">
+            <div>
+              <p className="eyebrow">Connection</p>
+              <h2>This device is offline.</h2>
+              <p className="lede live-sync-banner__copy">
+                Previously loaded data stays visible, but live search, watchlist updates, and push diagnostics need a
+                connection.
+              </p>
+            </div>
+            <div className="live-sync-banner__meta">
+              <p>Reconnect to resume live Copart actions and retry failed requests.</p>
+            </div>
+          </section>
+        ) : null}
+        {showOfflineBanner ? (
+          <section className="live-sync-banner" aria-live="polite">
+            <div>
+              <p className="eyebrow">Live Sync</p>
+              <h2>Live Copart sync is temporarily unavailable.</h2>
+              <p className="lede live-sync-banner__copy">
+                Search and watchlist actions that need fresh Copart data may fail. Cached Mongo-backed data remains
+                available.
+              </p>
+            </div>
+            <div className="live-sync-banner__meta">
+              {syncTimestampLabel ? <p>{syncTimestampLabel}</p> : null}
+              {liveSyncStatus?.last_error_message ? <p>{liveSyncStatus.last_error_message}</p> : null}
+            </div>
+          </section>
+        ) : null}
+        <section className="dashboard-grid">{children}</section>
+      </main>
+    </>
   );
 }

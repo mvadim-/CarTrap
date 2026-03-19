@@ -80,6 +80,12 @@ function buildLiveSyncStatus(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function submitLoginForm() {
+  fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "admin@example.com" } });
+  fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "secret123" } });
+  fireEvent.submit(screen.getByRole("button", { name: /sign in/i }).closest("form")!);
+}
+
 describe("CarTrap app", () => {
   let lastSearchPayload: Record<string, unknown> | null;
   let loginRole: "admin" | "user";
@@ -89,6 +95,9 @@ describe("CarTrap app", () => {
   let pushTestShouldFail: boolean;
   let watchlistAddShouldFail: boolean;
   let liveSearchCallCount: number;
+  let watchlistListCallCount: number;
+  let savedSearchesListCallCount: number;
+  let systemStatusCallCount: number;
   let savedSearchViewCallCount: number;
   let savedSearchRefreshCallCount: number;
   let nextSavedSearchSeedNewLotNumbers: string[];
@@ -107,6 +116,9 @@ describe("CarTrap app", () => {
     lastSearchPayload = null;
     loginRole = "admin";
     liveSearchCallCount = 0;
+    watchlistListCallCount = 0;
+    savedSearchesListCallCount = 0;
+    systemStatusCallCount = 0;
     savedSearchViewCallCount = 0;
     savedSearchRefreshCallCount = 0;
     nextSavedSearchSeedNewLotNumbers = [];
@@ -190,6 +202,9 @@ describe("CarTrap app", () => {
         if (url.includes("/watchlist") && !url.includes("/search/watchlist")) {
           if ((init?.method ?? "GET") === "GET" && authHeader === "Bearer expired-token") {
             return new Response(JSON.stringify({ detail: "Invalid access token." }), { status: 401 });
+          }
+          if ((init?.method ?? "GET") === "GET") {
+            watchlistListCallCount += 1;
           }
           if ((init?.method ?? "GET") === "POST") {
             if (watchlistAddShouldFail) {
@@ -493,6 +508,7 @@ describe("CarTrap app", () => {
           if (savedSearchesShouldFail) {
             return new Response(JSON.stringify({ detail: "Saved-search cache is unavailable." }), { status: 503 });
           }
+          savedSearchesListCallCount += 1;
           return new Response(JSON.stringify({ items: savedSearches }), { status: 200 });
         }
         if (url.includes("/notifications/test")) {
@@ -531,6 +547,7 @@ describe("CarTrap app", () => {
           );
         }
         if (url.includes("/system/status")) {
+          systemStatusCallCount += 1;
           return new Response(
             JSON.stringify({
               status: "ok",
@@ -612,7 +629,7 @@ describe("CarTrap app", () => {
   it("renders login and opens dashboard after auth", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     expect(screen.getByLabelText(/user summary/i)).toBeTruthy();
@@ -635,7 +652,7 @@ describe("CarTrap app", () => {
 
   it("runs manual search and adds result to watchlist", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
@@ -651,7 +668,7 @@ describe("CarTrap app", () => {
 
   it("filters make and model lists while typing", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
 
@@ -671,7 +688,7 @@ describe("CarTrap app", () => {
 
   it("applies modal filters before running search", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.click(screen.getByRole("button", { name: /filters/i }));
@@ -701,7 +718,7 @@ describe("CarTrap app", () => {
 
   it("saves a search, seeds cached results, and reruns it from the saved searches list without live search", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
@@ -724,7 +741,7 @@ describe("CarTrap app", () => {
   it("shows NEW badges for cached saved-search results and clears list-level new count after opening", async () => {
     nextSavedSearchSeedNewLotNumbers = ["12345678"];
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
@@ -744,7 +761,7 @@ describe("CarTrap app", () => {
 
   it("refreshes a saved search from inside the cached modal", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
@@ -764,7 +781,7 @@ describe("CarTrap app", () => {
 
   it("renders external url link for saved search", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
@@ -779,7 +796,7 @@ describe("CarTrap app", () => {
 
   it("deletes a saved search from the list", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
@@ -798,7 +815,7 @@ describe("CarTrap app", () => {
   it("adds lot to watchlist by lot number", async () => {
     const localAuctionStart = formatExpectedLocalAuctionStart("2026-03-13T18:30:00Z");
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "99251295" } });
@@ -854,7 +871,7 @@ describe("CarTrap app", () => {
     ];
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     const watchlistCards = document.querySelectorAll(".watchlist-card");
@@ -876,7 +893,7 @@ describe("CarTrap app", () => {
     ];
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     expect(screen.getByText(/sale soon/i)).toBeTruthy();
@@ -894,7 +911,7 @@ describe("CarTrap app", () => {
     ];
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     expect(screen.getByText(/auction live/i)).toBeTruthy();
@@ -934,7 +951,7 @@ describe("CarTrap app", () => {
     vi.stubGlobal("PushManager", class PushManager {});
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.click(screen.getByRole("button", { name: /settings/i }));
@@ -949,7 +966,7 @@ describe("CarTrap app", () => {
     savedSearchesShouldFail = true;
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/saved searches unavailable/i);
     savedSearchesShouldFail = false;
@@ -963,7 +980,7 @@ describe("CarTrap app", () => {
 
   it("sends a push test from settings diagnostics", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.click(screen.getByRole("button", { name: /settings/i }));
@@ -975,7 +992,7 @@ describe("CarTrap app", () => {
 
   it("refreshes watchlist data after a push update message without reloading the page", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     expect(screen.queryByText(/2020 TOYOTA CAMRY SE/i)).toBeNull();
@@ -1003,11 +1020,65 @@ describe("CarTrap app", () => {
     expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
   });
 
+  it("reloads dashboard resources after mobile pull to refresh", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 390,
+    });
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 0,
+    });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn((query: string) => ({
+        matches: query === "(pointer: coarse)",
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "admin@example.com" } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "secret123" } });
+    fireEvent.submit(screen.getByRole("button", { name: /sign in/i }).closest("form")!);
+
+    await screen.findByText(/cartrap dispatch board/i);
+    const initialWatchlistLoads = watchlistListCallCount;
+    const initialSavedSearchLoads = savedSearchesListCallCount;
+    const initialSystemStatusLoads = systemStatusCallCount;
+
+    fireEvent.touchStart(window, {
+      touches: [{ clientY: 8 }],
+    });
+    fireEvent.touchMove(window, {
+      touches: [{ clientY: 180 }],
+    });
+
+    expect(screen.getByText(/release to refresh/i)).toBeTruthy();
+
+    fireEvent.touchEnd(window);
+
+    await waitFor(() => {
+      expect(watchlistListCallCount).toBeGreaterThan(initialWatchlistLoads);
+      expect(savedSearchesListCallCount).toBeGreaterThan(initialSavedSearchLoads);
+      expect(systemStatusCallCount).toBeGreaterThan(initialSystemStatusLoads);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText(/refreshing dashboard/i)).toBeNull();
+    });
+  });
+
   it("hides admin-only push diagnostics for non-admin accounts", async () => {
     loginRole = "user";
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.click(screen.getByRole("button", { name: /settings/i }));
@@ -1023,7 +1094,7 @@ describe("CarTrap app", () => {
 
   it("renders fallbacks for missing tracked lot detail fields", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "87654321" } });
@@ -1035,7 +1106,7 @@ describe("CarTrap app", () => {
 
   it("opens gallery modal for tracked lot thumbnails", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "99251295" } });
@@ -1077,7 +1148,7 @@ describe("CarTrap app", () => {
     });
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/live copart sync is temporarily unavailable/i);
     expect(screen.getByText(/cached mongo-backed data remains available/i)).toBeTruthy();
@@ -1102,7 +1173,7 @@ describe("CarTrap app", () => {
     searchShouldFail = true;
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/live copart sync is temporarily unavailable/i);
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
@@ -1125,7 +1196,7 @@ describe("CarTrap app", () => {
     watchlistAddShouldFail = true;
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByText(/live copart sync is temporarily unavailable/i);
     fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "12345678" } });
@@ -1146,7 +1217,7 @@ describe("CarTrap app", () => {
     searchShouldFail = true;
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    submitLoginForm();
 
     await screen.findByRole("heading", { name: /this device is offline/i });
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));

@@ -1,5 +1,10 @@
 # Change Log
 
+## [2026-03-19 11:38] Add mobile pull-to-refresh for dashboard data
+- Оновлено `frontend/src/App.tsx`, `frontend/src/features/dashboard/DashboardShell.tsx` і `frontend/src/styles.css`: додано mobile-only `pull to refresh` для dashboard через touch gesture від верхнього краю, з resistance/threshold логікою, top indicator, safe reset стану та перевикористанням існуючого dashboard reload flow без впливу на desktop.
+- Оновлено `frontend/tests/app.test.tsx`: додано сценарій для мобільного `pull to refresh`, лічильники повторного завантаження dashboard resources і винесено стабільний helper для login-submit у jsdom, щоб verification не залежав від browser validation поведінки.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `27 passed`; `npm run build --prefix frontend` -> успішно.
+
 ## [2026-03-18 15:49] Apply premium finish and close dashboard polish implementation
 - Оновлено `frontend/src/features/{dashboard/DashboardShell.tsx,search/SearchPanel.tsx,watchlist/WatchlistPanel.tsx,admin/AdminInvitesPanel.tsx,admin/AdminSearchCatalogPanel.tsx,push/PushSettingsModal.tsx}` та `frontend/src/styles.css`: dashboard surfaces, badges, pills, support cards і settings modal зведено до більш єдиної premium visual language без зміни runtime contract.
 - Оновлено planning artifacts: `docs/plans/20260318-dashboard-density-urgency-premium-polish.md` синхронізовано з фактичним execution, зафіксовано блокер ручного headed smoke-check через недоступний локальний API (`127.0.0.1:8000`), після чого план перенесено в `docs/plans/completed/20260318-dashboard-density-urgency-premium-polish.md`.

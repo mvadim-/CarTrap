@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { useHashRoute } from "./app/router";
 import { useSession } from "./app/useSession";
@@ -67,6 +67,7 @@ type SearchPayload = {
 type DashboardResourceKey = "watchlist" | "savedSearches" | "subscriptions" | "searchCatalog" | "liveSync";
 type DashboardState<T> = Record<DashboardResourceKey, T>;
 type PushRefreshTarget = DashboardResourceKey;
+type PullToRefreshPhase = "idle" | "pulling" | "armed" | "refreshing";
 
 type ActionState = {
   isSearching: boolean;
@@ -117,6 +118,9 @@ const INITIAL_ACTION_STATE: ActionState = {
 };
 
 const PUSH_MESSAGE_TYPE = "cartrap:push-received";
+const MOBILE_PULL_TO_REFRESH_MAX_WIDTH = 900;
+const PULL_TO_REFRESH_THRESHOLD = 72;
+const PULL_TO_REFRESH_MAX_OFFSET = 104;
 
 function isDashboardResourceKey(value: string): value is DashboardResourceKey {
   return ["watchlist", "savedSearches", "subscriptions", "searchCatalog", "liveSync"].includes(value);
@@ -135,6 +139,29 @@ function getNotificationPermission(): string {
 
 function getBrowserOfflineState(): boolean {
   return typeof navigator !== "undefined" && "onLine" in navigator ? !navigator.onLine : false;
+}
+
+function getVerticalScrollOffset(): number {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return 0;
+  }
+  return Math.max(window.scrollY, document.documentElement.scrollTop, document.body.scrollTop, 0);
+}
+
+function supportsMobilePullToRefresh(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const hasCoarsePointer =
+    typeof window.matchMedia === "function" ? window.matchMedia("(pointer: coarse)").matches : "ontouchstart" in window;
+  return hasCoarsePointer && window.innerWidth <= MOBILE_PULL_TO_REFRESH_MAX_WIDTH;
+}
+
+function getPullToRefreshOffset(deltaY: number): number {
+  if (deltaY <= 0) {
+    return 0;
+  }
+  return Math.min(PULL_TO_REFRESH_MAX_OFFSET, Math.round(deltaY * 0.55));
 }
 
 function toErrorMessage(caught: unknown, fallbackMessage: string): string {
@@ -212,13 +239,27 @@ export function App() {
   const [dashboardLoading, setDashboardLoading] = useState<DashboardState<boolean>>(INITIAL_DASHBOARD_LOADING);
   const [dashboardErrors, setDashboardErrors] = useState<DashboardState<string | null>>(INITIAL_DASHBOARD_ERRORS);
   const [actionState, setActionState] = useState<ActionState>(INITIAL_ACTION_STATE);
+  const [pullToRefreshOffset, setPullToRefreshOffset] = useState(0);
+  const [pullToRefreshPhase, setPullToRefreshPhase] = useState<PullToRefreshPhase>("idle");
   const pushRefreshTimeoutRef = useRef<number | null>(null);
   const pendingPushRefreshTargetsRef = useRef<Set<PushRefreshTarget>>(new Set());
+  const pullToRefreshPhaseRef = useRef<PullToRefreshPhase>("idle");
+  const pullToRefreshTouchStateRef = useRef({
+    isTracking: false,
+    startY: 0,
+    lastOffset: 0,
+  });
 
   const isBootstrapping = Object.values(dashboardLoading).some(Boolean);
   const supportsPush = typeof Notification !== "undefined" && typeof window !== "undefined" && "PushManager" in window;
   const isSecurePushContext = typeof window !== "undefined" ? window.isSecureContext : false;
   const isAdmin = session.user?.role === "admin";
+  const isMobilePullToRefreshEnabled =
+    session.isAuthenticated && !isSettingsOpen && typeof window !== "undefined" && supportsMobilePullToRefresh();
+  const pullToRefreshStyle = {
+    "--pull-offset": `${pullToRefreshOffset}px`,
+    "--pull-progress": `${Math.min(pullToRefreshOffset / PULL_TO_REFRESH_THRESHOLD, 1)}`,
+  } as CSSProperties;
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -255,6 +296,8 @@ export function App() {
     setDashboardErrors(INITIAL_DASHBOARD_ERRORS);
     setDashboardLoading(INITIAL_DASHBOARD_LOADING);
     setActionState(INITIAL_ACTION_STATE);
+    setPullToRefreshOffset(0);
+    setPullToRefreshPhase("idle");
   }
 
   function setDashboardLoadingState(key: DashboardResourceKey, value: boolean) {
@@ -388,6 +431,17 @@ export function App() {
     ]);
   }
 
+  async function refreshDashboardFromPull(token: string) {
+    setPullToRefreshPhase("refreshing");
+    setPullToRefreshOffset(PULL_TO_REFRESH_THRESHOLD);
+    try {
+      await loadDashboardResources(token);
+    } finally {
+      setPullToRefreshOffset(0);
+      setPullToRefreshPhase("idle");
+    }
+  }
+
   useEffect(() => {
     configureAuthLifecycle({
       onTokensRefreshed: session.updateTokens,
@@ -406,6 +460,114 @@ export function App() {
     }
     void loadDashboardResources(session.accessToken);
   }, [session.accessToken]);
+
+  useEffect(() => {
+    pullToRefreshPhaseRef.current = pullToRefreshPhase;
+  }, [pullToRefreshPhase]);
+
+  useEffect(() => {
+    if (!session.isAuthenticated || !session.accessToken || isSettingsOpen) {
+      setPullToRefreshOffset(0);
+      if (pullToRefreshPhaseRef.current !== "refreshing") {
+        setPullToRefreshPhase("idle");
+      }
+      return;
+    }
+
+    function resetGestureState() {
+      pullToRefreshTouchStateRef.current.isTracking = false;
+      pullToRefreshTouchStateRef.current.startY = 0;
+      pullToRefreshTouchStateRef.current.lastOffset = 0;
+      setPullToRefreshOffset(0);
+      setPullToRefreshPhase("idle");
+    }
+
+    function handleTouchStart(event: TouchEvent) {
+      if (
+        !supportsMobilePullToRefresh() ||
+        pullToRefreshPhaseRef.current === "refreshing" ||
+        event.touches.length !== 1 ||
+        getVerticalScrollOffset() > 0
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (target instanceof Element && target.closest(".modal-card")) {
+        return;
+      }
+      pullToRefreshTouchStateRef.current.isTracking = true;
+      pullToRefreshTouchStateRef.current.startY = event.touches[0]?.clientY ?? 0;
+      pullToRefreshTouchStateRef.current.lastOffset = 0;
+    }
+
+    function handleTouchMove(event: TouchEvent) {
+      if (!pullToRefreshTouchStateRef.current.isTracking || event.touches.length !== 1) {
+        return;
+      }
+      if (getVerticalScrollOffset() > 0) {
+        resetGestureState();
+        return;
+      }
+
+      const currentY = event.touches[0]?.clientY ?? pullToRefreshTouchStateRef.current.startY;
+      const offset = getPullToRefreshOffset(currentY - pullToRefreshTouchStateRef.current.startY);
+      if (offset <= 0) {
+        setPullToRefreshOffset(0);
+        setPullToRefreshPhase("idle");
+        pullToRefreshTouchStateRef.current.lastOffset = 0;
+        return;
+      }
+
+      event.preventDefault();
+      pullToRefreshTouchStateRef.current.lastOffset = offset;
+      setPullToRefreshOffset(offset);
+      setPullToRefreshPhase(offset >= PULL_TO_REFRESH_THRESHOLD ? "armed" : "pulling");
+    }
+
+    function handleTouchEnd() {
+      const { lastOffset, isTracking } = pullToRefreshTouchStateRef.current;
+      if (!isTracking) {
+        return;
+      }
+
+      pullToRefreshTouchStateRef.current.isTracking = false;
+      pullToRefreshTouchStateRef.current.startY = 0;
+      pullToRefreshTouchStateRef.current.lastOffset = 0;
+
+      if (
+        lastOffset >= PULL_TO_REFRESH_THRESHOLD &&
+        !isBootstrapping &&
+        !isBrowserOffline &&
+        session.accessToken
+      ) {
+        void refreshDashboardFromPull(session.accessToken);
+        return;
+      }
+
+      setPullToRefreshOffset(0);
+      setPullToRefreshPhase("idle");
+    }
+
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleTouchEnd);
+    window.addEventListener("touchcancel", handleTouchEnd);
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("touchcancel", handleTouchEnd);
+      pullToRefreshTouchStateRef.current.isTracking = false;
+      pullToRefreshTouchStateRef.current.startY = 0;
+      pullToRefreshTouchStateRef.current.lastOffset = 0;
+    };
+  }, [
+    isBootstrapping,
+    isBrowserOffline,
+    isSettingsOpen,
+    session.accessToken,
+    session.isAuthenticated,
+  ]);
 
   useEffect(() => {
     const serviceWorker = "serviceWorker" in navigator ? navigator.serviceWorker : undefined;
@@ -907,6 +1069,9 @@ export function App() {
         liveSyncStatus={liveSyncStatus}
         isBrowserOffline={isBrowserOffline}
         isBootstrapping={isBootstrapping}
+        isPullToRefreshEnabled={isMobilePullToRefreshEnabled}
+        pullToRefreshPhase={pullToRefreshPhase}
+        pullToRefreshStyle={pullToRefreshStyle}
         onLogout={handleLogout}
         onOpenSettings={handleOpenSettings}
       >
