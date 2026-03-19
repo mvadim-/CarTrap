@@ -1110,6 +1110,7 @@ export function App() {
           refreshingSavedSearchId={actionState.refreshingSavedSearchId}
           deletingSavedSearchId={actionState.deletingSavedSearchId}
           addingFromSearchLotUrl={actionState.addingFromSearchLotUrl}
+          trackedLotUrls={watchlist.map((item) => item.url)}
           isBrowserOffline={isBrowserOffline}
           liveSyncStatus={liveSyncStatus}
           isManualSearchOpen={isManualSearchOpen}

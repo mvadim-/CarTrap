@@ -1,5 +1,9 @@
 # Change Log
 
+## [2026-03-19 16:24] Add completed-state affordance after search result is tracked
+- Оновлено `frontend/src/{App.tsx,styles.css}` і `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx}`: add-to-watchlist CTA у results rows тепер переходить з `+` у completed-state `✓`, блокує повторне додавання для вже tracked lot URLs і показує success-повідомлення в модалці після успішного add.
+- Оновлено `frontend/tests/app.test.tsx`: додано assertion на disabled completed-state button і success message після додавання лота з search results.
+
 ## [2026-03-19 16:16] Add explicit lot-open link and plus affordance in search rows
 - Оновлено `frontend/src/features/search/SearchResultsModal.tsx` і `frontend/src/styles.css`: у results rows назва лоту тепер відкриває Copart lot page в новій вкладці, а add-to-watchlist CTA змінено зі стрілки на `+`, щоб дія читалась як додавання, а не навігація.
 - Оновлено `frontend/tests/app.test.tsx`: додано assertion на зовнішнє lot-link посилання в search results.

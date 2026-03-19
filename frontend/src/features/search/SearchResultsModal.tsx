@@ -18,6 +18,7 @@ type Props = {
   canSave: boolean;
   isSavingSearch?: boolean;
   addingFromSearchLotUrl?: string | null;
+  trackedLotUrls?: string[];
   canRefreshLive?: boolean;
   onRefreshLive?: () => Promise<void>;
   isRefreshingLive?: boolean;
@@ -114,6 +115,7 @@ export function SearchResultsModal({
   canSave,
   isSavingSearch = false,
   addingFromSearchLotUrl = null,
+  trackedLotUrls = [],
   canRefreshLive = false,
   onRefreshLive,
   isRefreshingLive = false,
@@ -452,6 +454,7 @@ export function SearchResultsModal({
                 {results.map((result) => {
                   const marketSignal = getMarketSignal(result);
                   const isAdding = addingFromSearchLotUrl === result.url;
+                  const isTracked = trackedLotUrls.includes(result.url);
 
                   return (
                     <article key={result.lot_number} className="search-result-row">
@@ -481,14 +484,26 @@ export function SearchResultsModal({
                       </div>
                       <button
                         type="button"
-                        className="search-result-row__cta"
+                        className={`search-result-row__cta${isTracked ? " search-result-row__cta--done" : ""}`}
                         onClick={() => void onAddFromSearch(result.url)}
-                        disabled={isAdding}
+                        disabled={isAdding || isTracked}
                         aria-busy={isAdding}
-                        aria-label={isAdding ? `Adding ${result.title} to watchlist` : `Add to watchlist: ${result.title}`}
-                        title={isAdding ? "Adding to watchlist" : "Add to watchlist"}
+                        aria-label={
+                          isAdding
+                            ? `Adding ${result.title} to watchlist`
+                            : isTracked
+                              ? `Already in watchlist: ${result.title}`
+                              : `Add to watchlist: ${result.title}`
+                        }
+                        title={
+                          isAdding
+                            ? "Adding to watchlist"
+                            : isTracked
+                              ? "Lot is already in the watchlist"
+                              : "Add to watchlist"
+                        }
                       >
-                        {isAdding ? "..." : "+"}
+                        {isAdding ? "..." : isTracked ? "✓" : "+"}
                       </button>
                     </article>
                   );

@@ -45,6 +45,7 @@ type Props = {
   refreshingSavedSearchId: string | null;
   deletingSavedSearchId: string | null;
   addingFromSearchLotUrl: string | null;
+  trackedLotUrls: string[];
   isBrowserOffline: boolean;
   liveSyncStatus: LiveSyncStatus | null;
   isManualSearchOpen: boolean;
@@ -227,6 +228,7 @@ export function SearchPanel({
   refreshingSavedSearchId,
   deletingSavedSearchId,
   addingFromSearchLotUrl,
+  trackedLotUrls,
   isBrowserOffline,
   liveSyncStatus,
   isManualSearchOpen,
@@ -578,6 +580,16 @@ export function SearchPanel({
   const makeOptions: SearchableOption[] = filteredMakes.map((item) => ({ slug: item.slug, name: item.name }));
   const modelOptions: SearchableOption[] = filteredModels.map((item) => ({ slug: item.slug, name: item.name }));
 
+  async function handleAddCurrentResultToWatchlist(lotUrl: string) {
+    await onAddFromSearch(lotUrl);
+    const addedResult = searchModal.results.find((item) => item.url === lotUrl);
+    setSearchModal((current) => ({
+      ...current,
+      statusMessage: addedResult ? `Added ${addedResult.title} to watchlist.` : "Lot added to watchlist.",
+      refreshError: null,
+    }));
+  }
+
   return (
     <>
       <section className="panel panel--search panel--operational search-panel">
@@ -854,11 +866,12 @@ export function SearchPanel({
           }));
           setIsResultsOpen(false);
         }}
-        onAddFromSearch={onAddFromSearch}
+        onAddFromSearch={handleAddCurrentResultToWatchlist}
         onSaveSearch={handleSaveCurrentSearch}
         canSave={searchModal.canSave && lastSubmittedPayload !== null}
         isSavingSearch={isSavingSearch}
         addingFromSearchLotUrl={addingFromSearchLotUrl}
+        trackedLotUrls={trackedLotUrls}
         canRefreshLive={searchModal.mode === "saved" && searchModal.savedSearchId !== null}
         onRefreshLive={handleRefreshCurrentSavedSearch}
         isRefreshingLive={
