@@ -215,6 +215,14 @@ describe("CarTrap app", () => {
     });
     localStorage.clear();
     window.location.hash = "#/login";
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 0,
+    });
+    Object.defineProperty(window, "scrollTo", {
+      configurable: true,
+      value: vi.fn(),
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -843,6 +851,41 @@ describe("CarTrap app", () => {
     });
     expect(document.body.style.position).toBe("");
     expect(document.documentElement.style.overflow).toBe("");
+  });
+
+  it("renders fullscreen saved-search results outside the pullable app shell and collapses intro chrome on scroll", async () => {
+    mockMobileViewport();
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    await runDefaultManualSearch();
+    fireEvent.click(screen.getByRole("button", { name: /save search/i }));
+    await screen.findByRole("button", { name: /^ford mustang mach-e 2025-2027/i });
+
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 480,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i }));
+
+    const resultsDialog = await screen.findByRole("dialog", { name: /search results/i });
+    const appShell = document.querySelector(".app-shell");
+    expect(appShell?.contains(resultsDialog)).toBe(false);
+    expect(screen.getByRole("button", { name: /close/i })).toBeTruthy();
+
+    const resultsBody = resultsDialog.querySelector(".search-results-modal__body");
+    expect(resultsBody).toBeTruthy();
+    fireEvent.scroll(resultsBody!, {
+      target: { scrollTop: 72 },
+    });
+    expect(resultsDialog.className).toContain("search-results-modal--collapsed");
+
+    fireEvent.scroll(resultsBody!, {
+      target: { scrollTop: 0 },
+    });
+    expect(resultsDialog.className).not.toContain("search-results-modal--collapsed");
   });
 
   it("renders external url link for saved search", async () => {

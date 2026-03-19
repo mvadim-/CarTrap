@@ -609,3 +609,9 @@
 - Оновлено `frontend/src/styles.css`: додано mobile-специфічну поведінку для `settings-modal` та окремі стилі `push-subscription-card`, щоб довгі `user_agent`/endpoint значення переносились усередині картки й `Revoke` не ламав ширину layout на iPhone.
 - Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для mobile settings modal, full-screen class/scroll lock і рендерингу довгої device subscription картки після enable push.
 - Verification: `npm run test --prefix frontend -- app.test.tsx` -> `31 passed`; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-19 14:28] Compact saved-search fullscreen modal chrome on mobile scroll
+- Оновлено `frontend/src/features/search/SearchResultsModal.tsx`: fullscreen results modal тепер рендериться через portal у `document.body`, скидає внутрішній scroll при відкритті й на mobile схлопує title/meta/status chrome після початку scroll, залишаючи зверху лише action menu.
+- Оновлено `frontend/src/styles.css`: додано окремий layout для `search-results-modal` з `chrome/body` секціями та mobile collapsed state, щоб results list отримував більше корисної висоти під час scroll без втрати `Refresh Live / Close`.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для fullscreen results modal поза `.app-shell`, collapse/un-collapse header chrome при scroll і тестовий stub `window.scrollTo`, щоб suite залишався чистим у JSDOM.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `32 passed`; `npm run build --prefix frontend` -> успішно.
