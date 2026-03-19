@@ -388,6 +388,8 @@ def extract_odometer(payload: dict[str, Any]) -> Optional[str]:
         "odometerReading",
         "odometerReadingReceived",
         "odometer_reading_received",
+        "odometerReadingReceivedValue",
+        "odometer_received",
         "odometerValue",
     )
     return normalize_text(value)

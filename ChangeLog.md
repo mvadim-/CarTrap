@@ -1,5 +1,9 @@
 # Change Log
 
+## [2026-03-19 15:51] Force stable lot thumbnail ratio in results rows
+- Оновлено `frontend/src/styles.css`: thumbnail у search-result rows тепер має явні width/height і `object-fit: cover`, щоб на реальному мобільному девайсі не ламався в портретну геометрію через intrinsic image ratio.
+- Оновлено `backend/src/cartrap/modules/copart_provider/normalizer.py`: parse odometer для search docs розширено додатковими варіантами ключів навколо `odometer_reading_received`, щоб не втрачати значення через дрібні відмінності payload shape.
+
 ## [2026-03-19 15:39] Tighten results modal mobile fit and restore odometer from search payload
 - Оновлено `frontend/src/features/search/SearchResultsModal.tsx` і `frontend/src/styles.css`: saved-search results modal тепер стабільно входить у mobile fullscreen на вузьких екранах навіть якщо `pointer: coarse` не спрацював, а lot rows і topbar ущільнено під реальний `390px` viewport після prod smoke-check.
 - Оновлено `backend/src/cartrap/modules/copart_provider/normalizer.py` і `backend/tests/copart/test_api_normalizer.py`: search-result odometer тепер також читається з ключа `odometer_reading_received`, який приходить у продакшен search docs.
