@@ -1,5 +1,10 @@
 # Change Log
 
+## [2026-03-19 15:39] Tighten results modal mobile fit and restore odometer from search payload
+- Оновлено `frontend/src/features/search/SearchResultsModal.tsx` і `frontend/src/styles.css`: saved-search results modal тепер стабільно входить у mobile fullscreen на вузьких екранах навіть якщо `pointer: coarse` не спрацював, а lot rows і topbar ущільнено під реальний `390px` viewport після prod smoke-check.
+- Оновлено `backend/src/cartrap/modules/copart_provider/normalizer.py` і `backend/tests/copart/test_api_normalizer.py`: search-result odometer тепер також читається з ключа `odometer_reading_received`, який приходить у продакшен search docs.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression test для fullscreen saved-search results на вузькому viewport без coarse-pointer detection.
+
 ## [2026-03-19 12:15] Restyle search-result lot rows to match reference mobile list
 - Оновлено `frontend/src/features/search/SearchResultsModal.tsx`, `frontend/src/styles.css` і `frontend/src/types.ts`: список лотів у search results перебудовано з card-layout у щільний mobile-first list pattern зі скріншота; рядок тепер має thumbnail зліва, title/lot/location/odo по центру, bid-or-live/timer/buy-now сигнал справа і chevron-style add-to-watchlist CTA без змін верхнього chrome модалки.
 - Оновлено `backend/src/cartrap/modules/copart_provider/{models.py,normalizer.py}`, `backend/tests/copart/test_api_normalizer.py` і `backend/tests/search/test_search_api.py`: search-result payload розширено полями `odometer`, `buy_now_price` і `raw_status`, щоб новий list layout міг показувати ту саму ключову інформацію по лоту, що й reference.

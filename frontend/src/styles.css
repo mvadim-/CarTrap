@@ -1435,10 +1435,10 @@ button:focus-visible,
 
 .search-result-row {
   display: grid;
-  grid-template-columns: 7.4rem minmax(0, 1fr) minmax(6.2rem, 7.8rem) auto;
+  grid-template-columns: 6.35rem minmax(0, 1fr) minmax(5rem, 6.1rem) auto;
   align-items: center;
-  gap: 0.9rem;
-  padding: 0.9rem 1rem;
+  gap: 0.65rem;
+  padding: 0.82rem 0.9rem;
   border-bottom: 1px solid rgba(19, 38, 47, 0.12);
   background: rgba(255, 255, 255, 0.98);
 }
@@ -1465,9 +1465,10 @@ button:focus-visible,
 
 .search-result-row__title {
   color: #2d3139;
-  font-size: clamp(1.05rem, 3.6vw, 1.28rem);
+  font-size: clamp(0.98rem, 3.2vw, 1.12rem);
   font-weight: 800;
-  line-height: 1.1;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
   text-transform: uppercase;
 }
 
@@ -1482,8 +1483,8 @@ button:focus-visible,
 .search-result-row__odometer {
   margin: 0;
   color: #49515d;
-  font-size: clamp(0.95rem, 3.2vw, 1.02rem);
-  line-height: 1.18;
+  font-size: clamp(0.84rem, 2.8vw, 0.92rem);
+  line-height: 1.12;
 }
 
 .search-result-row__meta {
@@ -1512,19 +1513,19 @@ button:focus-visible,
 
 .search-result-row__market-headline {
   color: #38404b;
-  font-size: clamp(0.92rem, 3vw, 1rem);
+  font-size: clamp(0.84rem, 2.8vw, 0.92rem);
   font-weight: 500;
 }
 
 .search-result-row__market-timer {
   color: #d8291f;
-  font-size: clamp(0.98rem, 3.3vw, 1.15rem);
+  font-size: clamp(0.92rem, 3vw, 1rem);
   font-weight: 800;
 }
 
 .search-result-row__market-meta {
   color: #4a535f;
-  font-size: clamp(0.9rem, 2.9vw, 0.98rem);
+  font-size: clamp(0.8rem, 2.7vw, 0.9rem);
 }
 
 .search-result-row__market--live .search-result-row__market-headline {
@@ -1537,14 +1538,14 @@ button:focus-visible,
 }
 
 .search-result-row__cta {
-  min-width: 2.4rem;
+  min-width: 1.65rem;
   padding: 0;
   border: none;
   border-radius: 999px;
   background: transparent;
   box-shadow: none;
   color: rgba(122, 129, 141, 0.94);
-  font-size: 2.35rem;
+  font-size: 1.95rem;
   font-weight: 600;
   line-height: 1;
 }
@@ -1582,6 +1583,25 @@ button:focus-visible,
   margin: 0;
   font-size: clamp(1.65rem, 6vw, 2.35rem);
   line-height: 1.04;
+}
+
+.modal-card--mobile-screen.search-results-modal .search-results-modal__topbar {
+  padding: max(0.85rem, calc(env(safe-area-inset-top) + 0.3rem)) 0.85rem 0.65rem;
+}
+
+.modal-card--mobile-screen.search-results-modal .search-results-modal__actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 0.55rem;
+  width: 100%;
+}
+
+.modal-card--mobile-screen.search-results-modal .search-results-modal__actions button {
+  min-width: 0;
+}
+
+.modal-card--mobile-screen.search-results-modal .search-results-modal__status-stack {
+  padding-inline: 0.85rem;
 }
 
 .filter-modal {
@@ -1919,9 +1939,9 @@ button:focus-visible,
   }
 
   .search-result-row {
-    grid-template-columns: 6.6rem minmax(0, 1fr) minmax(5.7rem, 6.8rem) auto;
-    gap: 0.75rem;
-    padding-inline: 0.8rem;
+    grid-template-columns: 6rem minmax(0, 1fr) minmax(4.8rem, 5.7rem) auto;
+    gap: 0.58rem;
+    padding-inline: 0.78rem;
   }
 
   .push-subscription-card {
@@ -1955,9 +1975,9 @@ button:focus-visible,
   }
 
   .search-result-row {
-    grid-template-columns: 6.1rem minmax(0, 1fr) minmax(5.2rem, 6.2rem) auto;
-    gap: 0.65rem;
-    padding: 0.8rem 0.75rem;
+    grid-template-columns: 5.55rem minmax(0, 1fr) minmax(4.45rem, 5.3rem) auto;
+    gap: 0.52rem;
+    padding: 0.76rem 0.72rem;
   }
 
   .search-result-row__meta,
@@ -1965,16 +1985,20 @@ button:focus-visible,
   .search-result-row__odometer,
   .search-result-row__market-headline,
   .search-result-row__market-meta {
-    font-size: 0.88rem;
+    font-size: 0.78rem;
   }
 
   .search-result-row__market-timer {
-    font-size: 1rem;
+    font-size: 0.9rem;
+  }
+
+  .search-result-row__title {
+    font-size: 0.88rem;
   }
 
   .search-result-row__cta {
-    min-width: 2rem;
-    font-size: 2rem;
+    min-width: 1.4rem;
+    font-size: 1.7rem;
   }
 
   .dashboard-header {

@@ -30,7 +30,7 @@ SAMPLE_RESPONSE = {
                 "yard_name": "MI - DETROIT",
                 "auction_host_name": "MI - DETROIT",
                 "auction_date_utc": "2026-03-13T14:00:00Z",
-                "odometer": {"formattedValue": "12,399 ACTUAL"},
+                "odometer_reading_received": {"formattedValue": "12,399 ACTUAL"},
                 "current_high_bid": 0,
                 "buy_it_now_price": 11500,
                 "currency_code": "USD",

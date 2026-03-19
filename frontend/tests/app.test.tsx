@@ -122,6 +122,30 @@ function mockMobileViewport(width = 390) {
   });
 }
 
+function mockNarrowViewportWithoutCoarsePointer(width = 390) {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    value: width,
+  });
+  Object.defineProperty(window, "scrollY", {
+    configurable: true,
+    value: 0,
+  });
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
 async function openManualSearch() {
   fireEvent.click(screen.getAllByRole("button", { name: /^new search$/i })[0]!);
   await screen.findByRole("dialog", { name: /new search/i });
@@ -897,6 +921,22 @@ describe("CarTrap app", () => {
     });
     expect(document.body.style.position).toBe("");
     expect(document.documentElement.style.overflow).toBe("");
+  });
+
+  it("renders saved-search results as fullscreen on narrow viewports even without coarse pointer detection", async () => {
+    mockNarrowViewportWithoutCoarsePointer();
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    await runDefaultManualSearch();
+    fireEvent.click(screen.getByRole("button", { name: /save search/i }));
+    await screen.findByRole("button", { name: /^ford mustang mach-e 2025-2027/i });
+    fireEvent.click(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i }));
+
+    const resultsDialog = await screen.findByRole("dialog", { name: /search results/i });
+    expect(resultsDialog.className).toContain("modal-card--mobile-screen");
   });
 
   it("renders fullscreen saved-search results outside the pullable app shell and collapses intro chrome on scroll", async () => {

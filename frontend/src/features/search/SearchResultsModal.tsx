@@ -122,7 +122,9 @@ export function SearchResultsModal({
   statusMessage = null,
   mobileFullscreen = false,
 }: Props) {
-  const isMobileFullscreen = shouldUseMobileFullscreen(mobileFullscreen);
+  const isMobileFullscreen =
+    shouldUseMobileFullscreen(mobileFullscreen) ||
+    (mobileFullscreen && typeof window !== "undefined" && window.innerWidth <= 640);
   const modalBodyRef = useRef<HTMLDivElement | null>(null);
   const collapsibleRef = useRef<HTMLDivElement | null>(null);
   const collapseFrameRef = useRef<number | null>(null);
