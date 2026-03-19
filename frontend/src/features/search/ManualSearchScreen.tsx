@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import { AsyncStatus } from "../shared/AsyncStatus";
+import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 export type SearchableOption = {
   slug: string;
@@ -141,6 +142,8 @@ export function ManualSearchScreen({
   onClose,
   onSubmit,
 }: Props) {
+  useBodyScrollLock(isOpen);
+
   useEffect(() => {
     if (!isOpen) {
       return;

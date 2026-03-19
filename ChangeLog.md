@@ -597,3 +597,9 @@
 - Оновлено `frontend/tests/app.test.tsx`: suite переведено на новий mobile flow, додано покриття для account menu, inbox filters/order, overflow actions, title-block open, full-screen manual-search flow і блокування pull-to-refresh під час composer.
 - Оновлено `docs/plans/20260319-saved-search-inbox-mobile-refresh.md`: усі task-и позначені виконаними перед переміщенням у `docs/plans/completed/`.
 - Verification: `npm run test --prefix frontend -- app.test.tsx` -> `29 passed`; `npm run test --prefix frontend` -> `29 passed`; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-19 14:10] Fix mobile header and overlay behavior after saved-search inbox rollout
+- Оновлено `frontend/src/features/dashboard/DashboardShell.tsx` і `frontend/src/styles.css`: header зведено в одну компактну поверхню без окремого `USER` pill/block, а кнопка меню інтегрована прямо в header, щоб верхній екран не витрачав висоту на порожню account card.
+- Додано `frontend/src/features/shared/useBodyScrollLock.ts` і оновлено `frontend/src/features/search/{ManualSearchScreen.tsx,SearchResultsModal.tsx,SearchPanel.tsx}`: full-screen `New Search` тепер реально локує background scroll, а saved-search results на mobile відкриваються як full-screen surface замість нижнього sheet; scroll lock став reference-counted, щоб вкладені overlays не лишали `body` у заблокованому стані.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для mobile fullscreen saved-search results, body-scroll lock/unlock під час `New Search`, і перевірку що dashboard більше не рендерить окремий `USER` label на верхньому екрані.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `30 passed`; `npm run test --prefix frontend` -> `30 passed`; `npm run build --prefix frontend` -> успішно.

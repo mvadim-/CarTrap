@@ -95,6 +95,30 @@ function openSettingsFromAccountMenu() {
   fireEvent.click(screen.getByRole("button", { name: /^settings$/i }));
 }
 
+function mockMobileViewport(width = 390) {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    value: width,
+  });
+  Object.defineProperty(window, "scrollY", {
+    configurable: true,
+    value: 0,
+  });
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn((query: string) => ({
+      matches: query === "(pointer: coarse)",
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
 async function openManualSearch() {
   fireEvent.click(screen.getAllByRole("button", { name: /^new search$/i })[0]!);
   await screen.findByRole("dialog", { name: /new search/i });
@@ -654,6 +678,7 @@ describe("CarTrap app", () => {
     await screen.findByText(/cartrap dispatch board/i);
     expect(screen.queryByLabelText(/user summary/i)).toBeNull();
     expect(screen.getByRole("button", { name: /open account menu/i })).toBeTruthy();
+    expect(screen.queryByText(/^user$/i)).toBeNull();
     const searchHeading = screen.getByRole("heading", { name: /saved searches/i });
     const watchlistHeading = screen.getByRole("heading", { name: /tracked lots/i });
     const invitesHeading = screen.getByRole("heading", { name: /generate invites/i });
@@ -793,6 +818,31 @@ describe("CarTrap app", () => {
     await screen.findByText(/2018 HONDA CIVIC EX/i);
     expect(savedSearchRefreshCallCount).toBe(1);
     expect(screen.getAllByText(/2 lots found/i).length).toBeGreaterThan(0);
+  });
+
+  it("renders saved-search results as a fullscreen mobile surface and locks background scroll", async () => {
+    mockMobileViewport();
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    await runDefaultManualSearch();
+    fireEvent.click(screen.getByRole("button", { name: /save search/i }));
+    await screen.findByRole("button", { name: /^ford mustang mach-e 2025-2027/i });
+    fireEvent.click(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i }));
+
+    const resultsDialog = await screen.findByRole("dialog", { name: /search results/i });
+    expect(resultsDialog.className).toContain("modal-card--mobile-screen");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: /close/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /search results/i })).toBeNull();
+    });
+    expect(document.body.style.position).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
   });
 
   it("renders external url link for saved search", async () => {
@@ -1122,27 +1172,7 @@ describe("CarTrap app", () => {
   });
 
   it("suppresses mobile pull to refresh while the new-search screen is open", async () => {
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      value: 390,
-    });
-    Object.defineProperty(window, "scrollY", {
-      configurable: true,
-      value: 0,
-    });
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      value: vi.fn((query: string) => ({
-        matches: query === "(pointer: coarse)",
-        media: query,
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    });
+    mockMobileViewport();
 
     render(<App />);
     submitLoginForm();
@@ -1153,6 +1183,8 @@ describe("CarTrap app", () => {
     const initialSystemStatusLoads = systemStatusCallCount;
 
     await openManualSearch();
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.documentElement.style.overflow).toBe("hidden");
     fireEvent.touchStart(window, {
       touches: [{ clientY: 8 }],
     });
@@ -1165,6 +1197,13 @@ describe("CarTrap app", () => {
     expect(watchlistListCallCount).toBe(initialWatchlistLoads);
     expect(savedSearchesListCallCount).toBe(initialSavedSearchLoads);
     expect(systemStatusCallCount).toBe(initialSystemStatusLoads);
+
+    fireEvent.click(screen.getByRole("button", { name: /back to inbox/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /new search/i })).toBeNull();
+    });
+    expect(document.body.style.position).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
   });
 
   it("hides admin-only push diagnostics for non-admin accounts", async () => {

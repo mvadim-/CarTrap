@@ -867,6 +867,7 @@ export function SearchPanel({
         lastSyncedAt={searchModal.lastSyncedAt}
         refreshError={searchModal.refreshError}
         statusMessage={searchModal.statusMessage}
+        mobileFullscreen={searchModal.mode === "saved"}
       />
 
       <SearchFiltersModal

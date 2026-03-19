@@ -1,10 +1,8 @@
 import type { CSSProperties, ReactNode } from "react";
 
 import { AsyncStatus } from "../shared/AsyncStatus";
-import type { User } from "../../types";
 
 type Props = {
-  user: User;
   isBrowserOffline: boolean;
   isBootstrapping: boolean;
   isPullToRefreshEnabled: boolean;
@@ -16,7 +14,6 @@ type Props = {
 };
 
 export function DashboardShell({
-  user,
   isBrowserOffline,
   isBootstrapping,
   isPullToRefreshEnabled,
@@ -64,7 +61,6 @@ export function DashboardShell({
             <p className="lede">Saved-search inbox, watchlist urgency, and account controls for this device.</p>
           </div>
           <div className="dashboard-header__actions">
-            <span className="status-pill">{user.role}</span>
             <button
               type="button"
               className="ghost-button dashboard-header__menu-button"

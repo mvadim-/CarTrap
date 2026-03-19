@@ -1077,7 +1077,6 @@ export function App() {
   return (
     <>
       <DashboardShell
-        user={session.user!}
         isBrowserOffline={isBrowserOffline}
         isBootstrapping={isBootstrapping}
         isPullToRefreshEnabled={isMobilePullToRefreshEnabled}

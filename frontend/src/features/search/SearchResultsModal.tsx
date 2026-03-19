@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import type { SearchResult } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
 import { LotThumbnail } from "../shared/LotThumbnail";
+import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 type Props = {
   isOpen: boolean;
@@ -21,7 +22,17 @@ type Props = {
   lastSyncedAt?: string | null;
   refreshError?: string | null;
   statusMessage?: string | null;
+  mobileFullscreen?: boolean;
 };
+
+function shouldUseMobileFullscreen(enabled: boolean): boolean {
+  if (!enabled || typeof window === "undefined") {
+    return false;
+  }
+  const hasCoarsePointer =
+    typeof window.matchMedia === "function" ? window.matchMedia("(pointer: coarse)").matches : "ontouchstart" in window;
+  return hasCoarsePointer && window.innerWidth <= 900;
+}
 
 export function SearchResultsModal({
   isOpen,
@@ -40,7 +51,11 @@ export function SearchResultsModal({
   lastSyncedAt = null,
   refreshError = null,
   statusMessage = null,
+  mobileFullscreen = false,
 }: Props) {
+  const isMobileFullscreen = shouldUseMobileFullscreen(mobileFullscreen);
+  useBodyScrollLock(isOpen);
+
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -61,10 +76,13 @@ export function SearchResultsModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className={`modal-backdrop${isMobileFullscreen ? " modal-backdrop--mobile-screen" : ""}`}
+      onClick={onClose}
+    >
       <div
         aria-modal="true"
-        className="modal-card"
+        className={`modal-card${isMobileFullscreen ? " modal-card--mobile-screen search-results-modal" : ""}`}
         role="dialog"
         aria-label="Search results"
         onClick={(event) => event.stopPropagation()}
