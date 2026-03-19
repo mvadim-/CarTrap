@@ -603,3 +603,9 @@
 - Додано `frontend/src/features/shared/useBodyScrollLock.ts` і оновлено `frontend/src/features/search/{ManualSearchScreen.tsx,SearchResultsModal.tsx,SearchPanel.tsx}`: full-screen `New Search` тепер реально локує background scroll, а saved-search results на mobile відкриваються як full-screen surface замість нижнього sheet; scroll lock став reference-counted, щоб вкладені overlays не лишали `body` у заблокованому стані.
 - Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для mobile fullscreen saved-search results, body-scroll lock/unlock під час `New Search`, і перевірку що dashboard більше не рендерить окремий `USER` label на верхньому екрані.
 - Verification: `npm run test --prefix frontend -- app.test.tsx` -> `30 passed`; `npm run test --prefix frontend` -> `30 passed`; `npm run build --prefix frontend` -> успішно.
+
+## [2026-03-19 14:19] Fix push settings modal layout on iPhone-sized screens
+- Оновлено `frontend/src/features/push/PushSettingsModal.tsx`: settings modal тепер автоматично переходить у mobile full-screen режим на touch-екранах до 900px, використовує body scroll lock і зберігає desktop modal layout без змін.
+- Оновлено `frontend/src/styles.css`: додано mobile-специфічну поведінку для `settings-modal` та окремі стилі `push-subscription-card`, щоб довгі `user_agent`/endpoint значення переносились усередині картки й `Revoke` не ламав ширину layout на iPhone.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для mobile settings modal, full-screen class/scroll lock і рендерингу довгої device subscription картки після enable push.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `31 passed`; `npm run build --prefix frontend` -> успішно.

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { PushDeliveryResult, PushSubscriptionConfig, PushSubscriptionItem } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
+import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 type Props = {
   isOpen: boolean;
@@ -42,6 +43,15 @@ function maskEndpoint(endpoint: string): string {
   return `${endpoint.slice(0, 28)}...${endpoint.slice(-18)}`;
 }
 
+function shouldUseMobileFullscreen(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const hasCoarsePointer =
+    typeof window.matchMedia === "function" ? window.matchMedia("(pointer: coarse)").matches : "ontouchstart" in window;
+  return hasCoarsePointer && window.innerWidth <= 900;
+}
+
 export function PushSettingsModal({
   isOpen,
   isAdmin,
@@ -67,6 +77,9 @@ export function PushSettingsModal({
 }: Props) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isMobileFullscreen = shouldUseMobileFullscreen();
+
+  useBodyScrollLock(isOpen);
 
   useEffect(() => {
     if (!isOpen) {
@@ -131,15 +144,18 @@ export function PushSettingsModal({
       : "Unknown";
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className={`modal-backdrop${isMobileFullscreen ? " modal-backdrop--mobile-screen" : ""}`}
+      onClick={onClose}
+    >
       <div
         aria-label="Settings"
         aria-modal="true"
-        className="modal-card settings-modal"
+        className={`modal-card settings-modal${isMobileFullscreen ? " modal-card--mobile-screen settings-modal--mobile" : ""}`}
         role="dialog"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="modal-header">
+        <div className="modal-header settings-modal__header">
           <div>
             <p className="eyebrow">Settings</p>
             <h3>User Preferences</h3>
@@ -258,15 +274,17 @@ export function PushSettingsModal({
                 {subscriptions.map((subscription) => {
                   const isCurrentDevice = currentDeviceEndpoint === subscription.endpoint;
                   return (
-                    <article key={subscription.id} className="result-card result-card--support">
-                      <div>
-                        <strong>{isAdmin && isCurrentDevice ? "This browser" : subscription.user_agent ?? "Browser Subscription"}</strong>
-                        <p className="muted">{maskEndpoint(subscription.endpoint)}</p>
+                    <article key={subscription.id} className="result-card result-card--support push-subscription-card">
+                      <div className="push-subscription-card__copy">
+                        <strong className="push-subscription-card__title">
+                          {isAdmin && isCurrentDevice ? "This browser" : subscription.user_agent ?? "Browser Subscription"}
+                        </strong>
+                        <p className="muted push-subscription-card__endpoint">{maskEndpoint(subscription.endpoint)}</p>
                         <p className="muted">Updated {formatTimestamp(subscription.updated_at)}</p>
                       </div>
                       <button
                         type="button"
-                        className="ghost-button"
+                        className="ghost-button push-subscription-card__action"
                         onClick={() => void handleUnsubscribe(subscription.endpoint)}
                         disabled={unsubscribingEndpoint === subscription.endpoint}
                         aria-busy={unsubscribingEndpoint === subscription.endpoint}

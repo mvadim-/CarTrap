@@ -1059,6 +1059,69 @@ describe("CarTrap app", () => {
     expect(subscribe).toHaveBeenCalledTimes(1);
   });
 
+  it("opens push settings as a mobile full-screen modal and keeps long device labels wrapped", async () => {
+    mockMobileViewport();
+    Object.defineProperty(window.navigator, "userAgent", {
+      configurable: true,
+      value:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Mobile/15E148 Safari/604.1",
+    });
+    const subscribe = vi.fn(async () => ({
+      endpoint: "https://push.example.test/subscriptions/device-iphone-15-pro-max",
+      expirationTime: null,
+      getKey: (name: PushEncryptionKeyName) =>
+        name === "p256dh" ? Uint8Array.from([1, 2, 3, 4]).buffer : Uint8Array.from([5, 6, 7, 8]).buffer,
+      unsubscribe: vi.fn(async () => true),
+    }));
+    const registration = {
+      pushManager: {
+        getSubscription: vi.fn(async () => null),
+        subscribe,
+      },
+    } as unknown as ServiceWorkerRegistration;
+
+    vi.stubGlobal("Notification", {
+      permission: "default",
+      requestPermission: vi.fn(async () => "granted"),
+    });
+    Object.defineProperty(window.navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        getRegistration: vi.fn(async () => registration),
+        register: vi.fn(async () => registration),
+        ready: Promise.resolve(registration),
+      },
+    });
+    Object.defineProperty(window, "isSecureContext", {
+      configurable: true,
+      value: true,
+    });
+    vi.stubGlobal("PushManager", class PushManager {});
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    openSettingsFromAccountMenu();
+    const dialog = await screen.findByRole("dialog", { name: /settings/i });
+
+    expect(dialog.className).toContain("modal-card--mobile-screen");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: /enable push on this device/i }));
+
+    expect(await screen.findByText(/^this browser$/i)).toBeTruthy();
+    expect(await screen.findByText(/iphone-15-pro-max/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /^close$/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /settings/i })).toBeNull();
+    });
+    expect(document.body.style.position).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
+  });
+
   it("retries a partial bootstrap failure for saved searches without reloading the whole dashboard", async () => {
     savedSearchesShouldFail = true;
 

@@ -983,6 +983,30 @@ button:focus-visible,
   background: rgba(255, 255, 255, 0.7);
 }
 
+.push-subscription-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.8rem;
+}
+
+.push-subscription-card__copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.push-subscription-card__title,
+.push-subscription-card__endpoint {
+  display: block;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.push-subscription-card__action {
+  align-self: start;
+}
+
 .result-copy {
   flex: 1;
   min-width: 0;
@@ -1218,9 +1242,20 @@ button:focus-visible,
   grid-template-rows: auto 1fr;
 }
 
+.settings-modal--mobile {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+
+.settings-modal__header {
+  align-items: start;
+}
+
 .settings-modal__body {
   display: grid;
   gap: 1rem;
+  min-height: 0;
 }
 
 .settings-section {
@@ -1635,6 +1670,14 @@ button:focus-visible,
 
   .saved-search-card__actions,
   .saved-search-actions-menu {
+    width: 100%;
+  }
+
+  .push-subscription-card {
+    grid-template-columns: 1fr;
+  }
+
+  .push-subscription-card__action {
     width: 100%;
   }
 
