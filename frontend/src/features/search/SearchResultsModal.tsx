@@ -29,6 +29,80 @@ type Props = {
 
 const FALLBACK_MOBILE_COLLAPSIBLE_HEIGHT = 220;
 
+function formatMoney(value: number | null | undefined, currency: string) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return null;
+  }
+
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatStatusLabel(status: string | null | undefined) {
+  if (!status) {
+    return "Status unavailable";
+  }
+
+  return status
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatRelativeSaleTime(saleDate: string | null, isLive: boolean) {
+  if (!saleDate) {
+    return isLive ? "Live now" : "Sale date TBD";
+  }
+
+  const diffMinutes = Math.max(1, Math.round(Math.abs(new Date(saleDate).getTime() - Date.now()) / 60000));
+  const days = Math.floor(diffMinutes / (60 * 24));
+  const hours = Math.floor((diffMinutes % (60 * 24)) / 60);
+  const minutes = diffMinutes % 60;
+  const parts: string[] = [];
+
+  if (days > 0) {
+    parts.push(`${days}d`);
+  }
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (minutes > 0 && parts.length < 2) {
+    parts.push(`${minutes}m`);
+  }
+  if (parts.length === 0) {
+    parts.push("1m");
+  }
+
+  return isLive ? `${parts.join(" ")} live` : parts.join(" ");
+}
+
+function getMarketSignal(result: SearchResult) {
+  const isLive = result.status === "live";
+  const currentBid = formatMoney(result.current_bid, result.currency);
+  const buyNowPrice =
+    typeof result.buy_now_price === "number" && result.buy_now_price > 0
+      ? formatMoney(result.buy_now_price, result.currency)
+      : null;
+
+  if (isLive) {
+    return {
+      accent: "live" as const,
+      headline: "Auction in progress",
+      timer: formatRelativeSaleTime(result.sale_date, true),
+      meta: currentBid ? `Current bid ${currentBid}` : null,
+    };
+  }
+
+  return {
+    accent: "default" as const,
+    headline: currentBid ?? "Bid pending",
+    timer: formatRelativeSaleTime(result.sale_date, false),
+    meta: buyNowPrice ? `Buy It Now for ${buyNowPrice}` : formatStatusLabel(result.raw_status ?? result.status),
+  };
+}
+
 export function SearchResultsModal({
   isOpen,
   title,
@@ -211,6 +285,7 @@ export function SearchResultsModal({
   }
 
   const hasStatusPanels = isRefreshingLive || Boolean(statusMessage) || Boolean(refreshError);
+  const vehicleCountLabel = `${totalResults} ${totalResults === 1 ? "Vehicle" : "Vehicles"}`;
 
   const modal = (
     <div
@@ -365,31 +440,50 @@ export function SearchResultsModal({
         </div>
         <div ref={modalBodyRef} className="modal-body result-list search-results-modal__body" onScroll={handleBodyScroll}>
           {results.length === 0 ? (
-            <p className="muted">No lots matched this search.</p>
+            <p className="muted search-results-modal__empty">No lots matched this search.</p>
           ) : (
-            results.map((result) => (
-              <article key={result.lot_number} className="result-card result-card--media result-card--search">
-                <LotThumbnail title={result.title} thumbnailUrl={result.thumbnail_url} />
-                <div className="result-copy">
-                  <strong>{result.title}</strong>
-                  <p className="muted">
-                    Lot {result.lot_number} · {result.location ?? "Unknown location"}
-                  </p>
-                </div>
-                <div className="result-actions">
-                  {result.is_new ? <span className="new-badge">NEW</span> : null}
-                  <span className="status-pill">{result.status}</span>
-                  <button
-                    type="button"
-                    onClick={() => void onAddFromSearch(result.url)}
-                    disabled={addingFromSearchLotUrl === result.url}
-                    aria-busy={addingFromSearchLotUrl === result.url}
-                  >
-                    {addingFromSearchLotUrl === result.url ? "Adding..." : "Add to Watchlist"}
-                  </button>
-                </div>
-              </article>
-            ))
+            <>
+              <div className="search-results-modal__count" aria-live="polite">
+                <strong>{vehicleCountLabel}</strong>
+              </div>
+              <div className="search-results-modal__list">
+                {results.map((result) => {
+                  const marketSignal = getMarketSignal(result);
+                  const isAdding = addingFromSearchLotUrl === result.url;
+
+                  return (
+                    <article key={result.lot_number} className="search-result-row">
+                      <LotThumbnail title={result.title} thumbnailUrl={result.thumbnail_url} />
+                      <div className="search-result-row__body">
+                        <div className="search-result-row__title-line">
+                          <strong className="search-result-row__title">{result.title}</strong>
+                          {result.is_new ? <span className="new-badge">NEW</span> : null}
+                        </div>
+                        <p className="search-result-row__meta">Lot#: {result.lot_number}</p>
+                        <p className="search-result-row__location">{result.location ?? "Unknown location"}</p>
+                        <p className="search-result-row__odometer">Odo: {result.odometer?.trim() || "N/A"}</p>
+                      </div>
+                      <div className={`search-result-row__market search-result-row__market--${marketSignal.accent}`}>
+                        <p className="search-result-row__market-headline">{marketSignal.headline}</p>
+                        <p className="search-result-row__market-timer">{marketSignal.timer}</p>
+                        {marketSignal.meta ? <p className="search-result-row__market-meta">{marketSignal.meta}</p> : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="search-result-row__cta"
+                        onClick={() => void onAddFromSearch(result.url)}
+                        disabled={isAdding}
+                        aria-busy={isAdding}
+                        aria-label={isAdding ? `Adding ${result.title} to watchlist` : `Add to watchlist: ${result.title}`}
+                        title={isAdding ? "Adding to watchlist" : "Add to watchlist"}
+                      >
+                        {isAdding ? "..." : ">"}
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       </div>

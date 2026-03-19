@@ -46,10 +46,13 @@ export type SearchResult = {
   url: string;
   thumbnail_url: string | null;
   location: string | null;
+  odometer?: string | null;
   sale_date: string | null;
   current_bid: number | null;
+  buy_now_price?: number | null;
   currency: string;
   status: string;
+  raw_status?: string;
   is_new?: boolean;
 };
 

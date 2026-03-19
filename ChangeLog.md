@@ -1,5 +1,10 @@
 # Change Log
 
+## [2026-03-19 12:15] Restyle search-result lot rows to match reference mobile list
+- Оновлено `frontend/src/features/search/SearchResultsModal.tsx`, `frontend/src/styles.css` і `frontend/src/types.ts`: список лотів у search results перебудовано з card-layout у щільний mobile-first list pattern зі скріншота; рядок тепер має thumbnail зліва, title/lot/location/odo по центру, bid-or-live/timer/buy-now сигнал справа і chevron-style add-to-watchlist CTA без змін верхнього chrome модалки.
+- Оновлено `backend/src/cartrap/modules/copart_provider/{models.py,normalizer.py}`, `backend/tests/copart/test_api_normalizer.py` і `backend/tests/search/test_search_api.py`: search-result payload розширено полями `odometer`, `buy_now_price` і `raw_status`, щоб новий list layout міг показувати ту саму ключову інформацію по лоту, що й reference.
+- Оновлено `frontend/tests/app.test.tsx`: assertions синхронізовано з новим search-results row contract.
+
 ## [2026-03-19 11:38] Add mobile pull-to-refresh for dashboard data
 - Оновлено `frontend/src/App.tsx`, `frontend/src/features/dashboard/DashboardShell.tsx` і `frontend/src/styles.css`: додано mobile-only `pull to refresh` для dashboard через touch gesture від верхнього краю, з resistance/threshold логікою, top indicator, safe reset стану та перевикористанням існуючого dashboard reload flow без впливу на desktop.
 - Оновлено `frontend/tests/app.test.tsx`: додано сценарій для мобільного `pull to refresh`, лічильники повторного завантаження dashboard resources і винесено стабільний helper для login-submit у jsdom, щоб verification не залежав від browser validation поведінки.

@@ -49,10 +49,13 @@ function buildSearchResult(overrides: Record<string, unknown> = {}) {
     url: "https://www.copart.com/lot/12345678",
     thumbnail_url: "https://img.copart.com/12345678.jpg",
     location: "CA - SACRAMENTO",
+    odometer: "12,345 ACTUAL",
     sale_date: null,
     current_bid: 4200,
+    buy_now_price: 6500,
     currency: "USD",
     status: "live",
+    raw_status: "Live",
     ...overrides,
   };
 }
@@ -737,6 +740,8 @@ describe("CarTrap app", () => {
     await waitFor(() => {
       expect(screen.getAllByText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);
     });
+    expect(screen.getByText(/Lot#: 12345678/i)).toBeTruthy();
+    expect(screen.getByText(/Odo: 12,345 ACTUAL/i)).toBeTruthy();
     expect(screen.getAllByAltText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);
   });
 

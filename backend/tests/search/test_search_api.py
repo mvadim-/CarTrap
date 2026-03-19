@@ -114,10 +114,13 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
                 url="https://www.copart.com/lot/12345678",
                 thumbnail_url="https://img.copart.com/12345678.jpg",
                 location="CA - SACRAMENTO",
+                odometer="12,345 ACTUAL",
                 sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
                 current_bid=4200.0,
+                buy_now_price=6500.0,
                 currency="USD",
                 status="live",
+                raw_status="Live",
             ),
             CopartSearchResult(
                 lot_number="87654321",
@@ -129,6 +132,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
                 current_bid=1800.0,
                 currency="USD",
                 status="upcoming",
+                raw_status="Upcoming",
             ),
         ],
         lots={
@@ -180,6 +184,9 @@ def test_search_endpoint_returns_results(client: TestClient) -> None:
     assert len(response.json()["results"]) == 2
     assert response.json()["total_results"] == 2
     assert response.json()["results"][0]["thumbnail_url"] == "https://img.copart.com/12345678.jpg"
+    assert response.json()["results"][0]["odometer"] == "12,345 ACTUAL"
+    assert response.json()["results"][0]["buy_now_price"] == 6500.0
+    assert response.json()["results"][0]["raw_status"] == "Live"
     assert response.json()["source_request"]["MISC"] == [
         "vehicle_type_code:VEHTYPE_V",
         "lot_year:[2025 TO 2027]",

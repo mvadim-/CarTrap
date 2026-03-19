@@ -57,10 +57,13 @@ class CopartSearchResult(BaseModel):
     url: HttpUrl
     thumbnail_url: Optional[HttpUrl] = None
     location: Optional[str] = None
+    odometer: Optional[str] = None
     sale_date: Optional[datetime] = None
     current_bid: Optional[float] = None
+    buy_now_price: Optional[float] = None
     currency: str = "USD"
     status: str = "upcoming"
+    raw_status: str = "upcoming"
 
 
 class CopartSearchPage(BaseModel):

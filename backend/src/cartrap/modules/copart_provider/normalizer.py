@@ -156,10 +156,13 @@ def normalize_search_results(payload: list[dict[str, Any]]) -> list[CopartSearch
                 url=build_lot_url(lot_number),
                 thumbnail_url=extract_thumbnail_url(item),
                 location=str(item.get("yard_name") or item.get("auction_host_name") or "Unknown location"),
+                odometer=extract_odometer(item),
                 sale_date=parse_datetime(first_present(item, "auction_date_utc", "saleDate")),
                 current_bid=parse_money(first_present(item, "current_high_bid", "currentBid")),
+                buy_now_price=parse_money(first_present(item, "buy_it_now_price", "buyItNowPrice", "buyTodayBid")),
                 currency=str(first_present(item, "currency_code", "currency") or "USD"),
                 status=normalize_status(raw_status),
+                raw_status=raw_status,
             )
         )
     return results

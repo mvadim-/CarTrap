@@ -30,10 +30,11 @@ SAMPLE_RESPONSE = {
                 "yard_name": "MI - DETROIT",
                 "auction_host_name": "MI - DETROIT",
                 "auction_date_utc": "2026-03-13T14:00:00Z",
+                "odometer": {"formattedValue": "12,399 ACTUAL"},
                 "current_high_bid": 0,
                 "buy_it_now_price": 11500,
                 "currency_code": "USD",
-                "salelight_code": "0",
+                "status": "UPCOMING",
             },
             {
                 "lot_number": 76880725,
@@ -114,8 +115,11 @@ def test_normalize_search_results_maps_api_fields() -> None:
     assert str(results[0].url) == "https://www.copart.com/lot/99251295"
     assert str(results[0].thumbnail_url) == "https://img.copart.com/99251295.jpg"
     assert results[0].location == "MI - DETROIT"
+    assert results[0].odometer == "12,399 ACTUAL"
     assert results[0].current_bid == 0.0
+    assert results[0].buy_now_price == 11500.0
     assert results[0].currency == "USD"
+    assert results[0].raw_status == "UPCOMING"
 
 
 def test_normalize_lot_payload_maps_single_doc() -> None:
