@@ -119,9 +119,17 @@ const INITIAL_ACTION_STATE: ActionState = {
 };
 
 const PUSH_MESSAGE_TYPE = "cartrap:push-received";
+const APP_TITLE = "CarTrap";
+const AUTO_REFRESH_INTERVAL_MS = 60_000;
+const TAB_ATTENTION_BLINK_MS = 1_000;
 const MOBILE_PULL_TO_REFRESH_MAX_WIDTH = 900;
 const PULL_TO_REFRESH_THRESHOLD = 72;
 const PULL_TO_REFRESH_MAX_OFFSET = 104;
+const OPERATIONAL_REFRESH_TARGETS: PushRefreshTarget[] = ["watchlist", "savedSearches", "liveSync"];
+
+type DashboardLoaderOptions = {
+  silent?: boolean;
+};
 
 function isDashboardResourceKey(value: string): value is DashboardResourceKey {
   return ["watchlist", "savedSearches", "subscriptions", "searchCatalog", "liveSync"].includes(value);
@@ -140,6 +148,10 @@ function getNotificationPermission(): string {
 
 function getBrowserOfflineState(): boolean {
   return typeof navigator !== "undefined" && "onLine" in navigator ? !navigator.onLine : false;
+}
+
+function isDocumentHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
 }
 
 function getVerticalScrollOffset(): number {
@@ -167,6 +179,111 @@ function getPullToRefreshOffset(deltaY: number): number {
 
 function toErrorMessage(caught: unknown, fallbackMessage: string): string {
   return caught instanceof Error && caught.message.trim() ? caught.message : fallbackMessage;
+}
+
+function pluralize(value: number, singular: string, plural: string): string {
+  return value === 1 ? singular : plural;
+}
+
+function countWatchlistUpdates(previousItems: WatchlistItem[], nextItems: WatchlistItem[]): number {
+  const previousById = new Map(previousItems.map((item) => [item.id, item]));
+  let updates = 0;
+
+  for (const item of nextItems) {
+    const previous = previousById.get(item.id);
+    if (!previous) {
+      updates += 1;
+      continue;
+    }
+
+    const latestChangesDiffer = JSON.stringify(previous.latest_changes) !== JSON.stringify(item.latest_changes);
+    const changed =
+      previous.latest_change_at !== item.latest_change_at ||
+      (item.has_unseen_update && !previous.has_unseen_update) ||
+      previous.status !== item.status ||
+      previous.raw_status !== item.raw_status ||
+      previous.current_bid !== item.current_bid ||
+      previous.buy_now_price !== item.buy_now_price ||
+      previous.sale_date !== item.sale_date ||
+      latestChangesDiffer;
+
+    if (changed) {
+      updates += 1;
+    }
+  }
+
+  return updates;
+}
+
+function countSavedSearchUpdates(
+  previousItems: SavedSearch[],
+  nextItems: SavedSearch[],
+): { newMatches: number; refreshedSearches: number } {
+  const previousById = new Map(previousItems.map((item) => [item.id, item]));
+  let newMatches = 0;
+  let refreshedSearches = 0;
+
+  for (const item of nextItems) {
+    const previous = previousById.get(item.id);
+    if (!previous) {
+      if (item.new_count > 0) {
+        newMatches += item.new_count;
+      } else {
+        refreshedSearches += 1;
+      }
+      continue;
+    }
+
+    const nextNewMatches = Math.max(item.new_count - previous.new_count, 0);
+    if (nextNewMatches > 0) {
+      newMatches += nextNewMatches;
+      continue;
+    }
+
+    const refreshed =
+      previous.result_count !== item.result_count ||
+      previous.cached_result_count !== item.cached_result_count ||
+      previous.last_synced_at !== item.last_synced_at;
+
+    if (refreshed) {
+      refreshedSearches += 1;
+    }
+  }
+
+  return { newMatches, refreshedSearches };
+}
+
+function buildTabAttentionMessage(
+  previousWatchlist: WatchlistItem[],
+  nextWatchlist: WatchlistItem[] | null,
+  previousSavedSearches: SavedSearch[],
+  nextSavedSearches: SavedSearch[] | null,
+): string | null {
+  const watchlistUpdates = nextWatchlist ? countWatchlistUpdates(previousWatchlist, nextWatchlist) : 0;
+  const savedSearchUpdates = nextSavedSearches
+    ? countSavedSearchUpdates(previousSavedSearches, nextSavedSearches)
+    : { newMatches: 0, refreshedSearches: 0 };
+
+  const parts: string[] = [];
+  if (watchlistUpdates > 0) {
+    parts.push(`${watchlistUpdates} tracked lot ${pluralize(watchlistUpdates, "update", "updates")}`);
+  }
+  if (savedSearchUpdates.newMatches > 0) {
+    parts.push(`${savedSearchUpdates.newMatches} new ${pluralize(savedSearchUpdates.newMatches, "match", "matches")}`);
+  } else if (savedSearchUpdates.refreshedSearches > 0) {
+    parts.push(
+      `${savedSearchUpdates.refreshedSearches} saved ${pluralize(
+        savedSearchUpdates.refreshedSearches,
+        "search refreshed",
+        "searches refreshed",
+      )}`,
+    );
+  }
+
+  if (parts.length === 0) {
+    return null;
+  }
+  return `${parts.join(" + ")} | ${APP_TITLE}`;
 }
 
 function encodeBase64Url(buffer: ArrayBuffer | null): string {
@@ -239,6 +356,7 @@ export function App() {
   const [isLoadingPushConfig, setIsLoadingPushConfig] = useState(false);
   const [currentPushEndpoint, setCurrentPushEndpoint] = useState<string | null>(null);
   const [isBrowserOffline, setIsBrowserOffline] = useState(getBrowserOfflineState());
+  const [tabAttentionMessage, setTabAttentionMessage] = useState<string | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState<DashboardState<boolean>>(INITIAL_DASHBOARD_LOADING);
   const [dashboardErrors, setDashboardErrors] = useState<DashboardState<string | null>>(INITIAL_DASHBOARD_ERRORS);
   const [actionState, setActionState] = useState<ActionState>(INITIAL_ACTION_STATE);
@@ -246,6 +364,8 @@ export function App() {
   const [pullToRefreshPhase, setPullToRefreshPhase] = useState<PullToRefreshPhase>("idle");
   const pushRefreshTimeoutRef = useRef<number | null>(null);
   const pendingPushRefreshTargetsRef = useRef<Set<PushRefreshTarget>>(new Set());
+  const watchlistRef = useRef<WatchlistItem[]>([]);
+  const savedSearchesRef = useRef<SavedSearch[]>([]);
   const pullToRefreshPhaseRef = useRef<PullToRefreshPhase>("idle");
   const pullToRefreshTouchStateRef = useRef({
     isTracking: false,
@@ -287,6 +407,40 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    watchlistRef.current = watchlist;
+  }, [watchlist]);
+
+  useEffect(() => {
+    savedSearchesRef.current = savedSearches;
+  }, [savedSearches]);
+
+  useEffect(() => {
+    if (!tabAttentionMessage || isDocumentHidden()) {
+      return;
+    }
+    setTabAttentionMessage(null);
+  }, [tabAttentionMessage]);
+
+  useEffect(() => {
+    if (!tabAttentionMessage || !isDocumentHidden()) {
+      document.title = APP_TITLE;
+      return;
+    }
+
+    let showBaseTitle = false;
+    document.title = tabAttentionMessage;
+    const intervalId = window.setInterval(() => {
+      showBaseTitle = !showBaseTitle;
+      document.title = showBaseTitle ? APP_TITLE : tabAttentionMessage;
+    }, TAB_ATTENTION_BLINK_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.title = APP_TITLE;
+    };
+  }, [tabAttentionMessage]);
+
   function resetDashboardData() {
     setSearchResults([]);
     setSearchTotalResults(0);
@@ -306,6 +460,7 @@ export function App() {
     setIsAccountMenuOpen(false);
     setIsSettingsOpen(false);
     setIsManualSearchOpen(false);
+    setTabAttentionMessage(null);
     setPullToRefreshOffset(0);
     setPullToRefreshPhase("idle");
   }
@@ -322,8 +477,11 @@ export function App() {
     key: DashboardResourceKey,
     fallbackMessage: string,
     loader: () => Promise<T>,
+    options: DashboardLoaderOptions = {},
   ): Promise<T | null> {
-    setDashboardLoadingState(key, true);
+    if (!options.silent) {
+      setDashboardLoadingState(key, true);
+    }
     try {
       const result = await loader();
       setDashboardErrorState(key, null);
@@ -332,48 +490,50 @@ export function App() {
       setDashboardErrorState(key, toErrorMessage(caught, fallbackMessage));
       return null;
     } finally {
-      setDashboardLoadingState(key, false);
+      if (!options.silent) {
+        setDashboardLoadingState(key, false);
+      }
     }
   }
 
-  async function loadWatchlistResource(token: string) {
-    await runDashboardLoader("watchlist", "Could not load tracked lots.", async () => {
+  async function loadWatchlistResource(token: string, options: DashboardLoaderOptions = {}) {
+    return runDashboardLoader("watchlist", "Could not load tracked lots.", async () => {
       const items = await listWatchlist(token);
       setWatchlist(items);
       return items;
-    });
+    }, options);
   }
 
-  async function loadSavedSearchesResource(token: string) {
-    await runDashboardLoader("savedSearches", "Could not load saved searches.", async () => {
+  async function loadSavedSearchesResource(token: string, options: DashboardLoaderOptions = {}) {
+    return runDashboardLoader("savedSearches", "Could not load saved searches.", async () => {
       const items = await listSavedSearches(token);
       setSavedSearches(items);
       return items;
-    });
+    }, options);
   }
 
-  async function loadPushSubscriptionsResource(token: string) {
-    await runDashboardLoader("subscriptions", "Could not load device subscriptions.", async () => {
+  async function loadPushSubscriptionsResource(token: string, options: DashboardLoaderOptions = {}) {
+    return runDashboardLoader("subscriptions", "Could not load device subscriptions.", async () => {
       const items = await listPushSubscriptions(token);
       setSubscriptions(items);
       return items;
-    });
+    }, options);
   }
 
-  async function loadSearchCatalogResource(token: string) {
-    await runDashboardLoader("searchCatalog", "Could not load the search catalog.", async () => {
+  async function loadSearchCatalogResource(token: string, options: DashboardLoaderOptions = {}) {
+    return runDashboardLoader("searchCatalog", "Could not load the search catalog.", async () => {
       const catalog = await getSearchCatalog(token);
       setSearchCatalog(catalog);
       return catalog;
-    });
+    }, options);
   }
 
-  async function loadLiveSyncStatusResource(token: string) {
-    await runDashboardLoader("liveSync", "Could not load live-sync status.", async () => {
+  async function loadLiveSyncStatusResource(token: string, options: DashboardLoaderOptions = {}) {
+    return runDashboardLoader("liveSync", "Could not load live-sync status.", async () => {
       const status = await getSystemStatus(token);
       setLiveSyncStatus(status.live_sync);
       return status;
-    });
+    }, options);
   }
 
   async function loadPushConfigResource(token: string): Promise<PushSubscriptionConfig | null> {
@@ -409,26 +569,51 @@ export function App() {
     }
   }
 
-  async function refreshResourcesFromPush(token: string, targets: PushRefreshTarget[]) {
+  async function refreshResources(
+    token: string,
+    targets: PushRefreshTarget[],
+    options: DashboardLoaderOptions & { allowTabAttention?: boolean } = {},
+  ) {
     const uniqueTargets = Array.from(new Set(targets));
+    const previousWatchlist = watchlistRef.current;
+    const previousSavedSearches = savedSearchesRef.current;
+    let nextWatchlist: WatchlistItem[] | null = null;
+    let nextSavedSearches: SavedSearch[] | null = null;
+
     await Promise.allSettled(
       uniqueTargets.map((target) => {
         switch (target) {
           case "watchlist":
-            return loadWatchlistResource(token);
+            return loadWatchlistResource(token, options).then((items) => {
+              nextWatchlist = items;
+            });
           case "savedSearches":
-            return loadSavedSearchesResource(token);
+            return loadSavedSearchesResource(token, options).then((items) => {
+              nextSavedSearches = items;
+            });
           case "subscriptions":
-            return loadPushSubscriptionsResource(token);
+            return loadPushSubscriptionsResource(token, options).then(() => undefined);
           case "searchCatalog":
-            return loadSearchCatalogResource(token);
+            return loadSearchCatalogResource(token, options).then(() => undefined);
           case "liveSync":
-            return loadLiveSyncStatusResource(token);
+            return loadLiveSyncStatusResource(token, options).then(() => undefined);
           default:
             return Promise.resolve();
         }
       }),
     );
+
+    if (options.allowTabAttention && isDocumentHidden()) {
+      const nextMessage = buildTabAttentionMessage(
+        previousWatchlist,
+        nextWatchlist,
+        previousSavedSearches,
+        nextSavedSearches,
+      );
+      if (nextMessage) {
+        setTabAttentionMessage(nextMessage);
+      }
+    }
   }
 
   async function loadDashboardResources(token: string) {
@@ -465,11 +650,61 @@ export function App() {
   }, [navigate, session]);
 
   useEffect(() => {
-    if (!session.accessToken) {
+    const accessToken = session.accessToken;
+    if (!accessToken) {
       return;
     }
-    void loadDashboardResources(session.accessToken);
+    void loadDashboardResources(accessToken);
   }, [session.accessToken]);
+
+  useEffect(() => {
+    const accessToken = session.accessToken;
+    if (!accessToken || isBrowserOffline) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshResources(accessToken, OPERATIONAL_REFRESH_TARGETS, {
+        silent: true,
+        allowTabAttention: true,
+      });
+    }, AUTO_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [isBrowserOffline, session.accessToken]);
+
+  useEffect(() => {
+    const accessToken = session.accessToken;
+    if (!accessToken) {
+      return;
+    }
+
+    function handleWindowFocus() {
+      setTabAttentionMessage(null);
+      if (isBrowserOffline) {
+        return;
+      }
+      void refreshResources(accessToken, OPERATIONAL_REFRESH_TARGETS, { silent: true });
+    }
+
+    function handleVisibilityChange() {
+      if (isDocumentHidden()) {
+        return;
+      }
+      setTabAttentionMessage(null);
+      if (isBrowserOffline) {
+        return;
+      }
+      void refreshResources(accessToken, OPERATIONAL_REFRESH_TARGETS, { silent: true });
+    }
+
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isBrowserOffline, session.accessToken]);
 
   useEffect(() => {
     pullToRefreshPhaseRef.current = pullToRefreshPhase;
@@ -582,11 +817,12 @@ export function App() {
 
   useEffect(() => {
     const serviceWorker = "serviceWorker" in navigator ? navigator.serviceWorker : undefined;
+    const accessToken = session.accessToken;
     if (
       !serviceWorker ||
       typeof serviceWorker.addEventListener !== "function" ||
       typeof serviceWorker.removeEventListener !== "function" ||
-      !session.accessToken
+      !accessToken
     ) {
       pendingPushRefreshTargetsRef.current.clear();
       if (pushRefreshTimeoutRef.current !== null) {
@@ -605,7 +841,10 @@ export function App() {
         return;
       }
 
-      void refreshResourcesFromPush(session.accessToken, queuedTargets);
+      void refreshResources(accessToken, queuedTargets, {
+        silent: true,
+        allowTabAttention: true,
+      });
     }
 
     function schedulePushRefresh(targets: PushRefreshTarget[]) {

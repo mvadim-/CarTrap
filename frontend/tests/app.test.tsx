@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/App";
@@ -1372,6 +1372,90 @@ describe("CarTrap app", () => {
       expect(screen.getByText(/2020 TOYOTA CAMRY SE/i)).toBeTruthy();
     });
     expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
+  });
+
+  it("refreshes operational resources when the window regains focus", async () => {
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    const initialWatchlistLoads = watchlistListCallCount;
+    const initialSavedSearchLoads = savedSearchesListCallCount;
+    const initialSystemStatusLoads = systemStatusCallCount;
+
+    watchlistItems = [
+      buildTrackedLot({
+        has_unseen_update: true,
+        latest_change_at: "2026-03-18T10:00:00Z",
+        latest_changes: {
+          current_bid: { before: 4200, after: 5100 },
+        },
+      }),
+    ];
+
+    fireEvent(window, new Event("focus"));
+
+    await waitFor(() => {
+      expect(watchlistListCallCount).toBeGreaterThan(initialWatchlistLoads);
+      expect(savedSearchesListCallCount).toBeGreaterThan(initialSavedSearchLoads);
+      expect(systemStatusCallCount).toBeGreaterThan(initialSystemStatusLoads);
+    });
+    expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
+  });
+
+  it("polls for hidden-tab updates and blinks the document title until the tab becomes visible", async () => {
+    vi.useFakeTimers();
+    let visibilityState: DocumentVisibilityState = "hidden";
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => visibilityState,
+    });
+
+    render(<App />);
+    submitLoginForm();
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/cartrap dispatch board/i)).toBeTruthy();
+    expect(document.title).toBe("CarTrap");
+
+    watchlistItems = [
+      buildTrackedLot({
+        has_unseen_update: true,
+        latest_change_at: "2026-03-18T10:00:00Z",
+        latest_changes: {
+          current_bid: { before: 4200, after: 5100 },
+        },
+      }),
+    ];
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
+    expect(document.title).toBe("1 tracked lot update | CarTrap");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(document.title).toBe("CarTrap");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(document.title).toBe("1 tracked lot update | CarTrap");
+
+    await act(async () => {
+      visibilityState = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+    });
+
+    expect(document.title).toBe("CarTrap");
   });
 
   it("reloads dashboard resources after mobile pull to refresh", async () => {

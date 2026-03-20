@@ -669,3 +669,9 @@
 ## [2026-03-19 15:12] Remove saved-search mobile scroll jank from React scroll-loop updates
 - Оновлено `frontend/src/features/search/SearchResultsModal.tsx`: scroll-linked collapse для mobile saved-search modal більше не проходить через `setState` на кожен `scroll` event; inline `height` і CSS progress var тепер оновлюються напряму через `requestAnimationFrame`, щоб зняти re-render pressure і повернути smooth inertial scroll на iPhone.
 - Verification: `npm run test --prefix frontend -- app.test.tsx`; `npm run build --prefix frontend`.
+
+## [2026-03-20 18:59] Add fallback dashboard auto-refresh and hidden-tab attention blinking
+- Оновлено `frontend/src/App.tsx`: push лишився fast-path сигналом, але dashboard тепер також сам перечитує `watchlist`, `savedSearches` і `liveSync` кожні 60 секунд, а також одразу після `window.focus` / `visibilitychange`, щоб вже відкрита вкладка підтягувала зміни навіть коли browser push не спрацював.
+- Для background refresh додано silent-loading режим і локальний diff попереднього/нового стану; якщо під час прихованої вкладки знаходяться нові зміни у watchlist або saved searches, `document.title` починає блимати між базовим заголовком і повідомленням про оновлення, доки користувач не повернеться у вкладку.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для fallback refresh по `focus` і для hidden-tab polling + blinking title behavior.
+- Verification: `npm run test --prefix frontend -- app.test.tsx` -> `40 passed`; `npm run test --prefix frontend` -> `40 passed`; `npm run build --prefix frontend` -> успішно.
