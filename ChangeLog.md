@@ -584,6 +584,11 @@
 - Оновлено `docs/plans/20260317-pwa-ux-polish-flows.md` після повторної перевірки: додано явне покриття для manual search / save-search pending states, partial bootstrap failures з panel-level retry, а також browser offline/online UX як окремий сценарій від backend live-sync degraded mode.
 - Уточнено testing/manual verification секції: тепер план вимагає перевіряти часткові фейли завантаження dashboard, throttled search/save flows, offline-to-online recovery і reduced-motion-safe loading animations.
 
+## [2026-03-20 15:45] Fix auction reminder polling when reminder thresholds are crossed between regular checks
+- Оновлено `backend/src/cartrap/modules/monitoring/service.py`: `poll_due_lots()` тепер форсує poll не лише за звичайним polling cadence, а й коли між `last_checked_at` та поточним часом був перетин pending reminder threshold (`60m`, `15m`, `auction start`), щоб time-based push-нагадування не залежали від точного вирівнювання worker loop.
+- Оновлено `backend/tests/monitoring/test_change_detection.py`: додано regression-покриття для двох проблемних сценаріїв: перетин `60m` threshold до настання стандартного poll interval і start reminder одразу після недавньої pre-start перевірки.
+- Verification: `./.venv/bin/pytest backend/tests/monitoring/test_change_detection.py backend/tests/notifications/test_push_delivery.py backend/tests/monitoring/test_polling_policy.py` -> `17 passed` (є лише `urllib3` warning про локальний LibreSSL).
+
 ## [2026-03-18 15:25] Refresh PWA data in place after backend push updates
 - Оновлено `backend/src/cartrap/modules/notifications/service.py` і тести `backend/tests/notifications/{test_push_delivery.py,test_push_subscriptions.py}`: push payload тепер містить `notification_type` і `refresh_targets`, щоб frontend міг адресно оновлювати потрібні секції dashboard після серверних змін.
 - Оновлено `frontend/public/sw.js`: service worker після отримання push не тільки показує notification, а й розсилає `cartrap:push-received` у всі відкриті вкладки PWA; додано fallback-логіку для deriving `refresh_targets` і focus/open app по кліку на notification.

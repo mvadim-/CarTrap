@@ -421,3 +421,103 @@ def test_monitoring_service_resets_auction_reminders_when_sale_date_changes() ->
     assert tracked_lot["sale_date"] == datetime(2026, 3, 20, 18, 30, tzinfo=timezone.utc)
     assert tracked_lot["auction_reminder_sale_date"] == datetime(2026, 3, 20, 18, 30, tzinfo=timezone.utc)
     assert tracked_lot["auction_reminder_sent_minutes"] == [60]
+
+
+def test_monitoring_service_polls_when_reminder_threshold_crosses_before_standard_interval() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    notification_service = FakeNotificationService()
+    initial_snapshot = CopartLotSnapshot(
+        lot_number="12345678",
+        title="2020 TOYOTA CAMRY SE",
+        url="https://www.copart.com/lot/12345678",
+        thumbnail_url=None,
+        image_urls=[],
+        odometer="10,000 ACTUAL",
+        primary_damage="FRONT END",
+        estimated_retail_value=35500.0,
+        has_key=False,
+        drivetrain="FWD",
+        highlights=["Run and Drive"],
+        vin="1FA6P8TH0J5100001",
+        status="upcoming",
+        raw_status="Upcoming",
+        sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+        current_bid=1000.0,
+        buy_now_price=None,
+        currency="USD",
+    )
+    watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
+    created = watchlist_service.add_tracked_lot({"id": "user-8"}, "https://www.copart.com/lot/12345678")
+    database["tracked_lots"].update_one(
+        {"_id": ObjectId(created["tracked_lot"]["id"])},
+        {
+            "$set": {
+                "detail_etag": "\"lot-etag-1\"",
+                "last_checked_at": datetime(2026, 3, 20, 15, 50, tzinfo=timezone.utc),
+            }
+        },
+    )
+    monitoring = MonitoringService(
+        database,
+        provider_factory=lambda: EtagAwareProvider(None, not_modified=True, etag="\"lot-etag-2\""),
+        notification_service=notification_service,
+        default_poll_interval_minutes=30,
+        near_auction_poll_interval_minutes=30,
+        near_auction_window_minutes=10,
+    )
+
+    result = monitoring.poll_due_lots(now=datetime(2026, 3, 20, 16, 1, tzinfo=timezone.utc))
+
+    assert result["processed"] == 1
+    assert result["reminded"] == 1
+    assert notification_service.reminder_events[0]["reminder_offset_minutes"] == 60
+
+
+def test_monitoring_service_polls_for_auction_start_reminder_after_recent_pre_start_check() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    notification_service = FakeNotificationService()
+    initial_snapshot = CopartLotSnapshot(
+        lot_number="12345678",
+        title="2020 TOYOTA CAMRY SE",
+        url="https://www.copart.com/lot/12345678",
+        thumbnail_url=None,
+        image_urls=[],
+        odometer="10,000 ACTUAL",
+        primary_damage="FRONT END",
+        estimated_retail_value=35500.0,
+        has_key=False,
+        drivetrain="FWD",
+        highlights=["Run and Drive"],
+        vin="1FA6P8TH0J5100001",
+        status="upcoming",
+        raw_status="Upcoming",
+        sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+        current_bid=1000.0,
+        buy_now_price=None,
+        currency="USD",
+    )
+    watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
+    created = watchlist_service.add_tracked_lot({"id": "user-9"}, "https://www.copart.com/lot/12345678")
+    database["tracked_lots"].update_one(
+        {"_id": ObjectId(created["tracked_lot"]["id"])},
+        {
+            "$set": {
+                "detail_etag": "\"lot-etag-1\"",
+                "last_checked_at": datetime(2026, 3, 20, 16, 59, 15, tzinfo=timezone.utc),
+                "auction_reminder_sent_minutes": [60, 15],
+            }
+        },
+    )
+    monitoring = MonitoringService(
+        database,
+        provider_factory=lambda: EtagAwareProvider(None, not_modified=True, etag="\"lot-etag-2\""),
+        notification_service=notification_service,
+    )
+
+    result = monitoring.poll_due_lots(now=datetime(2026, 3, 20, 17, 0, 15, tzinfo=timezone.utc))
+
+    assert result["processed"] == 1
+    assert result["reminded"] == 1
+    assert notification_service.reminder_events[0]["reminder_offset_minutes"] == 0
+    tracked_lot = database["tracked_lots"].find_one({"_id": ObjectId(created["tracked_lot"]["id"])})
+    assert tracked_lot["auction_reminder_sent_minutes"] == [60, 15, 0]

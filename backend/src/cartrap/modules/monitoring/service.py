@@ -52,13 +52,7 @@ class MonitoringService:
         reminder_events: list[dict] = []
 
         for tracked_lot in self.repository.list_active_tracked_lots():
-            if not is_due_for_poll(
-                tracked_lot,
-                current_time,
-                default_interval_minutes=self._default_poll_interval_minutes,
-                near_auction_interval_minutes=self._near_auction_poll_interval_minutes,
-                near_auction_window_minutes=self._near_auction_window_minutes,
-            ):
+            if not self._should_poll_tracked_lot(tracked_lot, current_time):
                 continue
             processed += 1
             try:
@@ -89,6 +83,17 @@ class MonitoringService:
             "reminded": len(reminder_events),
             "reminder_events": reminder_events,
         }
+
+    def _should_poll_tracked_lot(self, tracked_lot: dict, now: datetime) -> bool:
+        if is_due_for_poll(
+            tracked_lot,
+            now,
+            default_interval_minutes=self._default_poll_interval_minutes,
+            near_auction_interval_minutes=self._near_auction_poll_interval_minutes,
+            near_auction_window_minutes=self._near_auction_window_minutes,
+        ):
+            return True
+        return self._crossed_pending_auction_reminder_threshold(tracked_lot, now)
 
     def _poll_single_lot(self, tracked_lot: dict, now: datetime) -> dict:
         provider = self._provider_factory()
@@ -224,6 +229,27 @@ class MonitoringService:
             ],
         }
         return reminder_events, reminder_state_payload
+
+    def _crossed_pending_auction_reminder_threshold(self, tracked_lot: dict, now: datetime) -> bool:
+        sale_date = self._normalize_datetime(tracked_lot.get("sale_date"))
+        last_checked_at = self._normalize_datetime(tracked_lot.get("last_checked_at"))
+        if sale_date is None or last_checked_at is None:
+            return False
+
+        stored_sale_date = self._normalize_datetime(tracked_lot.get("auction_reminder_sale_date"))
+        sent_minutes = self._normalize_sent_minutes(tracked_lot.get("auction_reminder_sent_minutes"))
+        if stored_sale_date != sale_date:
+            sent_minutes = set()
+
+        for offset_minutes in self.AUCTION_REMINDER_OFFSETS_MINUTES:
+            if offset_minutes in sent_minutes:
+                continue
+            trigger_at = sale_date - timedelta(minutes=offset_minutes)
+            if offset_minutes > 0 and now >= sale_date:
+                continue
+            if last_checked_at < trigger_at <= now:
+                return True
+        return False
 
     @staticmethod
     def _normalize_datetime(value: datetime | None) -> datetime | None:
