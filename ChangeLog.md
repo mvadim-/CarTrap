@@ -725,3 +725,9 @@
 - Оновлено `backend/tests/{test_worker_main.py,copart/test_gateway_client_config.py,copart/test_gateway_router.py,copart/test_gateway_backed_services.py,copart/test_http_client.py,search/test_saved_search_cache_repository.py}` та `frontend/tests/app.test.tsx`: додано/підправлено coverage для structured logs, direct-vs-gateway test isolation, gateway-backed due polling, instance-based cache serialization і stabilized saved-search refresh failure assertion.
 - Оновлено `docs/plans/20260321-operational-reliability-spine.md`: Task 6, Task 7 і Task 8 позначено виконаними після повної acceptance verification.
 - Verification: `./.venv/bin/pytest backend/tests` -> `155 passed`; `npm --prefix frontend run test` -> `45 passed`; `npm --prefix frontend run build` -> успішно.
+
+## [2026-03-21 19:09] Unify resource sync messaging into one reliability block
+- Перевірено production `https://cartrapapp.pp.ua/#/login`: saved-search cards, search results modal і watchlist cards дублювали sync-state через окремі `Last synced`/`Last checked` meta rows поруч із reliability pill та `Last successful sync` copy.
+- Додано `frontend/src/features/shared/resourceReliability.ts` і оновлено `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx}` та `frontend/src/features/watchlist/WatchlistPanel.tsx`: sync-state тепер формується через shared helper і показується тільки в одному compact reliability block; дубльовані `Last synced`/`Last checked` рядки з cards/modals прибрано.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression expectations, що saved-search/watchlist surfaces більше не рендерять окремі `Last synced`/`Last checked` labels поруч із reliability block, але зберігають зрозумілий unified `Synced ...` copy.
+- Verification: `npm --prefix frontend run test -- app.test.tsx` -> `45 passed`; `npm --prefix frontend run build` -> успішно.

@@ -5,6 +5,7 @@ import type { FreshnessEnvelope, RefreshState, SearchResult } from "../../types"
 import { AsyncStatus } from "../shared/AsyncStatus";
 import { LotThumbnail } from "../shared/LotThumbnail";
 import { shouldUseMobileFullscreen } from "../shared/mobileFullscreen";
+import { buildResourceReliability } from "../shared/resourceReliability";
 import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 type Props = {
@@ -54,10 +55,6 @@ function formatStatusLabel(status: string | null | undefined) {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function formatTimestamp(value: string | null, fallback = "Not yet") {
-  return value ? new Date(value).toLocaleString() : fallback;
-}
-
 function getReliabilityBadge(
   freshness: FreshnessEnvelope | null,
   refreshState: RefreshState | null,
@@ -67,76 +64,13 @@ function getReliabilityBadge(
     return null;
   }
 
-  if (isRefreshingLive) {
-    return {
-      label: "Refreshing",
-      tone: "refreshing",
-      detail: "Loading the latest Copart snapshot while cached results stay open.",
-    };
-  }
-
-  if (refreshState?.status === "repair_pending") {
-    return {
-      label: "Repair pending",
-      tone: "refreshing",
-      detail: "A compatibility repair is queued for this saved search.",
-    };
-  }
-
-  if (refreshState?.status === "retryable_failure") {
-    return {
-      label: "Degraded",
-      tone: "warning",
-      detail:
-        refreshState.error_message ??
-        `Last live refresh failed. Retry scheduled after ${formatTimestamp(refreshState.next_retry_at, "the next worker run")}.`,
-    };
-  }
-
-  if (refreshState?.status === "failed") {
-    return {
-      label: "Outdated",
-      tone: "danger",
-      detail: refreshState.error_message ?? "Last live refresh failed and needs manual intervention.",
-    };
-  }
-
-  switch (freshness?.status) {
-    case "live":
-      return {
-        label: "Live",
-        tone: "live",
-        detail: `Last successful sync ${formatTimestamp(freshness.last_synced_at)}.`,
-      };
-    case "cached":
-      return {
-        label: "Cached",
-        tone: "cached",
-        detail: freshness.degraded_reason
-          ? `Showing cached snapshot while live sync is degraded: ${freshness.degraded_reason}`
-          : `Showing cached snapshot from ${formatTimestamp(freshness.last_synced_at)}.`,
-      };
-    case "degraded":
-      return {
-        label: "Degraded",
-        tone: "warning",
-        detail: freshness.degraded_reason ?? "Live sync is degraded. Cached data remains available.",
-      };
-    case "outdated":
-      return {
-        label: "Outdated",
-        tone: "danger",
-        detail: `Last successful sync ${formatTimestamp(freshness.last_synced_at)}. Run Refresh Live to retry now.`,
-      };
-    case "unknown":
-      return {
-        label: "Awaiting sync",
-        tone: "warning",
-        detail: "No successful live snapshot exists for this saved search yet.",
-      };
-    default:
-      return null;
-  }
+  return buildResourceReliability({
+    freshness,
+    refreshState,
+    isRefreshing: isRefreshingLive,
+    repairPendingDetail: "A compatibility repair is queued for this saved search.",
+    unknownDetail: "No successful live snapshot exists for this saved search yet.",
+  });
 }
 
 function formatRelativeSaleTime(saleDate: string | null, isLive: boolean) {
@@ -435,7 +369,6 @@ export function SearchResultsModal({
                     <span className="muted">
                       {totalResults} {totalResults === 1 ? "lot" : "lots"} found. Current result set stays reopenable until you close it.
                     </span>
-                    {lastSyncedAt ? <span className="muted">Last synced {new Date(lastSyncedAt).toLocaleString()}</span> : null}
                   </div>
                   {reliabilityBadge ? (
                     <div className="search-results-modal__reliability">
@@ -508,7 +441,6 @@ export function SearchResultsModal({
                 <span className="muted">
                   {totalResults} {totalResults === 1 ? "lot" : "lots"} found. Current result set stays reopenable until you close it.
                 </span>
-                {lastSyncedAt ? <span className="muted">Last synced {new Date(lastSyncedAt).toLocaleString()}</span> : null}
               </div>
               {reliabilityBadge ? (
                 <div className="search-results-modal__reliability">

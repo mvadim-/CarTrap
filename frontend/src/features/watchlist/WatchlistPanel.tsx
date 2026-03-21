@@ -3,6 +3,7 @@ import { FormEvent, useState } from "react";
 import type { LiveSyncStatus, WatchlistItem } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
 import { LotThumbnail } from "../shared/LotThumbnail";
+import { buildResourceReliability } from "../shared/resourceReliability";
 import { LotGalleryModal } from "./LotGalleryModal";
 
 type Props = {
@@ -206,83 +207,13 @@ export function WatchlistPanel({
   function getReliabilityState(
     item: WatchlistItem,
   ): { label: string; tone: "live" | "cached" | "warning" | "danger" | "refreshing"; detail: string; needsAttention: boolean } {
-    if (refreshingItemId === item.id) {
-      return {
-        label: "Refreshing",
-        tone: "refreshing",
-        detail: "Fetching the latest Copart lot data while the cached snapshot stays visible.",
-        needsAttention: false,
-      };
-    }
-
-    if (item.refresh_state.status === "repair_pending") {
-      return {
-        label: "Repair pending",
-        tone: "refreshing",
-        detail: "Legacy lot enrichment is queued for repair.",
-        needsAttention: true,
-      };
-    }
-
-    if (item.refresh_state.status === "retryable_failure") {
-      return {
-        label: "Degraded",
-        tone: "warning",
-        detail:
-          item.refresh_state.error_message ??
-          `Last live refresh failed. Retry scheduled after ${formatLocalAuctionStart(item.refresh_state.next_retry_at)}.`,
-        needsAttention: true,
-      };
-    }
-
-    if (item.refresh_state.status === "failed") {
-      return {
-        label: "Outdated",
-        tone: "danger",
-        detail: item.refresh_state.error_message ?? "Last live refresh failed and needs manual intervention.",
-        needsAttention: true,
-      };
-    }
-
-    switch (item.freshness.status) {
-      case "live":
-        return {
-          label: "Live",
-          tone: "live",
-          detail: `Last successful sync ${formatLastChecked(item.freshness.last_synced_at ?? item.last_checked_at)}.`,
-          needsAttention: false,
-        };
-      case "cached":
-        return {
-          label: "Cached",
-          tone: "cached",
-          detail: item.freshness.degraded_reason
-            ? `Showing cached lot while live sync is degraded: ${item.freshness.degraded_reason}`
-            : `Showing cached lot from ${formatLastChecked(item.freshness.last_synced_at ?? item.last_checked_at)}.`,
-          needsAttention: false,
-        };
-      case "degraded":
-        return {
-          label: "Degraded",
-          tone: "warning",
-          detail: item.freshness.degraded_reason ?? "Live sync is degraded. Cached lot details remain visible.",
-          needsAttention: true,
-        };
-      case "outdated":
-        return {
-          label: "Outdated",
-          tone: "danger",
-          detail: `Last successful sync ${formatLastChecked(item.freshness.last_synced_at ?? item.last_checked_at)}. Run Refresh Live to retry now.`,
-          needsAttention: true,
-        };
-      default:
-        return {
-          label: "Awaiting sync",
-          tone: "warning",
-          detail: "This tracked lot does not have a trusted live snapshot yet.",
-          needsAttention: true,
-        };
-    }
+    return buildResourceReliability({
+      freshness: item.freshness,
+      refreshState: item.refresh_state,
+      isRefreshing: refreshingItemId === item.id,
+      repairPendingDetail: "Legacy lot enrichment is queued for repair.",
+      unknownDetail: "This tracked lot does not have a trusted live snapshot yet.",
+    });
   }
 
   function getTrackedLotDetails(item: WatchlistItem) {
@@ -425,10 +356,6 @@ export function WatchlistPanel({
                     <div className="watchlist-card__signal">
                       <dt className="detail-label">Current bid</dt>
                       <dd className="detail-value">{formatMoney(item.current_bid, item.currency)}</dd>
-                    </div>
-                    <div className="watchlist-card__signal">
-                      <dt className="detail-label">Last checked</dt>
-                      <dd className="detail-value">{formatLastChecked(item.last_checked_at)}</dd>
                     </div>
                     <div className="watchlist-card__signal">
                       <dt className="detail-label">Odometer</dt>

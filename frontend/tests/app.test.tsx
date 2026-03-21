@@ -1005,7 +1005,8 @@ describe("CarTrap app", () => {
     await screen.findByRole("dialog", { name: /search results/i });
     expect(savedSearchViewCallCount).toBe(1);
     expect(liveSearchCallCount).toBe(1);
-    expect(screen.getAllByText(/last synced/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/synced/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/last synced/i)).toBeNull();
   });
 
   it("shows NEW badges for cached saved-search results and clears list-level new count after opening", async () => {
@@ -1070,6 +1071,8 @@ describe("CarTrap app", () => {
     expect(screen.getByText(/^Degraded$/i)).toBeTruthy();
     expect(screen.getByText(/gateway unavailable/i)).toBeTruthy();
     expect(screen.getByText(/legacy lot enrichment is queued for repair/i)).toBeTruthy();
+    expect(screen.queryByText(/^Last synced$/i)).toBeNull();
+    expect(screen.queryByText(/^Last checked$/i)).toBeNull();
 
     openAccountMenu();
     await screen.findByRole("dialog", { name: /account menu/i });
@@ -1095,6 +1098,7 @@ describe("CarTrap app", () => {
     await screen.findByText(/2018 HONDA CIVIC EX/i);
     expect(savedSearchRefreshCallCount).toBe(1);
     expect(screen.getAllByText(/2 lots found/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Last synced/i)).toBeNull();
   });
 
   it("keeps cached saved-search results open and surfaces retryable refresh failure metadata", async () => {
@@ -1319,7 +1323,8 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /refresh live/i }));
 
     expect(await screen.findByText(/live refresh completed for 2020 toyota camry se\./i)).toBeTruthy();
-    expect(screen.getByText(/last successful sync/i)).toBeTruthy();
+    expect(screen.getByText(/synced/i)).toBeTruthy();
+    expect(screen.queryByText(/^Last checked$/i)).toBeNull();
   });
 
   it("keeps watchlist visible and shows retryable failure details when tracked-lot refresh fails", async () => {

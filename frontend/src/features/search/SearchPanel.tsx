@@ -12,6 +12,7 @@ import type {
   SearchResult,
 } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
+import { buildResourceReliability } from "../shared/resourceReliability";
 import { ManualSearchScreen, type SearchableOption } from "./ManualSearchScreen";
 import { SearchFiltersModal } from "./SearchFiltersModal";
 import { SearchResultsModal } from "./SearchResultsModal";
@@ -130,10 +131,6 @@ function formatPriorityLabel(value: string | null): string {
   return value.replace(/_/g, " ");
 }
 
-function formatTimestamp(value: string | null, fallback = "Not yet"): string {
-  return value ? new Date(value).toLocaleString() : fallback;
-}
-
 function isSavedSearchNeedingRefresh(item: SavedSearch): boolean {
   return (
     item.refresh_state.status !== "idle" ||
@@ -183,10 +180,6 @@ function formatSavedSearchFilterSummary(item: SavedSearch): string {
   );
 }
 
-function formatLastSyncedLabel(value: string | null): string {
-  return formatTimestamp(value);
-}
-
 function filterMatchesSavedSearch(item: SavedSearch, filter: SavedSearchQuickFilter): boolean {
   switch (filter) {
     case "new":
@@ -198,89 +191,14 @@ function filterMatchesSavedSearch(item: SavedSearch, filter: SavedSearchQuickFil
   }
 }
 
-function getSavedSearchReliability(
-  item: SavedSearch,
-  refreshingSavedSearchId: string | null,
-): { label: string; tone: "live" | "cached" | "warning" | "danger" | "refreshing"; detail: string; needsAttention: boolean } {
-  if (refreshingSavedSearchId === item.id) {
-    return {
-      label: "Refreshing",
-      tone: "refreshing",
-      detail: "Fetching the latest live results while cached matches stay visible.",
-      needsAttention: false,
-    };
-  }
-
-  if (item.refresh_state.status === "repair_pending") {
-    return {
-      label: "Repair pending",
-      tone: "refreshing",
-      detail: "Compatibility repair is queued for this saved search.",
-      needsAttention: true,
-    };
-  }
-
-  if (item.refresh_state.status === "retryable_failure") {
-    return {
-      label: "Degraded",
-      tone: "warning",
-      detail:
-        item.refresh_state.error_message ??
-        `Last live refresh failed. Retry scheduled after ${formatTimestamp(item.refresh_state.next_retry_at, "the next worker run")}.`,
-      needsAttention: true,
-    };
-  }
-
-  if (item.refresh_state.status === "failed") {
-    return {
-      label: "Outdated",
-      tone: "danger",
-      detail: item.refresh_state.error_message ?? "Last live refresh failed and requires manual intervention.",
-      needsAttention: true,
-    };
-  }
-
-  switch (item.freshness.status) {
-    case "live":
-      return {
-        label: "Live",
-        tone: "live",
-        detail: `Last successful sync ${formatTimestamp(item.freshness.last_synced_at)}.`,
-        needsAttention: false,
-      };
-    case "cached":
-      return {
-        label: "Cached",
-        tone: "cached",
-        detail: item.freshness.degraded_reason
-          ? `Showing cached snapshot while live sync is degraded: ${item.freshness.degraded_reason}`
-          : `Showing cached snapshot from ${formatTimestamp(item.freshness.last_synced_at)}.`,
-        needsAttention: false,
-      };
-    case "degraded":
-      return {
-        label: "Degraded",
-        tone: "warning",
-        detail:
-          item.freshness.degraded_reason ??
-          "Live sync is degraded. Cached results remain available until refresh recovers.",
-        needsAttention: true,
-      };
-    case "outdated":
-      return {
-        label: "Outdated",
-        tone: "danger",
-        detail: `Last successful sync ${formatTimestamp(item.freshness.last_synced_at)}. Run Refresh Live to retry now.`,
-        needsAttention: true,
-      };
-    default:
-      return {
-        label: "Awaiting sync",
-        tone: "warning",
-        detail: "This saved search does not have a successful live snapshot yet.",
-        needsAttention: true,
-      };
-  }
+function getSavedSearchReliability(item: SavedSearch, refreshingSavedSearchId: string | null) {
+  return buildResourceReliability({
+    freshness: item.freshness,
+    refreshState: item.refresh_state,
+    isRefreshing: refreshingSavedSearchId === item.id,
+    repairPendingDetail: "Compatibility repair is queued for this saved search.",
+    unknownDetail: "This saved search does not have a trusted live snapshot yet.",
+  });
 }
 
 function buildSavedSearchTitleButtonLabel(item: SavedSearch): string {
@@ -842,10 +760,6 @@ export function SearchPanel({
                     <div className="saved-search-card__metric">
                       <dt className="detail-label">Priority</dt>
                       <dd className="detail-value">{formatPriorityLabel(item.refresh_state.priority_class)}</dd>
-                    </div>
-                    <div className="saved-search-card__metric">
-                      <dt className="detail-label">Last synced</dt>
-                      <dd className="detail-value">{formatLastSyncedLabel(item.last_synced_at)}</dd>
                     </div>
                   </dl>
                 </div>
