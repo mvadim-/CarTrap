@@ -2,24 +2,34 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
+from time import perf_counter
 from typing import Callable, Optional
 
+from fastapi import HTTPException
 from pymongo.database import Database
 
+from cartrap.core.logging import make_log_extra, new_correlation_id
 from cartrap.modules.copart_provider.models import CopartLotSnapshot
 from cartrap.modules.copart_provider.service import CopartProvider
 from cartrap.modules.monitoring.change_detection import detect_significant_changes
+from cartrap.modules.monitoring.job_runtime import JobRuntimeService
 from cartrap.modules.monitoring.polling_policy import (
+    build_priority_sort_key,
     DEFAULT_INTERVAL_MINUTES,
     NEAR_AUCTION_INTERVAL_MINUTES,
     NEAR_AUCTION_WINDOW_MINUTES,
+    get_priority_class,
     is_due_for_poll,
 )
 from cartrap.modules.notifications.service import NotificationService
 from cartrap.modules.system_status.service import SystemStatusService
 from cartrap.modules.watchlist.repository import WatchlistRepository
 from cartrap.modules.watchlist.service import WatchlistService
+
+
+logger = logging.getLogger(__name__)
 
 
 class MonitoringService:
@@ -33,6 +43,7 @@ class MonitoringService:
         default_poll_interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
         near_auction_poll_interval_minutes: int = NEAR_AUCTION_INTERVAL_MINUTES,
         near_auction_window_minutes: int = NEAR_AUCTION_WINDOW_MINUTES,
+        refresh_job_runtime: JobRuntimeService | None = None,
     ) -> None:
         self.repository = WatchlistRepository(database)
         self.repository.ensure_indexes()
@@ -42,24 +53,142 @@ class MonitoringService:
         self._default_poll_interval_minutes = default_poll_interval_minutes
         self._near_auction_poll_interval_minutes = near_auction_poll_interval_minutes
         self._near_auction_window_minutes = near_auction_window_minutes
+        self._refresh_job_runtime = refresh_job_runtime or JobRuntimeService(database)
 
     def poll_due_lots(self, now: datetime | None = None) -> dict:
         current_time = now or self._now()
         processed = 0
         updated = 0
         failed = 0
+        skipped = 0
         events: list[dict] = []
         reminder_events: list[dict] = []
+        jobs: list[dict] = []
 
+        due_tracked_lots: list[dict] = []
         for tracked_lot in self.repository.list_active_tracked_lots():
             if not self._should_poll_tracked_lot(tracked_lot, current_time):
                 continue
+            due_tracked_lots.append(tracked_lot)
+
+        due_tracked_lots.sort(
+            key=lambda item: build_priority_sort_key(
+                item,
+                current_time,
+                near_auction_window_minutes=self._near_auction_window_minutes,
+            )
+        )
+
+        for tracked_lot in due_tracked_lots:
+            tracked_lot_id = str(tracked_lot["_id"])
+            priority_class = get_priority_class(
+                tracked_lot,
+                current_time,
+                near_auction_window_minutes=self._near_auction_window_minutes,
+            )
+            correlation_id = new_correlation_id("watchlist-poll")
+            started_at = perf_counter()
+            runtime = self._refresh_job_runtime.acquire(
+                job_type="watchlist_poll",
+                resource_id=tracked_lot_id,
+                now=current_time,
+                metadata={
+                    "owner_user_id": tracked_lot["owner_user_id"],
+                    "lot_number": tracked_lot["lot_number"],
+                    "priority_class": priority_class,
+                },
+            )
+            if runtime is None:
+                skipped += 1
+                jobs.append(
+                    self._refresh_job_runtime.describe_skip(
+                        job_type="watchlist_poll",
+                        resource_id=tracked_lot_id,
+                        now=current_time,
+                    )
+                )
+                continue
+
             processed += 1
+            last_checked_at = tracked_lot.get("last_checked_at")
+            stale_for_seconds = (
+                round((current_time - last_checked_at).total_seconds(), 2) if isinstance(last_checked_at, datetime) else None
+            )
+            logger.info(
+                "watchlist.refresh.start",
+                extra=make_log_extra(
+                    "watchlist.refresh.start",
+                    correlation_id=correlation_id,
+                    tracked_lot_id=tracked_lot_id,
+                    owner_user_id=tracked_lot["owner_user_id"],
+                    lot_number=tracked_lot["lot_number"],
+                    priority_class=priority_class,
+                    stale_for_seconds=stale_for_seconds,
+                    attempt_count=runtime.get("attempt_count"),
+                ),
+            )
             try:
                 poll_result = self._poll_single_lot(tracked_lot, current_time)
             except Exception as exc:
                 failed += 1
                 self._system_status_service.mark_live_sync_degraded("watchlist_poll", exc, checked_at=current_time)
+                retryable = True
+                error_message = str(exc).strip() or "Watchlist refresh failed."
+                if isinstance(exc, HTTPException):
+                    retryable, error_message = WatchlistService.classify_refresh_exception(exc)
+                self.repository.update_tracked_lot_state(
+                    tracked_lot_id,
+                    {
+                        **WatchlistService._build_refresh_failure_payload(
+                            current_time,
+                            error_message=error_message,
+                            retryable=retryable,
+                        ),
+                        "last_refresh_priority_class": priority_class,
+                    },
+                    updated_at=current_time,
+                )
+                jobs.append(
+                    (
+                        self._refresh_job_runtime.fail_retryable(
+                            runtime,
+                            now=current_time,
+                            outcome="refresh_failed",
+                            error_message=error_message,
+                            metadata={
+                                "owner_user_id": tracked_lot["owner_user_id"],
+                                "lot_number": tracked_lot["lot_number"],
+                                "priority_class": priority_class,
+                            },
+                        )
+                        if retryable
+                        else self._refresh_job_runtime.fail_non_retryable(
+                            runtime,
+                            now=current_time,
+                            outcome="refresh_failed",
+                            error_message=error_message,
+                            metadata={
+                                "owner_user_id": tracked_lot["owner_user_id"],
+                                "lot_number": tracked_lot["lot_number"],
+                                "priority_class": priority_class,
+                            },
+                        )
+                    )
+                )
+                logger.exception(
+                    "watchlist.refresh.failed",
+                    extra=make_log_extra(
+                        "watchlist.refresh.failed",
+                        correlation_id=correlation_id,
+                        tracked_lot_id=tracked_lot_id,
+                        owner_user_id=tracked_lot["owner_user_id"],
+                        lot_number=tracked_lot["lot_number"],
+                        priority_class=priority_class,
+                        duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                        retryable=retryable,
+                        error_message=error_message,
+                    ),
+                )
                 continue
 
             event = poll_result["change_event"]
@@ -74,17 +203,52 @@ class MonitoringService:
                 if self._notification_service is not None:
                     for reminder_event in reminder_batch:
                         self._notification_service.send_auction_reminder_notification(reminder_event)
+            jobs.append(
+                self._refresh_job_runtime.complete(
+                    runtime,
+                    now=current_time,
+                    outcome="refreshed" if event is not None or reminder_batch else "not_modified",
+                    metadata={
+                        "owner_user_id": tracked_lot["owner_user_id"],
+                        "lot_number": tracked_lot["lot_number"],
+                        "priority_class": priority_class,
+                        "updated": event is not None,
+                        "reminders_sent": len(reminder_batch),
+                    },
+                )
+            )
+            logger.info(
+                "watchlist.refresh.success",
+                extra=make_log_extra(
+                    "watchlist.refresh.success",
+                    correlation_id=correlation_id,
+                    tracked_lot_id=tracked_lot_id,
+                    owner_user_id=tracked_lot["owner_user_id"],
+                    lot_number=tracked_lot["lot_number"],
+                    priority_class=priority_class,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    outcome="refreshed" if event is not None or reminder_batch else "not_modified",
+                    change_count=len(event["changes"]) if event is not None else 0,
+                    reminder_count=len(reminder_batch),
+                ),
+            )
 
         return {
             "processed": processed,
             "updated": updated,
             "failed": failed,
+            "skipped": skipped,
             "events": events,
             "reminded": len(reminder_events),
             "reminder_events": reminder_events,
+            "jobs": jobs,
         }
 
     def _should_poll_tracked_lot(self, tracked_lot: dict, now: datetime) -> bool:
+        repair_requested_at = self._normalize_datetime(tracked_lot.get("repair_requested_at"))
+        last_checked_at = self._normalize_datetime(tracked_lot.get("last_checked_at"))
+        if repair_requested_at is not None and (last_checked_at is None or repair_requested_at > last_checked_at):
+            return True
         if is_due_for_poll(
             tracked_lot,
             now,
@@ -97,6 +261,11 @@ class MonitoringService:
 
     def _poll_single_lot(self, tracked_lot: dict, now: datetime) -> dict:
         provider = self._provider_factory()
+        priority_class = get_priority_class(
+            tracked_lot,
+            now,
+            near_auction_window_minutes=self._near_auction_window_minutes,
+        )
         try:
             if hasattr(provider, "fetch_lot_conditional"):
                 fetch_result = provider.fetch_lot_conditional(tracked_lot["url"], etag=tracked_lot.get("detail_etag"))
@@ -115,6 +284,12 @@ class MonitoringService:
             )
             payload = {
                 "last_checked_at": now,
+                **WatchlistService._build_refresh_success_payload(now),
+                "last_refresh_priority_class": priority_class,
+                "last_refresh_outcome": "not_modified",
+                "repair_requested_at": None,
+                "last_refresh_change_count": 0,
+                "last_refresh_reminder_count": len(reminder_events),
                 **reminder_state_payload,
             }
             if fetch_result.etag is not None:
@@ -148,6 +323,12 @@ class MonitoringService:
         tracked_lot_payload = {
             **WatchlistService._tracked_lot_state_from_snapshot(fresh_snapshot, detail_etag=detail_etag),
             "last_checked_at": now,
+            **WatchlistService._build_refresh_success_payload(now),
+            "last_refresh_priority_class": priority_class,
+            "last_refresh_outcome": "refreshed" if changes else "not_modified",
+            "repair_requested_at": None,
+            "last_refresh_change_count": len(changes),
+            "last_refresh_reminder_count": len(reminder_events),
             **reminder_state_payload,
         }
         if changes:

@@ -26,6 +26,7 @@ import {
   listSavedSearches,
   listWatchlist,
   login,
+  refreshWatchlistLotLive,
   refreshSavedSearchLive,
   refreshSearchCatalog,
   removeWatchlistItem,
@@ -43,6 +44,7 @@ import type {
   PushSubscriptionConfig,
   PushSubscriptionItem,
   PushSubscriptionPayload,
+  ReliabilityDiagnostics,
   SavedSearch,
   SavedSearchResultsResponse,
   SearchCatalog,
@@ -78,6 +80,7 @@ type ActionState = {
   deletingSavedSearchId: string | null;
   addingFromSearchLotUrl: string | null;
   isAddingWatchlistLot: boolean;
+  refreshingWatchlistId: string | null;
   removingWatchlistId: string | null;
   isSubscribingPush: boolean;
   unsubscribingEndpoint: string | null;
@@ -110,6 +113,7 @@ const INITIAL_ACTION_STATE: ActionState = {
   deletingSavedSearchId: null,
   addingFromSearchLotUrl: null,
   isAddingWatchlistLot: false,
+  refreshingWatchlistId: null,
   removingWatchlistId: null,
   isSubscribingPush: false,
   unsubscribingEndpoint: null,
@@ -136,10 +140,15 @@ function isDashboardResourceKey(value: string): value is DashboardResourceKey {
 }
 
 function normalizePushRefreshTargets(value: unknown): PushRefreshTarget[] {
-  if (!Array.isArray(value)) {
+  let rawTargets = value;
+  if (!Array.isArray(rawTargets) && rawTargets && typeof rawTargets === "object") {
+    const nestedTargets = rawTargets as Record<string, unknown>;
+    rawTargets = nestedTargets.targets ?? nestedTargets.items ?? nestedTargets.resources ?? null;
+  }
+  if (!Array.isArray(rawTargets)) {
     return [];
   }
-  return value.filter((item): item is PushRefreshTarget => typeof item === "string" && isDashboardResourceKey(item));
+  return rawTargets.filter((item): item is PushRefreshTarget => typeof item === "string" && isDashboardResourceKey(item));
 }
 
 function getNotificationPermission(): string {
@@ -277,6 +286,63 @@ function countSavedSearchUpdates(
   return { newMatches, refreshedSearches };
 }
 
+function buildReliabilitySummary<T extends { freshness: { status: string }; refresh_state: { status: string } }>(
+  items: T[],
+) {
+  return items.reduce(
+    (summary, item) => {
+      summary.total += 1;
+      if (item.refresh_state.status === "retryable_failure") {
+        summary.retryable_failures += 1;
+      }
+      if (item.refresh_state.status === "repair_pending") {
+        summary.repair_pending += 1;
+      }
+      if (item.refresh_state.status === "failed") {
+        summary.failed += 1;
+      }
+      if (item.freshness.status === "outdated") {
+        summary.outdated += 1;
+      }
+      if (item.freshness.status === "degraded") {
+        summary.degraded += 1;
+      }
+      if (item.freshness.status === "cached") {
+        summary.cached += 1;
+      }
+      if (
+        item.refresh_state.status !== "idle" ||
+        item.freshness.status === "outdated" ||
+        item.freshness.status === "degraded" ||
+        item.freshness.status === "unknown"
+      ) {
+        summary.attention += 1;
+      }
+      return summary;
+    },
+    {
+      total: 0,
+      attention: 0,
+      retryable_failures: 0,
+      repair_pending: 0,
+      failed: 0,
+      outdated: 0,
+      degraded: 0,
+      cached: 0,
+    },
+  );
+}
+
+function buildReliabilityDiagnostics(savedSearches: SavedSearch[], watchlist: WatchlistItem[]): ReliabilityDiagnostics {
+  const savedSearchSummary = buildReliabilitySummary(savedSearches);
+  const watchlistSummary = buildReliabilitySummary(watchlist);
+  return {
+    saved_searches: savedSearchSummary,
+    watchlist: watchlistSummary,
+    total_attention: savedSearchSummary.attention + watchlistSummary.attention,
+  };
+}
+
 function buildTabAttentionMessage(
   previousWatchlist: WatchlistItem[],
   nextWatchlist: WatchlistItem[] | null,
@@ -411,6 +477,7 @@ export function App() {
     "--pull-offset": `${pullToRefreshOffset}px`,
     "--pull-progress": `${Math.min(pullToRefreshOffset / PULL_TO_REFRESH_THRESHOLD, 1)}`,
   } as CSSProperties;
+  const reliabilityDiagnostics = buildReliabilityDiagnostics(savedSearches, watchlist);
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -1069,6 +1136,7 @@ export function App() {
       return response;
     } catch (caught) {
       const status = isBrowserOffline ? liveSyncStatus : await refreshLiveSyncStatus(session.accessToken);
+      await loadSavedSearchesResource(session.accessToken, { silent: true });
       const message = formatConnectivityError(
         "Saved-search refresh",
         toErrorMessage(caught, "Could not refresh saved search"),
@@ -1078,6 +1146,33 @@ export function App() {
     } finally {
       setActionState((current) =>
         current.refreshingSavedSearchId === id ? { ...current, refreshingSavedSearchId: null } : current,
+      );
+    }
+  }
+
+  async function handleRefreshWatchlistLot(id: string): Promise<WatchlistItem> {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    setActionState((current) => ({ ...current, refreshingWatchlistId: id }));
+    try {
+      const trackedLot = await refreshWatchlistLotLive(id, session.accessToken);
+      await refreshLiveSyncStatus(session.accessToken);
+      setWatchlist((current) => sortWatchlistItems([trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]));
+      return trackedLot;
+    } catch (caught) {
+      const status = isBrowserOffline ? liveSyncStatus : await refreshLiveSyncStatus(session.accessToken);
+      await loadWatchlistResource(session.accessToken, { silent: true });
+      throw new Error(
+        formatConnectivityError(
+          "Watchlist refresh",
+          toErrorMessage(caught, "Could not refresh tracked lot"),
+          status,
+        ),
+      );
+    } finally {
+      setActionState((current) =>
+        current.refreshingWatchlistId === id ? { ...current, refreshingWatchlistId: null } : current,
       );
     }
   }
@@ -1391,11 +1486,13 @@ export function App() {
           isLoading={dashboardLoading.watchlist}
           loadError={dashboardErrors.watchlist}
           isAddingLot={actionState.isAddingWatchlistLot}
+          refreshingItemId={actionState.refreshingWatchlistId}
           removingItemId={actionState.removingWatchlistId}
           isBrowserOffline={isBrowserOffline}
           liveSyncStatus={liveSyncStatus}
           onRetry={() => (session.accessToken ? loadWatchlistResource(session.accessToken) : Promise.resolve())}
           onAddByLotNumber={handleAddByLotNumber}
+          onRefreshItem={handleRefreshWatchlistLot}
           onRemove={handleRemoveWatchlistItem}
         />
         {isAdmin ? (
@@ -1421,6 +1518,7 @@ export function App() {
         isOpen={isAccountMenuOpen}
         user={session.user!}
         liveSyncStatus={liveSyncStatus}
+        diagnostics={reliabilityDiagnostics}
         onClose={() => setIsAccountMenuOpen(false)}
         onOpenSettings={handleOpenSettings}
         onLogout={handleLogout}

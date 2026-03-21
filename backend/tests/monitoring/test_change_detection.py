@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from pathlib import Path
 import sys
@@ -80,6 +80,13 @@ class FakeNotificationService:
         return {"delivered": 0, "failed": 0, "removed": 0, "endpoints": []}
 
 
+def _mark_due(database, tracked_lot_id: str, now: datetime, *, minutes: int = 20) -> None:
+    database["tracked_lots"].update_one(
+        {"_id": ObjectId(tracked_lot_id)},
+        {"$set": {"last_checked_at": now - timedelta(minutes=minutes)}},
+    )
+
+
 def test_detect_significant_changes_returns_only_changed_fields() -> None:
     previous = {
         "status": "upcoming",
@@ -127,6 +134,7 @@ def test_monitoring_service_stores_new_snapshot_when_state_changes() -> None:
     )
     watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
     created = watchlist_service.add_tracked_lot({"id": "user-1"}, "https://www.copart.com/lot/12345678")
+    _mark_due(database, created["tracked_lot"]["id"], datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc))
 
     changed_snapshot = CopartLotSnapshot(
         lot_number="12345678",
@@ -177,6 +185,9 @@ def test_monitoring_service_stores_new_snapshot_when_state_changes() -> None:
     assert tracked_lot["latest_change_at"] == datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc)
     assert tracked_lot["latest_changes"]["raw_status"] == {"before": "Upcoming", "after": "Live"}
     assert tracked_lot["latest_changes"]["current_bid"] == {"before": 1000.0, "after": 1800.0}
+    assert tracked_lot["last_refresh_priority_class"] == "normal"
+    assert tracked_lot["last_refresh_change_count"] == 3
+    assert tracked_lot["last_refresh_reminder_count"] == 1
 
 
 def test_monitoring_service_counts_failures_without_overwriting_state() -> None:
@@ -203,6 +214,7 @@ def test_monitoring_service_counts_failures_without_overwriting_state() -> None:
     )
     watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
     created = watchlist_service.add_tracked_lot({"id": "user-2"}, "https://www.copart.com/lot/87654321")
+    _mark_due(database, created["tracked_lot"]["id"], datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc))
     monitoring = MonitoringService(database, provider_factory=lambda: FakeProvider(should_fail=True))
 
     result = monitoring.poll_due_lots(now=datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc))
@@ -239,6 +251,7 @@ def test_monitoring_service_skips_snapshot_creation_when_lot_etag_is_not_modifie
     )
     watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
     created = watchlist_service.add_tracked_lot({"id": "user-4"}, "https://www.copart.com/lot/12345678")
+    _mark_due(database, created["tracked_lot"]["id"], datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc))
     database["tracked_lots"].update_one(
         {"_id": ObjectId(created["tracked_lot"]["id"])},
         {"$set": {"detail_etag": "\"lot-etag-1\""}},
@@ -284,6 +297,7 @@ def test_monitoring_service_treats_gateway_unavailable_as_transient_failure() ->
     )
     watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
     created = watchlist_service.add_tracked_lot({"id": "user-5"}, "https://www.copart.com/lot/87654321")
+    _mark_due(database, created["tracked_lot"]["id"], datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc))
     monitoring = MonitoringService(database, provider_factory=lambda: GatewayUnavailableProvider())
 
     result = monitoring.poll_due_lots(now=datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc))
@@ -322,6 +336,7 @@ def test_monitoring_service_sends_auction_reminders_once_per_threshold_for_uncha
     )
     watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
     created = watchlist_service.add_tracked_lot({"id": "user-6"}, "https://www.copart.com/lot/12345678")
+    _mark_due(database, created["tracked_lot"]["id"], datetime(2026, 3, 20, 16, 0, tzinfo=timezone.utc))
     database["tracked_lots"].update_one(
         {"_id": ObjectId(created["tracked_lot"]["id"])},
         {"$set": {"detail_etag": "\"lot-etag-1\""}},
@@ -344,6 +359,7 @@ def test_monitoring_service_sends_auction_reminders_once_per_threshold_for_uncha
     assert [event["reminder_offset_minutes"] for event in notification_service.reminder_events] == [60, 15, 0]
     tracked_lot = database["tracked_lots"].find_one({"_id": ObjectId(created["tracked_lot"]["id"])})
     assert tracked_lot["auction_reminder_sent_minutes"] == [60, 15, 0]
+    assert tracked_lot["last_refresh_priority_class"] == "auction_imminent"
 
 
 def test_monitoring_service_resets_auction_reminders_when_sale_date_changes() -> None:
@@ -372,6 +388,7 @@ def test_monitoring_service_resets_auction_reminders_when_sale_date_changes() ->
     watchlist_service = WatchlistService(database, provider_factory=lambda: FakeProvider([initial_snapshot]))
     created = watchlist_service.add_tracked_lot({"id": "user-7"}, "https://www.copart.com/lot/12345678")
     tracked_lot_id = created["tracked_lot"]["id"]
+    _mark_due(database, tracked_lot_id, datetime(2026, 3, 20, 16, 0, tzinfo=timezone.utc))
     database["tracked_lots"].update_one(
         {"_id": ObjectId(tracked_lot_id)},
         {"$set": {"detail_etag": "\"lot-etag-1\""}},

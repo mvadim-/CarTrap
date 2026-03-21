@@ -131,6 +131,8 @@ def test_mark_saved_search_cache_viewed_clears_new_markers_and_sets_seen_at() ->
 
 
 def test_saved_search_cache_serialization_exposes_metadata_and_new_flags() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    service = SearchService(database)
     saved_search = _build_saved_search_document()
     cache_document = {
         "_id": ObjectId(),
@@ -145,8 +147,8 @@ def test_saved_search_cache_serialization_exposes_metadata_and_new_flags() -> No
         "updated_at": datetime(2026, 3, 16, 14, 5, tzinfo=timezone.utc),
     }
 
-    serialized_saved_search = SearchService.serialize_saved_search(saved_search, cache_document=cache_document)
-    serialized_view = SearchService.serialize_saved_search_cache_view(saved_search, cache_document)
+    serialized_saved_search = service.serialize_saved_search(saved_search, cache_document=cache_document)
+    serialized_view = service.serialize_saved_search_cache_view(saved_search, cache_document)
 
     saved_search_response = SavedSearchResponse.model_validate(serialized_saved_search)
     view_response = SavedSearchViewResponse.model_validate(serialized_view)

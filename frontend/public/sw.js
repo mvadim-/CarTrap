@@ -23,8 +23,15 @@ function parsePushPayload(event) {
 }
 
 function deriveRefreshTargets(payload) {
-  const explicitTargets = Array.isArray(payload.refresh_targets)
-    ? payload.refresh_targets.filter((target) => typeof target === "string")
+  const explicitTargetsValue = Array.isArray(payload.refresh_targets)
+    ? payload.refresh_targets
+    : payload.refresh_targets && typeof payload.refresh_targets === "object"
+      ? payload.refresh_targets.targets ?? payload.refresh_targets.items ?? payload.refresh_targets.resources ?? []
+      : payload.refresh && typeof payload.refresh === "object"
+        ? payload.refresh.targets ?? payload.refresh.items ?? payload.refresh.resources ?? []
+        : [];
+  const explicitTargets = Array.isArray(explicitTargetsValue)
+    ? explicitTargetsValue.filter((target) => typeof target === "string")
     : [];
   if (explicitTargets.length > 0) {
     return Array.from(new Set(explicitTargets));

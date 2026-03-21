@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 from bson import ObjectId
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import mongomock
 from fastapi.testclient import TestClient
@@ -163,6 +163,12 @@ def test_watchlist_crud_for_user(client: TestClient) -> None:
             "https://img.copart.com/12345678-detail.jpg",
             "https://img.copart.com/12345678-detail-2.jpg",
         ]
+        assert list_response.json()["items"][0]["freshness"]["status"] == "live"
+        assert list_response.json()["items"][0]["freshness"]["retryable"] is False
+        stale_after = datetime.fromisoformat(list_response.json()["items"][0]["freshness"]["stale_after"].replace("Z", "+00:00"))
+        last_checked_at = datetime.fromisoformat(list_response.json()["items"][0]["last_checked_at"].replace("Z", "+00:00"))
+        assert stale_after - last_checked_at <= timedelta(minutes=15)
+        assert list_response.json()["items"][0]["refresh_state"]["status"] == "idle"
         assert list_response.json()["items"][0]["odometer"] == "12,345 ACTUAL"
         assert list_response.json()["items"][0]["primary_damage"] == "FRONT END"
         assert list_response.json()["items"][0]["estimated_retail_value"] == 36500.0
@@ -325,7 +331,7 @@ def test_watchlist_delete_is_scoped_to_owner(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_watchlist_list_backfills_missing_media_for_legacy_items(client: TestClient) -> None:
+def test_watchlist_list_returns_cached_legacy_item_and_schedules_repair_without_live_fetch(client: TestClient) -> None:
     with client:
         user_token = _create_user(client, "legacy@example.com", "LegacyPass123")
         owner_id = client.app.state.mongo.database["users"].find_one({"email": "legacy@example.com"})["_id"]
@@ -354,20 +360,52 @@ def test_watchlist_list_backfills_missing_media_for_legacy_items(client: TestCli
         stored = client.app.state.mongo.database["tracked_lots"].find_one({"_id": tracked_lot_id})
 
     assert response.status_code == 200
-    assert response.json()["items"][0]["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"
-    assert response.json()["items"][0]["image_urls"] == [
-        "https://img.copart.com/12345678-detail.jpg",
-        "https://img.copart.com/12345678-detail-2.jpg",
-    ]
-    assert response.json()["items"][0]["odometer"] == "12,345 ACTUAL"
-    assert response.json()["items"][0]["primary_damage"] == "FRONT END"
-    assert response.json()["items"][0]["estimated_retail_value"] == 36500.0
-    assert response.json()["items"][0]["has_key"] is True
-    assert response.json()["items"][0]["drivetrain"] == "AWD"
-    assert response.json()["items"][0]["highlights"] == ["Run and Drive", "Enhanced Vehicles"]
-    assert response.json()["items"][0]["vin"] == "1FA6P8TH0J5100001"
+    assert response.json()["items"][0]["thumbnail_url"] is None
+    assert response.json()["items"][0]["image_urls"] == []
+    assert response.json()["items"][0]["odometer"] is None
+    assert response.json()["items"][0]["refresh_state"]["status"] == "repair_pending"
+    assert stored["thumbnail_url"] is None
+    assert stored.get("repair_requested_at") is not None
+
+
+def test_watchlist_refresh_live_repairs_legacy_item_without_read_path_fetch(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "legacy-refresh@example.com", "LegacyRefreshPass123")
+        owner_id = client.app.state.mongo.database["users"].find_one({"email": "legacy-refresh@example.com"})["_id"]
+        tracked_lot_id = client.app.state.mongo.database["tracked_lots"].insert_one(
+            {
+                "owner_user_id": str(owner_id),
+                "lot_number": "12345678",
+                "url": "https://www.copart.com/lot/12345678",
+                "title": "2020 TOYOTA CAMRY SE",
+                "thumbnail_url": None,
+                "image_urls": [],
+                "status": "on_approval",
+                "raw_status": "On Approval",
+                "sale_date": datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+                "current_bid": 4200.0,
+                "buy_now_price": 6500.0,
+                "currency": "USD",
+                "last_checked_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+                "active": True,
+                "created_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+            }
+        ).inserted_id
+
+        refresh_response = client.post(
+            f"/api/watchlist/{tracked_lot_id}/refresh-live",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        stored = client.app.state.mongo.database["tracked_lots"].find_one({"_id": tracked_lot_id})
+
+    assert refresh_response.status_code == 200
+    assert refresh_response.json()["tracked_lot"]["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"
+    assert refresh_response.json()["tracked_lot"]["vin"] == "1FA6P8TH0J5100001"
+    assert refresh_response.json()["tracked_lot"]["refresh_state"]["status"] == "idle"
     assert stored["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"
     assert stored["vin"] == "1FA6P8TH0J5100001"
+    assert stored.get("repair_requested_at") is None
 
 
 def test_watchlist_does_not_refetch_when_detail_keys_are_present_with_null_values(client: TestClient) -> None:

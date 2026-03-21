@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 import sys
 
 import httpx
@@ -31,6 +32,8 @@ def make_base_settings(**overrides: object) -> Settings:
         "COPART_API_D_TOKEN": "token-123",
         "COPART_API_COOKIE": "SessionID=abc",
         "COPART_API_SITECODE": "CPRTUS",
+        "COPART_GATEWAY_BASE_URL": None,
+        "COPART_GATEWAY_TOKEN": None,
     }
     payload.update(overrides)
     return Settings(**payload)
@@ -191,6 +194,35 @@ def test_gateway_maps_upstream_rejection_to_explicit_error_type() -> None:
     client.close()
 
 
+def test_gateway_logs_structured_failure_classification(caplog) -> None:
+    client = CopartHttpClient(
+        settings=make_base_settings(
+            COPART_GATEWAY_BASE_URL="https://gateway.example.com",
+            COPART_GATEWAY_TOKEN="secret-token",
+        ),
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                502,
+                headers={
+                    "x-copart-gateway-error": "upstream_rejected",
+                    "x-copart-upstream-status": "403",
+                },
+            )
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(CopartGatewayUpstreamError):
+            client.search({"pageNumber": 1})
+
+    failure_record = next(record for record in caplog.records if getattr(record, "event", "") == "copart_client.request.failed")
+    assert failure_record.structured["transport_mode"] == "gateway"
+    assert failure_record.structured["failure_class"] == "upstream_rejected"
+    assert failure_record.structured["upstream_status"] == "403"
+    assert failure_record.structured["correlation_id"].startswith("copart-gateway-")
+    client.close()
+
+
 def test_gateway_maps_invalid_json_payload_to_malformed_response_error() -> None:
     client = CopartHttpClient(
         settings=make_base_settings(
@@ -203,6 +235,28 @@ def test_gateway_maps_invalid_json_payload_to_malformed_response_error() -> None
     with pytest.raises(CopartGatewayMalformedResponseError, match="invalid JSON"):
         client.search({"pageNumber": 1})
 
+    client.close()
+
+
+def test_gateway_logs_timeout_failures_separately_from_upstream_errors(caplog) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    client = CopartHttpClient(
+        settings=make_base_settings(
+            COPART_GATEWAY_BASE_URL="https://gateway.example.com",
+            COPART_GATEWAY_TOKEN="secret-token",
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(CopartGatewayUnavailableError):
+            client.search({"pageNumber": 1})
+
+    failure_record = next(record for record in caplog.records if getattr(record, "event", "") == "copart_client.request.failed")
+    assert failure_record.structured["failure_class"] == "timeout"
+    assert failure_record.structured["transport_mode"] == "gateway"
     client.close()
 
 

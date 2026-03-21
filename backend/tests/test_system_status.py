@@ -24,7 +24,7 @@ from cartrap.modules.monitoring.service import MonitoringService
 from cartrap.modules.search.schemas import SearchRequest
 from cartrap.modules.search.service import SearchService
 from cartrap.modules.system_status.repository import SystemStatusRepository
-from cartrap.modules.system_status.service import SystemStatusService
+from cartrap.modules.system_status.service import SystemStatusService, build_freshness_envelope
 from cartrap.modules.watchlist.service import WatchlistService
 
 
@@ -128,6 +128,10 @@ def test_system_status_endpoint_returns_available_state_by_default(client: TestC
             "last_error_message": None,
             "stale": False,
         },
+        "freshness_policies": {
+            "saved_searches": {"stale_after_seconds": 900},
+            "watchlist": {"stale_after_seconds": 900},
+        },
     }
 
 
@@ -144,6 +148,46 @@ def test_system_status_endpoint_treats_stale_failure_marker_as_available(client:
     assert live_sync["status"] == "available"
     assert live_sync["stale"] is True
     assert live_sync["last_failure_source"] == "watchlist_poll"
+
+
+def test_build_freshness_envelope_transitions_between_live_cached_and_degraded() -> None:
+    synced_at = datetime(2026, 3, 16, 11, 0, tzinfo=timezone.utc)
+    stale_window = datetime(2026, 3, 16, 11, 20, tzinfo=timezone.utc)
+    degraded_live_sync = {
+        "status": "degraded",
+        "last_error_message": "gateway unavailable",
+    }
+
+    live_freshness = build_freshness_envelope(
+        last_synced_at=synced_at,
+        stale_after_window=datetime(2026, 3, 16, 11, 10, tzinfo=timezone.utc) - synced_at,
+        current_time=datetime(2026, 3, 16, 11, 5, tzinfo=timezone.utc),
+    )
+    cached_freshness = build_freshness_envelope(
+        last_synced_at=synced_at,
+        stale_after_window=datetime(2026, 3, 16, 11, 10, tzinfo=timezone.utc) - synced_at,
+        live_sync_status=degraded_live_sync,
+        current_time=datetime(2026, 3, 16, 11, 5, tzinfo=timezone.utc),
+    )
+    degraded_freshness = build_freshness_envelope(
+        last_synced_at=synced_at,
+        stale_after_window=stale_window - synced_at,
+        live_sync_status=degraded_live_sync,
+        current_time=datetime(2026, 3, 16, 11, 25, tzinfo=timezone.utc),
+    )
+
+    assert live_freshness == {
+        "status": "live",
+        "last_synced_at": synced_at,
+        "stale_after": datetime(2026, 3, 16, 11, 10, tzinfo=timezone.utc),
+        "degraded_reason": None,
+        "retryable": False,
+    }
+    assert cached_freshness["status"] == "cached"
+    assert cached_freshness["degraded_reason"] == "gateway unavailable"
+    assert cached_freshness["retryable"] is True
+    assert degraded_freshness["status"] == "degraded"
+    assert degraded_freshness["stale_after"] == stale_window
 
 
 def test_search_service_marks_live_sync_degraded_and_then_available() -> None:
@@ -206,13 +250,17 @@ def test_monitoring_service_marks_live_sync_failure_and_recovery() -> None:
     )
     watchlist_service = WatchlistService(database, provider_factory=lambda: ConditionalLotProvider(snapshot=initial_snapshot, not_modified=False))
     watchlist_service.add_tracked_lot({"id": "user-1"}, "https://www.copart.com/lot/12345678")
+    database["tracked_lots"].update_one(
+        {"lot_number": "12345678"},
+        {"$set": {"last_checked_at": datetime(2026, 3, 20, 16, 0, tzinfo=timezone.utc)}},
+    )
 
     failing_monitoring = MonitoringService(
         database,
         provider_factory=lambda: ConditionalLotProvider(snapshot=None, not_modified=False, should_fail=True),
     )
     failing_monitoring.poll_due_lots(now=datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc))
-    status_service = SystemStatusService(database)
+    status_service = SystemStatusService(database, now_provider=lambda: datetime(2026, 3, 20, 16, 31, tzinfo=timezone.utc))
     degraded_status = status_service.get_live_sync_status()
     assert degraded_status["status"] == "degraded"
     assert degraded_status["last_failure_source"] == "watchlist_poll"

@@ -3,14 +3,52 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Callable, Optional, Union
 
 from pymongo.database import Database
 
+from cartrap.core.logging import make_log_extra, new_correlation_id
 from cartrap.modules.system_status.repository import SystemStatusRepository
 
 
 LIVE_SYNC_STALE_AFTER = timedelta(minutes=10)
+logger = logging.getLogger(__name__)
+
+
+def build_freshness_envelope(
+    *,
+    last_synced_at: datetime | None,
+    stale_after_window: timedelta,
+    live_sync_status: dict | None = None,
+    current_time: datetime | None = None,
+) -> dict:
+    now = current_time or datetime.now(timezone.utc)
+    stale_after = last_synced_at + stale_after_window if last_synced_at is not None else None
+    is_outdated = stale_after is not None and now > stale_after
+    degraded_reason = None
+    retryable = False
+
+    if live_sync_status is not None and live_sync_status.get("status") == "degraded":
+        degraded_reason = live_sync_status.get("last_error_message")
+        retryable = True
+
+    if last_synced_at is None:
+        freshness_status = "degraded" if degraded_reason else "unknown"
+    elif degraded_reason:
+        freshness_status = "degraded" if is_outdated else "cached"
+    elif is_outdated:
+        freshness_status = "outdated"
+    else:
+        freshness_status = "live"
+
+    return {
+        "status": freshness_status,
+        "last_synced_at": last_synced_at,
+        "stale_after": stale_after,
+        "degraded_reason": degraded_reason,
+        "retryable": retryable,
+    }
 
 
 class SystemStatusService:
@@ -24,7 +62,17 @@ class SystemStatusService:
 
     def mark_live_sync_available(self, source: str, checked_at: Optional[datetime] = None) -> dict:
         timestamp = checked_at or self._now_provider()
-        return self._repository.set_live_sync_available(timestamp, source)
+        document = self._repository.set_live_sync_available(timestamp, source)
+        logger.info(
+            "live_sync.available",
+            extra=make_log_extra(
+                "live_sync.available",
+                correlation_id=new_correlation_id("live-sync"),
+                source=source,
+                checked_at=timestamp,
+            ),
+        )
+        return document
 
     def mark_live_sync_degraded(
         self,
@@ -34,7 +82,19 @@ class SystemStatusService:
     ) -> dict:
         timestamp = checked_at or self._now_provider()
         message = str(reason).strip() or "Unknown live sync error."
-        return self._repository.set_live_sync_degraded(timestamp, source, message)
+        document = self._repository.set_live_sync_degraded(timestamp, source, message)
+        logger.warning(
+            "live_sync.degraded",
+            extra=make_log_extra(
+                "live_sync.degraded",
+                correlation_id=new_correlation_id("live-sync"),
+                source=source,
+                checked_at=timestamp,
+                error_message=message,
+                error_type=type(reason).__name__ if isinstance(reason, Exception) else "message",
+            ),
+        )
+        return document
 
     def get_live_sync_status(self) -> dict:
         document = self._repository.get_live_sync_status()

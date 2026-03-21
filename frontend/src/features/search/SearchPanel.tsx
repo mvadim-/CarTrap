@@ -1,7 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import type {
+  FreshnessEnvelope,
   LiveSyncStatus,
+  RefreshState,
   SavedSearch,
   SavedSearchResultsResponse,
   SearchCatalog,
@@ -68,13 +70,13 @@ type SearchModalState = {
   canSave: boolean;
   savedSearchId: string | null;
   lastSyncedAt: string | null;
+  freshness: FreshnessEnvelope | null;
+  refreshState: RefreshState | null;
   refreshError: string | null;
   statusMessage: string | null;
 };
 
 type SavedSearchQuickFilter = "all" | "new" | "needs-refresh";
-
-const SAVED_SEARCH_REFRESH_STALE_MS = 24 * 60 * 60 * 1000;
 
 function normalizeSearchValue(value: string): string {
   return value.trim().toUpperCase();
@@ -121,29 +123,41 @@ function formatFilterSummary(labels: string[]): string {
   return labels.length > 0 ? labels.join(" · ") : "No filters";
 }
 
-function isSavedSearchNeedingRefresh(item: SavedSearch, now: number): boolean {
-  if (!item.last_synced_at) {
-    return true;
+function formatPriorityLabel(value: string | null): string {
+  if (!value) {
+    return "—";
   }
-  const lastSyncedAt = new Date(item.last_synced_at).getTime();
-  if (Number.isNaN(lastSyncedAt)) {
-    return true;
-  }
-  return now - lastSyncedAt >= SAVED_SEARCH_REFRESH_STALE_MS;
+  return value.replace(/_/g, " ");
+}
+
+function formatTimestamp(value: string | null, fallback = "Not yet"): string {
+  return value ? new Date(value).toLocaleString() : fallback;
+}
+
+function isSavedSearchNeedingRefresh(item: SavedSearch): boolean {
+  return (
+    item.refresh_state.status !== "idle" ||
+    item.freshness.status === "outdated" ||
+    item.freshness.status === "degraded" ||
+    item.freshness.status === "unknown"
+  );
 }
 
 function getSavedSearchSortTimestamp(item: SavedSearch): number {
   return new Date(item.last_synced_at ?? item.created_at).getTime() || 0;
 }
 
-function getSavedSearchPriority(item: SavedSearch, now: number): number {
+function getSavedSearchPriority(item: SavedSearch): number {
   if (item.new_count > 0) {
     return 0;
   }
-  if (isSavedSearchNeedingRefresh(item, now)) {
+  if (isSavedSearchNeedingRefresh(item)) {
     return 1;
   }
-  return 2;
+  if (item.freshness.status === "cached") {
+    return 2;
+  }
+  return 3;
 }
 
 function formatSavedSearchYears(item: SavedSearch): string {
@@ -170,43 +184,103 @@ function formatSavedSearchFilterSummary(item: SavedSearch): string {
 }
 
 function formatLastSyncedLabel(value: string | null): string {
-  return value ? new Date(value).toLocaleString() : "Not yet";
+  return formatTimestamp(value);
 }
 
-function filterMatchesSavedSearch(item: SavedSearch, filter: SavedSearchQuickFilter, now: number): boolean {
+function filterMatchesSavedSearch(item: SavedSearch, filter: SavedSearchQuickFilter): boolean {
   switch (filter) {
     case "new":
       return item.new_count > 0;
     case "needs-refresh":
-      return isSavedSearchNeedingRefresh(item, now);
+      return isSavedSearchNeedingRefresh(item);
     default:
       return true;
   }
 }
 
-function getSavedSearchSyncState(
+function getSavedSearchReliability(
   item: SavedSearch,
-  now: number,
   refreshingSavedSearchId: string | null,
-  isBrowserOffline: boolean,
-  isLiveSyncUnavailable: boolean,
-): string {
+): { label: string; tone: "live" | "cached" | "warning" | "danger" | "refreshing"; detail: string; needsAttention: boolean } {
   if (refreshingSavedSearchId === item.id) {
-    return "Refreshing live now";
+    return {
+      label: "Refreshing",
+      tone: "refreshing",
+      detail: "Fetching the latest live results while cached matches stay visible.",
+      needsAttention: false,
+    };
   }
-  if (item.new_count > 0) {
-    return "NEW matches ready";
+
+  if (item.refresh_state.status === "repair_pending") {
+    return {
+      label: "Repair pending",
+      tone: "refreshing",
+      detail: "Compatibility repair is queued for this saved search.",
+      needsAttention: true,
+    };
   }
-  if (isBrowserOffline) {
-    return "Device offline";
+
+  if (item.refresh_state.status === "retryable_failure") {
+    return {
+      label: "Degraded",
+      tone: "warning",
+      detail:
+        item.refresh_state.error_message ??
+        `Last live refresh failed. Retry scheduled after ${formatTimestamp(item.refresh_state.next_retry_at, "the next worker run")}.`,
+      needsAttention: true,
+    };
   }
-  if (isLiveSyncUnavailable) {
-    return "Live refresh unavailable";
+
+  if (item.refresh_state.status === "failed") {
+    return {
+      label: "Outdated",
+      tone: "danger",
+      detail: item.refresh_state.error_message ?? "Last live refresh failed and requires manual intervention.",
+      needsAttention: true,
+    };
   }
-  if (isSavedSearchNeedingRefresh(item, now)) {
-    return "Needs refresh";
+
+  switch (item.freshness.status) {
+    case "live":
+      return {
+        label: "Live",
+        tone: "live",
+        detail: `Last successful sync ${formatTimestamp(item.freshness.last_synced_at)}.`,
+        needsAttention: false,
+      };
+    case "cached":
+      return {
+        label: "Cached",
+        tone: "cached",
+        detail: item.freshness.degraded_reason
+          ? `Showing cached snapshot while live sync is degraded: ${item.freshness.degraded_reason}`
+          : `Showing cached snapshot from ${formatTimestamp(item.freshness.last_synced_at)}.`,
+        needsAttention: false,
+      };
+    case "degraded":
+      return {
+        label: "Degraded",
+        tone: "warning",
+        detail:
+          item.freshness.degraded_reason ??
+          "Live sync is degraded. Cached results remain available until refresh recovers.",
+        needsAttention: true,
+      };
+    case "outdated":
+      return {
+        label: "Outdated",
+        tone: "danger",
+        detail: `Last successful sync ${formatTimestamp(item.freshness.last_synced_at)}. Run Refresh Live to retry now.`,
+        needsAttention: true,
+      };
+    default:
+      return {
+        label: "Awaiting sync",
+        tone: "warning",
+        detail: "This saved search does not have a successful live snapshot yet.",
+        needsAttention: true,
+      };
   }
-  return "Cached results ready";
 }
 
 function buildSavedSearchTitleButtonLabel(item: SavedSearch): string {
@@ -271,6 +345,8 @@ export function SearchPanel({
     canSave: false,
     savedSearchId: null,
     lastSyncedAt: null,
+    freshness: null,
+    refreshState: null,
     refreshError: null,
     statusMessage: null,
   });
@@ -279,9 +355,6 @@ export function SearchPanel({
   const selectedMake: SearchCatalogMake | null = catalog?.makes.find((item) => item.slug === selectedMakeSlug) ?? null;
   const filteredModels = selectedMake?.models.filter((item) => matchesModelQuery(item.name, modelQuery)) ?? [];
   const selectedModel: SearchCatalogModel | null = selectedMake?.models.find((item) => item.slug === selectedModelSlug) ?? null;
-  const isLiveSyncUnavailable = liveSyncStatus?.status === "degraded";
-  const now = Date.now();
-
   useEffect(() => {
     if (!catalog || catalog.makes.length === 0) {
       return;
@@ -366,6 +439,27 @@ export function SearchPanel({
     };
   }, [openSavedSearchMenuId]);
 
+  useEffect(() => {
+    if (!searchModal.isOpen || searchModal.mode !== "saved" || !searchModal.savedSearchId) {
+      return;
+    }
+    const activeSavedSearch = savedSearches.find((item) => item.id === searchModal.savedSearchId);
+    if (!activeSavedSearch) {
+      return;
+    }
+    setSearchModal((current) =>
+      current.savedSearchId === activeSavedSearch.id
+        ? {
+            ...current,
+            title: activeSavedSearch.label,
+            lastSyncedAt: activeSavedSearch.last_synced_at,
+            freshness: activeSavedSearch.freshness,
+            refreshState: activeSavedSearch.refresh_state,
+          }
+        : current,
+    );
+  }, [savedSearches, searchModal.isOpen, searchModal.mode, searchModal.savedSearchId]);
+
   function buildPayload(makeOverride?: SearchCatalogMake | null, modelOverride?: SearchCatalogModel | null): SearchPayload {
     const resolvedMake = makeOverride ?? selectedMake;
     const resolvedModel = modelOverride ?? selectedModel;
@@ -395,6 +489,8 @@ export function SearchPanel({
       canSave: false,
       savedSearchId: response.saved_search.id,
       lastSyncedAt: response.last_synced_at,
+      freshness: response.saved_search.freshness,
+      refreshState: response.saved_search.refresh_state,
       refreshError: null,
       statusMessage,
     });
@@ -413,6 +509,8 @@ export function SearchPanel({
       canSave: true,
       savedSearchId: null,
       lastSyncedAt: null,
+      freshness: null,
+      refreshState: null,
       refreshError: null,
       statusMessage: null,
     });
@@ -560,11 +658,11 @@ export function SearchPanel({
   const quickFilterCounts = {
     all: savedSearches.length,
     new: savedSearches.filter((item) => item.new_count > 0).length,
-    "needs-refresh": savedSearches.filter((item) => isSavedSearchNeedingRefresh(item, now)).length,
+    "needs-refresh": savedSearches.filter((item) => isSavedSearchNeedingRefresh(item)).length,
   };
   const visibleSavedSearches = [...savedSearches]
     .sort((left, right) => {
-      const priorityDelta = getSavedSearchPriority(left, now) - getSavedSearchPriority(right, now);
+      const priorityDelta = getSavedSearchPriority(left) - getSavedSearchPriority(right);
       if (priorityDelta !== 0) {
         return priorityDelta;
       }
@@ -574,7 +672,7 @@ export function SearchPanel({
       }
       return left.label.localeCompare(right.label);
     })
-    .filter((item) => filterMatchesSavedSearch(item, quickFilter, now));
+    .filter((item) => filterMatchesSavedSearch(item, quickFilter));
   const hasVisibleSavedSearches = visibleSavedSearches.length > 0;
 
   const makeOptions: SearchableOption[] = filteredMakes.map((item) => ({ slug: item.slug, name: item.name }));
@@ -698,18 +796,12 @@ export function SearchPanel({
           {visibleSavedSearches.map((item) => {
             const isMenuOpen = openSavedSearchMenuId === item.id;
             const isHighlighted = highlightedSavedSearchId === item.id;
-            const syncState = getSavedSearchSyncState(
-              item,
-              now,
-              refreshingSavedSearchId,
-              isBrowserOffline,
-              isLiveSyncUnavailable,
-            );
+            const reliability = getSavedSearchReliability(item, refreshingSavedSearchId);
 
             return (
               <article
                 key={item.id}
-                className={`result-card saved-search-card${isHighlighted ? " saved-search-card--highlighted" : ""}`}
+                className={`result-card saved-search-card${isHighlighted ? " saved-search-card--highlighted" : ""}${reliability.needsAttention ? " saved-search-card--attention" : ""}`}
               >
                 <div className="saved-search-card__body">
                   <div className="saved-search-card__header">
@@ -737,14 +829,19 @@ export function SearchPanel({
 
                   <p className="saved-search-card__filters">Filters: {formatSavedSearchFilterSummary(item)}</p>
 
+                  <div className="saved-search-card__reliability">
+                    <span className={`status-pill status-pill--${reliability.tone}`}>{reliability.label}</span>
+                    <p className="saved-search-card__reliability-copy">{reliability.detail}</p>
+                  </div>
+
                   <dl className="saved-search-card__metrics">
                     <div className="saved-search-card__metric">
                       <dt className="detail-label">Matches</dt>
                       <dd className="detail-value">{formatLotCount(item.cached_result_count ?? item.result_count)}</dd>
                     </div>
                     <div className="saved-search-card__metric">
-                      <dt className="detail-label">Freshness</dt>
-                      <dd className="detail-value">{syncState}</dd>
+                      <dt className="detail-label">Priority</dt>
+                      <dd className="detail-value">{formatPriorityLabel(item.refresh_state.priority_class)}</dd>
                     </div>
                     <div className="saved-search-card__metric">
                       <dt className="detail-label">Last synced</dt>
@@ -878,6 +975,8 @@ export function SearchPanel({
           searchModal.savedSearchId !== null && refreshingSavedSearchId === searchModal.savedSearchId
         }
         lastSyncedAt={searchModal.lastSyncedAt}
+        freshness={searchModal.freshness}
+        refreshState={searchModal.refreshState}
         refreshError={searchModal.refreshError}
         statusMessage={searchModal.statusMessage}
         mobileFullscreen={searchModal.mode === "saved"}

@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 import json
+import logging
 
 import httpx
 from fastapi.testclient import TestClient
@@ -24,6 +25,7 @@ def make_gateway_settings(**overrides: object) -> Settings:
         "APP_NAME": "CarTrap Gateway Test",
         "MONGO_URI": "mongodb://unused",
         "MONGO_DB": "cartrap_test",
+        "COPART_GATEWAY_BASE_URL": None,
         "COPART_GATEWAY_TOKEN": "gateway-secret",
         "COPART_API_DEVICE_NAME": "iPhone 15 Pro Max",
         "COPART_API_D_TOKEN": "token-123",
@@ -141,6 +143,30 @@ def test_gateway_search_count_endpoint_proxies_request(client: TestClient) -> No
 
     assert response.status_code == 200
     assert response.json() == {"response": {"numFound": 41}}
+
+
+def test_gateway_router_logs_structured_proxy_events(client: TestClient, caplog) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"response": {"docs": [], "numFound": 0}}, headers={"etag": '"etag-1"'})
+
+    with caplog.at_level(logging.INFO):
+        with client:
+            client.app.state.gateway_service_factory = lambda: CopartGatewayService(
+                settings=client.app.state.settings,
+                client_factory=lambda: make_gateway_client(client.app.state.settings, handler),
+            )
+            response = client.post(
+                "/v1/search",
+                json={"pageNumber": 1},
+                headers={"Authorization": "Bearer gateway-secret"},
+            )
+
+    assert response.status_code == 200
+    success_record = next(
+        record for record in caplog.records if getattr(record, "event", "") == "copart_gateway.proxy.search.success"
+    )
+    assert success_record.structured["correlation_id"].startswith("gateway-proxy-")
+    assert success_record.structured["has_etag"] is True
 
 
 def test_gateway_rejects_invalid_or_missing_bearer_token(client: TestClient) -> None:

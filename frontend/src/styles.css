@@ -352,6 +352,10 @@ button:focus-visible,
   box-shadow: 0 16px 38px rgba(24, 121, 78, 0.08);
 }
 
+.saved-search-card--attention {
+  border-color: rgba(155, 61, 18, 0.22);
+}
+
 .saved-search-card__body {
   display: grid;
   gap: 0.65rem;
@@ -400,6 +404,17 @@ button:focus-visible,
   margin: 0;
   color: var(--ink-muted);
   font-size: 0.82rem;
+}
+
+.saved-search-card__reliability {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.saved-search-card__reliability-copy {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
 }
 
 .saved-search-card__metrics {
@@ -963,6 +978,31 @@ button:focus-visible,
   letter-spacing: 0.08em;
 }
 
+.status-pill--live {
+  background: rgba(24, 121, 78, 0.12);
+  color: #18794e;
+}
+
+.status-pill--cached {
+  background: rgba(19, 38, 47, 0.08);
+  color: rgba(19, 38, 47, 0.84);
+}
+
+.status-pill--warning {
+  background: rgba(155, 61, 18, 0.12);
+  color: #9b3d12;
+}
+
+.status-pill--danger {
+  background: rgba(177, 48, 34, 0.12);
+  color: #b13022;
+}
+
+.status-pill--refreshing {
+  background: rgba(41, 108, 166, 0.12);
+  color: #296ca6;
+}
+
 .result-card--media {
   align-items: stretch;
 }
@@ -1041,6 +1081,10 @@ button:focus-visible,
   background:
     linear-gradient(135deg, rgba(255, 242, 237, 0.96) 0%, rgba(255, 251, 247, 0.82) 48%, rgba(255, 241, 236, 0.92) 100%);
   box-shadow: 0 16px 34px rgba(177, 48, 34, 0.1);
+}
+
+.watchlist-card--attention {
+  border-color: rgba(155, 61, 18, 0.22);
 }
 
 .watchlist-card__body,
@@ -1151,6 +1195,17 @@ button:focus-visible,
 .watchlist-card__details {
   display: grid;
   margin: 0;
+}
+
+.watchlist-card__reliability {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.watchlist-card__reliability-copy {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
 }
 
 .watchlist-card__signals {
@@ -1403,6 +1458,18 @@ button:focus-visible,
   display: grid;
   gap: 0.75rem;
   padding: 0 1.1rem 0.9rem;
+}
+
+.search-results-modal__reliability {
+  display: grid;
+  gap: 0.42rem;
+  padding: 0 1.1rem 0.9rem;
+}
+
+.search-results-modal__reliability-copy {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
 }
 
 .search-results-modal__body {

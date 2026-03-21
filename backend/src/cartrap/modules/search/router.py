@@ -32,6 +32,7 @@ def get_search_service(request: Request) -> SearchService:
         watchlist_service_factory=lambda: WatchlistService(
             request.app.state.mongo.database,
             provider_factory=provider_factory,
+            default_poll_interval_minutes=settings.watchlist_default_poll_interval_minutes,
         ),
         saved_search_poll_interval_minutes=settings.saved_search_poll_interval_minutes,
     )

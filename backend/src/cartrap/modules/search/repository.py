@@ -109,6 +109,11 @@ class SavedSearchRepository:
         )
         return self.saved_searches.find_one({"_id": object_id})
 
+    def update_saved_search_refresh_state(self, saved_search_id: str, payload: dict) -> Optional[dict]:
+        object_id = ObjectId(saved_search_id)
+        self.saved_searches.update_one({"_id": object_id}, {"$set": dict(payload)})
+        return self.saved_searches.find_one({"_id": object_id})
+
     def find_saved_search_cache_by_id_for_owner(self, saved_search_id: str, owner_user_id: str) -> Optional[dict]:
         try:
             object_id = ObjectId(saved_search_id)

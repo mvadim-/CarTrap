@@ -10,11 +10,13 @@ type Props = {
   isLoading: boolean;
   loadError: string | null;
   isAddingLot: boolean;
+  refreshingItemId: string | null;
   removingItemId: string | null;
   isBrowserOffline: boolean;
   liveSyncStatus: LiveSyncStatus | null;
   onRetry: () => Promise<void>;
   onAddByLotNumber: (lotNumber: string) => Promise<void>;
+  onRefreshItem: (id: string) => Promise<WatchlistItem>;
   onRemove: (id: string) => Promise<void>;
 };
 
@@ -23,11 +25,13 @@ export function WatchlistPanel({
   isLoading,
   loadError,
   isAddingLot,
+  refreshingItemId,
   removingItemId,
   isBrowserOffline,
   liveSyncStatus,
   onRetry,
   onAddByLotNumber,
+  onRefreshItem,
   onRemove,
 }: Props) {
   const [lotNumber, setLotNumber] = useState("");
@@ -60,6 +64,17 @@ export function WatchlistPanel({
       setActionNotice("Tracked lot removed.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not remove lot.");
+    }
+  }
+
+  async function handleRefresh(id: string, title: string) {
+    setActionError(null);
+    setActionNotice(null);
+    try {
+      await onRefreshItem(id);
+      setActionNotice(`Live refresh completed for ${title}.`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not refresh tracked lot.");
     }
   }
 
@@ -188,6 +203,88 @@ export function WatchlistPanel({
     return summaries;
   }
 
+  function getReliabilityState(
+    item: WatchlistItem,
+  ): { label: string; tone: "live" | "cached" | "warning" | "danger" | "refreshing"; detail: string; needsAttention: boolean } {
+    if (refreshingItemId === item.id) {
+      return {
+        label: "Refreshing",
+        tone: "refreshing",
+        detail: "Fetching the latest Copart lot data while the cached snapshot stays visible.",
+        needsAttention: false,
+      };
+    }
+
+    if (item.refresh_state.status === "repair_pending") {
+      return {
+        label: "Repair pending",
+        tone: "refreshing",
+        detail: "Legacy lot enrichment is queued for repair.",
+        needsAttention: true,
+      };
+    }
+
+    if (item.refresh_state.status === "retryable_failure") {
+      return {
+        label: "Degraded",
+        tone: "warning",
+        detail:
+          item.refresh_state.error_message ??
+          `Last live refresh failed. Retry scheduled after ${formatLocalAuctionStart(item.refresh_state.next_retry_at)}.`,
+        needsAttention: true,
+      };
+    }
+
+    if (item.refresh_state.status === "failed") {
+      return {
+        label: "Outdated",
+        tone: "danger",
+        detail: item.refresh_state.error_message ?? "Last live refresh failed and needs manual intervention.",
+        needsAttention: true,
+      };
+    }
+
+    switch (item.freshness.status) {
+      case "live":
+        return {
+          label: "Live",
+          tone: "live",
+          detail: `Last successful sync ${formatLastChecked(item.freshness.last_synced_at ?? item.last_checked_at)}.`,
+          needsAttention: false,
+        };
+      case "cached":
+        return {
+          label: "Cached",
+          tone: "cached",
+          detail: item.freshness.degraded_reason
+            ? `Showing cached lot while live sync is degraded: ${item.freshness.degraded_reason}`
+            : `Showing cached lot from ${formatLastChecked(item.freshness.last_synced_at ?? item.last_checked_at)}.`,
+          needsAttention: false,
+        };
+      case "degraded":
+        return {
+          label: "Degraded",
+          tone: "warning",
+          detail: item.freshness.degraded_reason ?? "Live sync is degraded. Cached lot details remain visible.",
+          needsAttention: true,
+        };
+      case "outdated":
+        return {
+          label: "Outdated",
+          tone: "danger",
+          detail: `Last successful sync ${formatLastChecked(item.freshness.last_synced_at ?? item.last_checked_at)}. Run Refresh Live to retry now.`,
+          needsAttention: true,
+        };
+      default:
+        return {
+          label: "Awaiting sync",
+          tone: "warning",
+          detail: "This tracked lot does not have a trusted live snapshot yet.",
+          needsAttention: true,
+        };
+    }
+  }
+
   function getTrackedLotDetails(item: WatchlistItem) {
     return [
       { label: "Status", value: formatDetailValue(item.raw_status), emphasis: true },
@@ -282,11 +379,12 @@ export function WatchlistPanel({
           {items.map((item) => {
             const urgency = getSaleUrgency(item.sale_date);
             const isExpanded = expandedItems[item.id] ?? false;
+            const reliability = getReliabilityState(item);
 
             return (
               <article
                 key={item.id}
-                className={`result-card result-card--media watchlist-card${item.has_unseen_update ? " watchlist-card--updated" : ""}${urgency ? ` watchlist-card--${urgency.tone}` : ""}`}
+                className={`result-card result-card--media watchlist-card${item.has_unseen_update ? " watchlist-card--updated" : ""}${urgency ? ` watchlist-card--${urgency.tone}` : ""}${reliability.needsAttention ? " watchlist-card--attention" : ""}`}
               >
                 <LotThumbnail
                   title={item.title}
@@ -337,6 +435,10 @@ export function WatchlistPanel({
                       <dd className="detail-value">{formatDetailValue(item.odometer)}</dd>
                     </div>
                   </dl>
+                  <div className="watchlist-card__reliability">
+                    <span className={`status-pill status-pill--${reliability.tone}`}>{reliability.label}</span>
+                    <p className="watchlist-card__reliability-copy">{reliability.detail}</p>
+                  </div>
                   {item.has_unseen_update ? (
                     <div className="watchlist-card__update-callout" role="status" aria-live="polite">
                       <p className="watchlist-card__update-summary">{formatLatestChangeSummary(item).join(" · ")}</p>
@@ -364,6 +466,15 @@ export function WatchlistPanel({
                   ) : null}
                 </div>
                 <div className="watchlist-card__actions">
+                  <button
+                    type="button"
+                    className="ghost-button ghost-button--quiet"
+                    onClick={() => void handleRefresh(item.id, item.title)}
+                    disabled={refreshingItemId === item.id}
+                    aria-busy={refreshingItemId === item.id}
+                  >
+                    {refreshingItemId === item.id ? "Refreshing..." : "Refresh Live"}
+                  </button>
                   <button
                     type="button"
                     className="ghost-button ghost-button--quiet"

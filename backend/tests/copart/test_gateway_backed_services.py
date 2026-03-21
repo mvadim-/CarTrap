@@ -161,6 +161,15 @@ def test_watchlist_and_monitoring_support_gateway_backed_raw_lot_details() -> No
     database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
     watchlist_service = WatchlistService(database, provider_factory=lambda: make_gateway_provider(initial_handler))
     created = watchlist_service.add_tracked_lot({"id": "user-1"}, "https://www.copart.com/lot/76880725")
+    database["tracked_lots"].update_one(
+        {"lot_number": created["tracked_lot"]["lot_number"]},
+        {
+            "$set": {
+                "last_checked_at": datetime(2026, 3, 20, 16, 0, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 3, 20, 16, 0, tzinfo=timezone.utc),
+            }
+        },
+    )
 
     monitoring_service = MonitoringService(database, provider_factory=lambda: make_gateway_provider(changed_handler))
     result = monitoring_service.poll_due_lots(now=datetime(2026, 3, 20, 16, 30, tzinfo=timezone.utc))

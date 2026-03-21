@@ -13,7 +13,22 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+from cartrap.config import Settings
 from cartrap.modules.copart_provider.client import CopartHttpClient
+
+
+def make_direct_settings() -> Settings:
+    return Settings(
+        ENVIRONMENT="test",
+        MONGO_URI="mongodb://unused",
+        MONGO_DB="cartrap_test",
+        COPART_GATEWAY_BASE_URL=None,
+        COPART_GATEWAY_TOKEN=None,
+        COPART_API_DEVICE_NAME="iPhone 15 Pro Max",
+        COPART_API_D_TOKEN="token-123",
+        COPART_API_COOKIE="SessionID=abc",
+        COPART_API_SITECODE="CPRTUS",
+    )
 
 
 def test_client_posts_json_payload_with_required_headers() -> None:
@@ -28,6 +43,7 @@ def test_client_posts_json_payload_with_required_headers() -> None:
         return httpx.Response(200, json={"response": {"numFound": 0, "docs": []}})
 
     client = CopartHttpClient(
+        settings=make_direct_settings(),
         transport=httpx.MockTransport(handler),
         base_url="https://mmember.copart.com",
         search_path="/srch/?services=bidIncrementsBySiteV2",
@@ -58,6 +74,7 @@ def test_client_search_with_metadata_uses_if_none_match_and_handles_304() -> Non
         return httpx.Response(304, headers={"etag": "\"search-etag-2\""})
 
     client = CopartHttpClient(
+        settings=make_direct_settings(),
         transport=httpx.MockTransport(handler),
         base_url="https://mmember.copart.com",
         search_path="/srch/?services=bidIncrementsBySiteV2",
@@ -87,6 +104,7 @@ def test_client_posts_lot_details_payload_with_required_headers() -> None:
         return httpx.Response(200, json={"lotDetails": {"lotNumber": 76880725}})
 
     client = CopartHttpClient(
+        settings=make_direct_settings(),
         transport=httpx.MockTransport(handler),
         base_url="https://mmember.copart.com",
         search_path="/srch/?services=bidIncrementsBySiteV2",
@@ -113,6 +131,7 @@ def test_client_lot_details_with_metadata_uses_if_none_match_and_handles_304() -
         return httpx.Response(304, headers={"etag": "\"lot-etag-2\""})
 
     client = CopartHttpClient(
+        settings=make_direct_settings(),
         transport=httpx.MockTransport(handler),
         base_url="https://mmember.copart.com",
         search_path="/srch/?services=bidIncrementsBySiteV2",
@@ -140,6 +159,7 @@ def test_client_fetches_search_keywords_with_required_headers() -> None:
         return httpx.Response(200, json={"ford": {"type": "MAKE_MODEL"}})
 
     client = CopartHttpClient(
+        settings=make_direct_settings(),
         transport=httpx.MockTransport(handler),
         base_url="https://mmember.copart.com",
         search_path="/srch/?services=bidIncrementsBySiteV2",
@@ -159,6 +179,13 @@ def test_client_fetches_search_keywords_with_required_headers() -> None:
 
 def test_client_requires_api_credentials() -> None:
     client = CopartHttpClient(
+        settings=make_direct_settings().model_copy(
+            update={
+                "copart_api_device_name": "",
+                "copart_api_d_token": "",
+                "copart_api_cookie": "",
+            }
+        ),
         transport=httpx.MockTransport(lambda request: httpx.Response(200, json={})),
         base_url="https://mmember.copart.com",
         search_path="/srch/?services=bidIncrementsBySiteV2",

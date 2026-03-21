@@ -21,6 +21,14 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 - `backend` on AWS remains the primary API for auth, Mongo-backed state, worker polling, notifications, and frontend traffic.
 - `copart-gateway` on NAS is a narrow raw-JSON proxy to Copart. AWS calls NAS over HTTP(S) with bearer auth and keep-alive.
 - AWS does not fall back to direct Copart access. If NAS sync is degraded, the app serves cached Mongo-backed data and `/api/system/status` exposes `live_sync.status=degraded`.
+- Saved searches and watchlist items expose additive `freshness` and `refresh_state` metadata so the PWA can distinguish `Live`, `Cached`, `Refreshing/repair pending`, and `Outdated` states per resource instead of relying on one global banner.
+
+## Reliability Model
+- Ordinary dashboard reads are cache-backed. `GET /api/search/saved` and `GET /api/watchlist` return the latest persisted snapshot even when live upstream refresh fails.
+- Explicit live refreshes now run through dedicated endpoints: `POST /api/search/saved/{saved_search_id}/refresh-live` and `POST /api/watchlist/{tracked_lot_id}/refresh-live`.
+- `/api/system/status` remains the global backend/gateway health surface and now also returns `freshness_policies` so the frontend can interpret stale windows without hardcoded thresholds.
+- Worker refresh execution uses per-resource runtime metadata with lease/backoff semantics to avoid duplicate concurrent refreshes and to preserve single-delivery push/reminder behavior.
+- Structured JSON logs are emitted across request, refresh, worker, and gateway flows with `event` + `correlation_id`, which makes it practical to separate upstream NAS failures from primary-backend logic failures.
 
 ## Local Development
 1. Copy `.env.example` to `.env`.
@@ -33,14 +41,14 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 8. MongoDB will be available on `mongodb://localhost:27017`.
 9. If `VITE_API_BASE_URL` is not set, frontend targets `http://<current-host>:8000/api`, so opening the UI via LAN IP also uses the same LAN host for API calls.
 10. If frontend is opened from another origin in production, add it to `BACKEND_CORS_ORIGINS` in `.env`.
-10. Configure Copart API headers in `.env`: `COPART_API_DEVICE_NAME`, `COPART_API_D_TOKEN`, `COPART_API_COOKIE`, and optionally override `COPART_API_BASE_URL`, `COPART_API_SEARCH_PATH`, `COPART_API_SITECODE`.
-11. `COPART_HTTP_TIMEOUT_SECONDS`, `COPART_HTTP_CONNECT_TIMEOUT_SECONDS`, `COPART_HTTP_KEEPALIVE_EXPIRY_SECONDS`, `COPART_HTTP_MAX_CONNECTIONS`, and `COPART_HTTP_MAX_KEEPALIVE_CONNECTIONS` tune reusable HTTP clients for both direct Copart access and NAS gateway transport.
-12. `SAVED_SEARCH_POLL_INTERVAL_MINUTES` controls how often the worker refreshes cached results for saved searches.
-13. `WATCHLIST_DEFAULT_POLL_INTERVAL_MINUTES`, `WATCHLIST_NEAR_AUCTION_POLL_INTERVAL_MINUTES`, and `WATCHLIST_NEAR_AUCTION_WINDOW_MINUTES` control tracked-lot polling cadence, including the faster near-auction mode.
-14. On the primary backend, set `COPART_GATEWAY_BASE_URL` and `COPART_GATEWAY_TOKEN` to route all live Copart traffic through NAS. Leave `COPART_GATEWAY_BASE_URL` empty on the NAS gateway itself.
-15. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
-16. If you use backend-driven catalog refresh, `COPART_API_SEARCH_KEYWORDS_PATH` defaults to `/mcs/v2/public/data/search/keywords`.
-17. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
+11. Configure Copart API headers in `.env`: `COPART_API_DEVICE_NAME`, `COPART_API_D_TOKEN`, `COPART_API_COOKIE`, and optionally override `COPART_API_BASE_URL`, `COPART_API_SEARCH_PATH`, `COPART_API_SITECODE`.
+12. `COPART_HTTP_TIMEOUT_SECONDS`, `COPART_HTTP_CONNECT_TIMEOUT_SECONDS`, `COPART_HTTP_KEEPALIVE_EXPIRY_SECONDS`, `COPART_HTTP_MAX_CONNECTIONS`, and `COPART_HTTP_MAX_KEEPALIVE_CONNECTIONS` tune reusable HTTP clients for both direct Copart access and NAS gateway transport.
+13. `SAVED_SEARCH_POLL_INTERVAL_MINUTES` controls how often the worker refreshes cached results for saved searches.
+14. `WATCHLIST_DEFAULT_POLL_INTERVAL_MINUTES`, `WATCHLIST_NEAR_AUCTION_POLL_INTERVAL_MINUTES`, and `WATCHLIST_NEAR_AUCTION_WINDOW_MINUTES` control tracked-lot polling cadence, including the faster near-auction mode.
+15. On the primary backend, set `COPART_GATEWAY_BASE_URL` and `COPART_GATEWAY_TOKEN` to route all live Copart traffic through NAS. Leave `COPART_GATEWAY_BASE_URL` empty on the NAS gateway itself.
+16. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
+17. If you use backend-driven catalog refresh, `COPART_API_SEARCH_KEYWORDS_PATH` defaults to `/mcs/v2/public/data/search/keywords`.
+18. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
 
 ## NAS Gateway
 
@@ -50,6 +58,7 @@ Runtime expectations:
 - `COPART_GATEWAY_BASE_URL` is required only on AWS primary backend.
 - NAS gateway returns raw Copart JSON with standard HTTP `ETag`/`304` behavior and should rely on normal HTTP compression (`gzip`) instead of custom payload wrappers.
 - For production rollout, put the NAS gateway behind HTTPS and restrict inbound traffic to the AWS static IP or another explicit allowlist.
+- Gateway and client logs now classify failures separately for `timeout`, transport failure, upstream rejection, malformed response, and gateway unavailability so operator review can tell whether the issue is inside NAS proxying or deeper in Copart/upstream traffic.
 
 Local gateway run:
 
@@ -103,6 +112,7 @@ Set the printed `Application Server Key` value as `VAPID_PUBLIC_KEY`, point `VAP
 - `COPART_GATEWAY_ENABLE_GZIP=true` tells AWS-side gateway transport to advertise `Accept-Encoding: gzip`; actual compression should be terminated by the NAS gateway/reverse proxy layer.
 - Static make/model catalog generation lives in `scripts/generate_copart_make_model_catalog.py`, with manual fixes in `backend/src/cartrap/modules/search/data/copart_make_model_overrides.json`.
 - At runtime, the current make/model catalog is served from Mongo through `/api/search/catalog`, and admins can force a refresh via `/api/admin/search-catalog/refresh`.
+- Structured operator log families include `search.execute.*`, `saved_search.refresh.*`, `saved_search.poll.*`, `watchlist.refresh.*`, `worker.poll_cycle.*`, `live_sync.*`, `copart_gateway.proxy.*`, and `copart_client.request.*`.
 
 ## Current Status
 - MVP backend flows are implemented: invite auth, roles, Copart API integration, watchlist, search, monitoring, and push subscription management.

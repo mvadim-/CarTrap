@@ -1,9 +1,11 @@
 import type {
+  FreshnessEnvelope,
   Invite,
   PushDeliveryResult,
   PushSubscriptionConfig,
   PushSubscriptionItem,
   PushSubscriptionPayload,
+  RefreshState,
   SavedSearch,
   SavedSearchResultsResponse,
   SearchCatalog,
@@ -38,6 +40,8 @@ function getApiBaseUrl(): string {
 }
 
 const API_BASE_URL = getApiBaseUrl();
+const DEFAULT_SAVED_SEARCH_STALE_AFTER_SECONDS = 15 * 60;
+const DEFAULT_WATCHLIST_STALE_AFTER_SECONDS = 15 * 60;
 
 type HttpMethod = "GET" | "POST" | "DELETE";
 type AuthLifecycleHandlers = {
@@ -64,6 +68,113 @@ function parseErrorMessage(body: string, status: number): string {
     return body;
   }
   return body;
+}
+
+function toIsoTimestamp(value: Date): string {
+  return value.toISOString().replace(".000Z", "Z");
+}
+
+function addSeconds(value: string | null, seconds: number): string | null {
+  if (!value) {
+    return null;
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return null;
+  }
+  return toIsoTimestamp(new Date(timestamp.getTime() + seconds * 1000));
+}
+
+function normalizeFreshness(
+  freshness: FreshnessEnvelope | undefined,
+  fallbackLastSyncedAt: string | null,
+  staleAfterSeconds: number,
+): FreshnessEnvelope {
+  if (freshness) {
+    return {
+      status: freshness.status,
+      last_synced_at: freshness.last_synced_at ?? fallbackLastSyncedAt,
+      stale_after: freshness.stale_after ?? addSeconds(freshness.last_synced_at ?? fallbackLastSyncedAt, staleAfterSeconds),
+      degraded_reason: freshness.degraded_reason ?? null,
+      retryable: Boolean(freshness.retryable),
+    };
+  }
+
+  return {
+    status: fallbackLastSyncedAt ? "live" : "unknown",
+    last_synced_at: fallbackLastSyncedAt,
+    stale_after: addSeconds(fallbackLastSyncedAt, staleAfterSeconds),
+    degraded_reason: null,
+    retryable: false,
+  };
+}
+
+function normalizeRefreshState(
+  refreshState: RefreshState | undefined,
+  fallbackLastSucceededAt: string | null,
+): RefreshState {
+  if (refreshState) {
+    return {
+      status: refreshState.status,
+      last_attempted_at: refreshState.last_attempted_at ?? null,
+      last_succeeded_at: refreshState.last_succeeded_at ?? fallbackLastSucceededAt,
+      next_retry_at: refreshState.next_retry_at ?? null,
+      error_message: refreshState.error_message ?? null,
+      retryable: Boolean(refreshState.retryable),
+      priority_class: refreshState.priority_class ?? null,
+      last_outcome: refreshState.last_outcome ?? null,
+      metrics: refreshState.metrics ?? {},
+    };
+  }
+
+  return {
+    status: "idle",
+    last_attempted_at: fallbackLastSucceededAt,
+    last_succeeded_at: fallbackLastSucceededAt,
+    next_retry_at: null,
+    error_message: null,
+    retryable: false,
+    priority_class: null,
+    last_outcome: fallbackLastSucceededAt ? "refreshed" : null,
+    metrics: {},
+  };
+}
+
+function normalizeSavedSearch(item: SavedSearch): SavedSearch {
+  return {
+    ...item,
+    freshness: normalizeFreshness(item.freshness, item.last_synced_at, DEFAULT_SAVED_SEARCH_STALE_AFTER_SECONDS),
+    refresh_state: normalizeRefreshState(item.refresh_state, item.last_synced_at),
+  };
+}
+
+function normalizeWatchlistItem(item: WatchlistItem): WatchlistItem {
+  return {
+    ...item,
+    freshness: normalizeFreshness(item.freshness, item.last_checked_at, DEFAULT_WATCHLIST_STALE_AFTER_SECONDS),
+    refresh_state: normalizeRefreshState(item.refresh_state, item.last_checked_at),
+  };
+}
+
+function normalizeSavedSearchResultsResponse(response: SavedSearchResultsResponse): SavedSearchResultsResponse {
+  return {
+    ...response,
+    saved_search: normalizeSavedSearch(response.saved_search),
+  };
+}
+
+function normalizeSystemStatus(response: SystemStatus): SystemStatus {
+  return {
+    ...response,
+    freshness_policies: {
+      saved_searches: response.freshness_policies?.saved_searches ?? {
+        stale_after_seconds: DEFAULT_SAVED_SEARCH_STALE_AFTER_SECONDS,
+      },
+      watchlist: response.freshness_policies?.watchlist ?? {
+        stale_after_seconds: DEFAULT_WATCHLIST_STALE_AFTER_SECONDS,
+      },
+    },
+  };
 }
 
 async function refreshTokens(): Promise<TokenPair | null> {
@@ -185,12 +296,12 @@ export async function getSearchCatalog(token: string): Promise<SearchCatalog> {
 }
 
 export async function getSystemStatus(token: string): Promise<SystemStatus> {
-  return request<SystemStatus>("/system/status", { token });
+  return normalizeSystemStatus(await request<SystemStatus>("/system/status", { token }));
 }
 
 export async function listSavedSearches(token: string): Promise<SavedSearch[]> {
   const response = await request<{ items: SavedSearch[] }>("/search/saved", { token });
-  return response.items;
+  return response.items.map(normalizeSavedSearch);
 }
 
 export async function saveSearch(
@@ -219,7 +330,7 @@ export async function saveSearch(
     body: payload,
     token,
   });
-  return response.saved_search;
+  return normalizeSavedSearch(response.saved_search);
 }
 
 export async function deleteSavedSearch(id: string, token: string): Promise<void> {
@@ -227,11 +338,15 @@ export async function deleteSavedSearch(id: string, token: string): Promise<void
 }
 
 export async function viewSavedSearch(id: string, token: string): Promise<SavedSearchResultsResponse> {
-  return request<SavedSearchResultsResponse>(`/search/saved/${id}/view`, { method: "POST", token });
+  return normalizeSavedSearchResultsResponse(
+    await request<SavedSearchResultsResponse>(`/search/saved/${id}/view`, { method: "POST", token }),
+  );
 }
 
 export async function refreshSavedSearchLive(id: string, token: string): Promise<SavedSearchResultsResponse> {
-  return request<SavedSearchResultsResponse>(`/search/saved/${id}/refresh-live`, { method: "POST", token });
+  return normalizeSavedSearchResultsResponse(
+    await request<SavedSearchResultsResponse>(`/search/saved/${id}/refresh-live`, { method: "POST", token }),
+  );
 }
 
 export async function refreshSearchCatalog(token: string): Promise<SearchCatalog> {
@@ -244,7 +359,7 @@ export async function addToWatchlist(lotUrl: string, token: string): Promise<Wat
     body: { lot_url: lotUrl },
     token,
   });
-  return response.tracked_lot;
+  return normalizeWatchlistItem(response.tracked_lot);
 }
 
 export async function addLotNumberToWatchlist(lotNumber: string, token: string): Promise<WatchlistItem> {
@@ -253,7 +368,7 @@ export async function addLotNumberToWatchlist(lotNumber: string, token: string):
     body: { lot_number: lotNumber },
     token,
   });
-  return response.tracked_lot;
+  return normalizeWatchlistItem(response.tracked_lot);
 }
 
 export async function addFromSearch(lotUrl: string, token: string): Promise<WatchlistItem> {
@@ -262,12 +377,20 @@ export async function addFromSearch(lotUrl: string, token: string): Promise<Watc
     body: { lot_url: lotUrl },
     token,
   });
-  return response.tracked_lot;
+  return normalizeWatchlistItem(response.tracked_lot);
 }
 
 export async function listWatchlist(token: string): Promise<WatchlistItem[]> {
   const response = await request<{ items: WatchlistItem[] }>("/watchlist", { token });
-  return response.items;
+  return response.items.map(normalizeWatchlistItem);
+}
+
+export async function refreshWatchlistLotLive(id: string, token: string): Promise<WatchlistItem> {
+  const response = await request<{ tracked_lot: WatchlistItem }>(`/watchlist/${id}/refresh-live`, {
+    method: "POST",
+    token,
+  });
+  return normalizeWatchlistItem(response.tracked_lot);
 }
 
 export async function removeWatchlistItem(id: string, token: string): Promise<void> {

@@ -1,19 +1,24 @@
 from pathlib import Path
+import logging
 import sys
 from typing import Optional
 
+from datetime import datetime, timedelta, timezone
+
+import mongomock
 
 ROOT = Path(__file__).resolve().parents[1] / "src"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+from cartrap.modules.monitoring.job_runtime import JobRuntimeService
 from cartrap.worker.main import run_single_poll_cycle
 
 
 class FakeMonitoringService:
     def __init__(self, result: Optional[dict] = None, should_fail: bool = False) -> None:
-        self._result = result or {"processed": 1, "updated": 0, "failed": 0, "events": []}
+        self._result = result or {"processed": 1, "updated": 0, "failed": 0, "skipped": 0, "events": [], "jobs": []}
         self._should_fail = should_fail
         self.calls = 0
 
@@ -26,7 +31,15 @@ class FakeMonitoringService:
 
 class FakeSearchService:
     def __init__(self, result: Optional[dict] = None, should_fail: bool = False) -> None:
-        self._result = result or {"processed": 2, "updated": 1, "failed": 0, "notified": 1, "events": []}
+        self._result = result or {
+            "processed": 2,
+            "updated": 1,
+            "failed": 0,
+            "notified": 1,
+            "skipped": 0,
+            "events": [],
+            "jobs": [],
+        }
         self._should_fail = should_fail
         self.calls = 0
 
@@ -54,9 +67,30 @@ def test_run_single_poll_cycle_returns_both_results_when_services_succeed() -> N
     assert monitoring.calls == 1
     assert search.calls == 1
     assert result == {
-        "watchlist": {"processed": 1, "updated": 0, "failed": 0, "events": []},
-        "saved_search": {"processed": 2, "updated": 1, "failed": 0, "notified": 1, "events": []},
+        "watchlist": {"processed": 1, "updated": 0, "failed": 0, "skipped": 0, "events": [], "jobs": []},
+        "saved_search": {
+            "processed": 2,
+            "updated": 1,
+            "failed": 0,
+            "notified": 1,
+            "skipped": 0,
+            "events": [],
+            "jobs": [],
+        },
     }
+
+
+def test_run_single_poll_cycle_logs_structured_summary(caplog) -> None:
+    monitoring = FakeMonitoringService()
+    search = FakeSearchService()
+
+    with caplog.at_level(logging.INFO):
+        run_single_poll_cycle(monitoring, search)
+
+    summary_record = next(record for record in caplog.records if getattr(record, "event", "") == "worker.poll_cycle.completed")
+    assert summary_record.structured["correlation_id"].startswith("worker-cycle-")
+    assert summary_record.structured["watchlist_processed"] == 1
+    assert summary_record.structured["saved_search_notified"] == 1
 
 
 def test_run_single_poll_cycle_treats_watchlist_failure_as_transient() -> None:
@@ -68,8 +102,16 @@ def test_run_single_poll_cycle_treats_watchlist_failure_as_transient() -> None:
 
     assert monitoring.calls == 1
     assert search.calls == 1
-    assert result["watchlist"] == {"processed": 0, "updated": 0, "failed": 0, "events": []}
-    assert result["saved_search"] == {"processed": 2, "updated": 1, "failed": 0, "notified": 1, "events": []}
+    assert result["watchlist"] == {"processed": 0, "updated": 0, "failed": 0, "skipped": 0, "events": [], "jobs": []}
+    assert result["saved_search"] == {
+        "processed": 2,
+        "updated": 1,
+        "failed": 0,
+        "notified": 1,
+        "skipped": 0,
+        "events": [],
+        "jobs": [],
+    }
     assert system_status.events == [("watchlist_poll", "gateway unavailable")]
 
 
@@ -82,12 +124,42 @@ def test_run_single_poll_cycle_treats_saved_search_failure_as_transient() -> Non
 
     assert monitoring.calls == 1
     assert search.calls == 1
-    assert result["watchlist"] == {"processed": 1, "updated": 0, "failed": 0, "events": []}
+    assert result["watchlist"] == {"processed": 1, "updated": 0, "failed": 0, "skipped": 0, "events": [], "jobs": []}
     assert result["saved_search"] == {
         "processed": 0,
         "updated": 0,
         "failed": 0,
         "notified": 0,
+        "skipped": 0,
         "events": [],
+        "jobs": [],
     }
     assert system_status.events == [("saved_search_poll", "gateway unavailable")]
+
+
+def test_job_runtime_acquire_complete_and_backoff_lifecycle() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    runtime_service = JobRuntimeService(database, lease_seconds=60, retry_backoff_seconds=30)
+    now = datetime(2026, 3, 21, 16, 0, tzinfo=timezone.utc)
+
+    first = runtime_service.acquire(job_type="saved_search_poll", resource_id="saved-1", now=now)
+    assert first is not None
+    assert runtime_service.acquire(job_type="saved_search_poll", resource_id="saved-1", now=now + timedelta(seconds=10)) is None
+
+    failed = runtime_service.fail_retryable(
+        first,
+        now=now + timedelta(seconds=15),
+        outcome="refresh_failed",
+        error_message="gateway unavailable",
+    )
+    assert failed["status"] == "retryable_failure"
+    assert failed["next_retry_at"] == now + timedelta(seconds=45)
+
+    assert runtime_service.acquire(job_type="saved_search_poll", resource_id="saved-1", now=now + timedelta(seconds=20)) is None
+    retry = runtime_service.acquire(job_type="saved_search_poll", resource_id="saved-1", now=now + timedelta(seconds=46))
+    assert retry is not None
+    assert retry["attempt_count"] == 2
+
+    completed = runtime_service.complete(retry, now=now + timedelta(seconds=50), outcome="refreshed")
+    assert completed["status"] == "succeeded"
+    assert completed["attempt_count"] == 2

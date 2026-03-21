@@ -9,6 +9,7 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 - Content type: `application/json`
 - Public endpoints:
   - `GET /health`
+  - `GET /system/status`
   - `POST /auth/login`
   - `POST /auth/refresh`
   - `POST /auth/invites/accept`
@@ -42,11 +43,29 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 | `502` | Upstream Copart failure or failed catalog refresh |
 | `503` | Search catalog is unavailable |
 
+## Reliability Contract
+
+- `/api/system/status.live_sync` is the global backend-plus-gateway availability surface. It stays separate from per-resource freshness.
+- Saved searches and watchlist items now include `freshness` and `refresh_state` alongside legacy timestamps.
+- Ordinary dashboard reads stay cache-backed even if a live refresh fails. Use explicit `refresh-live` endpoints when the client needs an immediate upstream refresh attempt.
+- `freshness.status` values:
+  - `live`: snapshot is inside its freshness window and live sync is healthy
+  - `cached`: snapshot is still usable, but global live sync is degraded
+  - `degraded`: no usable recent snapshot is available and live sync is degraded
+  - `outdated`: snapshot exists, but its freshness window is expired
+  - `unknown`: no sync metadata is available yet
+- `refresh_state.status` values:
+  - `idle`: no active repair/failure state
+  - `repair_pending`: background repair or manual refresh should run next
+  - `retryable_failure`: last refresh failed and the worker will retry later
+  - `failed`: last refresh failed in a non-retryable way
+
 ## Endpoint Summary
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | `GET` | `/health` | public | Healthcheck |
+| `GET` | `/system/status` | public | Global live-sync status and freshness policies |
 | `POST` | `/auth/login` | public | Login by email/password |
 | `POST` | `/auth/refresh` | public | Refresh access token |
 | `POST` | `/auth/invites/accept` | public | Accept invite and create user |
@@ -56,11 +75,14 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 | `POST` | `/search` | user/admin | Manual Copart search |
 | `GET` | `/search/saved` | user/admin | List saved searches |
 | `POST` | `/search/saved` | user/admin | Save current search |
+| `POST` | `/search/saved/{saved_search_id}/view` | user/admin | View cached saved-search results |
+| `POST` | `/search/saved/{saved_search_id}/refresh-live` | user/admin | Force live refresh for a saved search |
 | `DELETE` | `/search/saved/{saved_search_id}` | user/admin | Delete saved search |
 | `GET` | `/search/catalog` | user/admin | Read make/model/year catalog |
 | `POST` | `/search/watchlist` | user/admin | Add search result to watchlist |
 | `GET` | `/watchlist` | user/admin | List tracked lots |
 | `POST` | `/watchlist` | user/admin | Add tracked lot by URL or lot number |
+| `POST` | `/watchlist/{tracked_lot_id}/refresh-live` | user/admin | Force live refresh for one tracked lot |
 | `DELETE` | `/watchlist/{tracked_lot_id}` | user/admin | Remove tracked lot |
 | `GET` | `/notifications/subscription-config` | user/admin | Read browser push/VAPID config |
 | `GET` | `/notifications/subscriptions` | user/admin | List push subscriptions |
@@ -83,6 +105,37 @@ Response:
   "status": "ok",
   "service": "CarTrap API",
   "environment": "development"
+}
+```
+
+#### `GET /api/system/status`
+
+Returns global live-sync status plus stale-window policies that the frontend can use for reliability UX.
+
+Response:
+
+```json
+{
+  "status": "ok",
+  "service": "CarTrap API",
+  "environment": "development",
+  "live_sync": {
+    "status": "available",
+    "last_success_at": "2026-03-21T16:30:00Z",
+    "last_success_source": "watchlist_poll",
+    "last_failure_at": null,
+    "last_failure_source": null,
+    "last_error_message": null,
+    "stale": false
+  },
+  "freshness_policies": {
+    "saved_searches": {
+      "stale_after_seconds": 900
+    },
+    "watchlist": {
+      "stale_after_seconds": 900
+    }
+  }
 }
 ```
 
@@ -262,6 +315,29 @@ Response:
         "lot_number": null
       },
       "result_count": 42,
+      "cached_result_count": 42,
+      "new_count": 3,
+      "last_synced_at": "2026-03-21T16:20:00Z",
+      "freshness": {
+        "status": "cached",
+        "last_synced_at": "2026-03-21T16:20:00Z",
+        "stale_after": "2026-03-21T16:35:00Z",
+        "degraded_reason": "Copart gateway is unavailable.",
+        "retryable": true
+      },
+      "refresh_state": {
+        "status": "retryable_failure",
+        "last_attempted_at": "2026-03-21T16:31:00Z",
+        "last_succeeded_at": "2026-03-21T16:20:00Z",
+        "next_retry_at": "2026-03-21T16:36:00Z",
+        "error_message": "Copart gateway is unavailable.",
+        "retryable": true,
+        "priority_class": "normal",
+        "last_outcome": "refresh_failed",
+        "metrics": {
+          "cached_new_count": 3
+        }
+      },
       "created_at": "2026-03-13T10:00:00Z"
     }
   ]
@@ -290,10 +366,39 @@ Response:
       "model": "MUSTANG MACH-E"
     },
     "result_count": 42,
+    "cached_result_count": 42,
+    "new_count": 0,
+    "last_synced_at": "2026-03-21T16:20:00Z",
+    "freshness": {
+      "status": "live",
+      "last_synced_at": "2026-03-21T16:20:00Z",
+      "stale_after": "2026-03-21T16:35:00Z",
+      "degraded_reason": null,
+      "retryable": false
+    },
+    "refresh_state": {
+      "status": "idle",
+      "last_attempted_at": "2026-03-21T16:20:00Z",
+      "last_succeeded_at": "2026-03-21T16:20:00Z",
+      "next_retry_at": null,
+      "error_message": null,
+      "retryable": false,
+      "priority_class": "normal",
+      "last_outcome": "refreshed",
+      "metrics": {}
+    },
     "created_at": "2026-03-13T10:00:00Z"
   }
 }
 ```
+
+#### `POST /api/search/saved/{saved_search_id}/view`
+
+Returns the latest cached saved-search snapshot without forcing an upstream fetch.
+
+#### `POST /api/search/saved/{saved_search_id}/refresh-live`
+
+Forces an immediate live refresh attempt for one saved search and returns the updated saved-search view payload.
 
 #### `DELETE /api/search/saved/{saved_search_id}`
 
@@ -367,6 +472,26 @@ Response:
       "currency": "USD",
       "sale_date": "2026-03-20T17:00:00Z",
       "last_checked_at": "2026-03-13T10:00:00Z",
+      "freshness": {
+        "status": "outdated",
+        "last_synced_at": "2026-03-13T10:00:00Z",
+        "stale_after": "2026-03-13T10:15:00Z",
+        "degraded_reason": null,
+        "retryable": false
+      },
+      "refresh_state": {
+        "status": "repair_pending",
+        "last_attempted_at": "2026-03-21T16:28:00Z",
+        "last_succeeded_at": "2026-03-13T10:00:00Z",
+        "next_retry_at": null,
+        "error_message": null,
+        "retryable": false,
+        "priority_class": "auction_imminent",
+        "last_outcome": "repair_requested",
+        "metrics": {
+          "change_count": 2
+        }
+      },
       "created_at": "2026-03-13T10:00:00Z",
       "has_unseen_update": true,
       "latest_change_at": "2026-03-17T15:40:00Z",
@@ -415,6 +540,24 @@ Response:
     "currency": "USD",
     "sale_date": null,
     "last_checked_at": "2026-03-13T10:00:00Z",
+    "freshness": {
+      "status": "live",
+      "last_synced_at": "2026-03-13T10:00:00Z",
+      "stale_after": "2026-03-13T10:15:00Z",
+      "degraded_reason": null,
+      "retryable": false
+    },
+    "refresh_state": {
+      "status": "idle",
+      "last_attempted_at": "2026-03-13T10:00:00Z",
+      "last_succeeded_at": "2026-03-13T10:00:00Z",
+      "next_retry_at": null,
+      "error_message": null,
+      "retryable": false,
+      "priority_class": "normal",
+      "last_outcome": "refreshed",
+      "metrics": {}
+    },
     "created_at": "2026-03-13T10:00:00Z",
     "has_unseen_update": false,
     "latest_change_at": null,
@@ -434,6 +577,10 @@ Response:
   }
 }
 ```
+
+#### `POST /api/watchlist/{tracked_lot_id}/refresh-live`
+
+Forces an immediate live refresh attempt for one tracked lot and returns the updated tracked-lot payload.
 
 #### `DELETE /api/watchlist/{tracked_lot_id}`
 
@@ -551,6 +698,8 @@ Deletes subscription by exact endpoint string.
 
 ## Notes on Internal Behavior
 
+- Operator logs are emitted as structured JSON lines. Main event families include `live_sync.*`, `search.execute.*`, `saved_search.refresh.*`, `saved_search.poll.*`, `watchlist.refresh.*`, `worker.poll_cycle.*`, `copart_gateway.proxy.*`, and `copart_client.request.*`.
+- Structured log records carry `event` and `correlation_id`, and refresh/gateway records add fields such as `duration_ms`, `priority_class`, `failure_class`, `status_code`, and resource identifiers when available.
 - Search calls Copart JSON API and transparently loads all pages using `pageNumber`.
 - `saved_searches.result_count` is a snapshot of the last known count passed from the client, not a live computed counter.
 - Watchlist `GET` may backfill missing media for legacy documents.

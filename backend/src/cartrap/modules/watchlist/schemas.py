@@ -7,6 +7,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
+from cartrap.modules.system_status.schemas import FreshnessEnvelopeResponse, RefreshStateResponse
+
 
 class WatchlistCreateRequest(BaseModel):
     lot_url: Optional[HttpUrl] = None
@@ -53,6 +55,8 @@ class WatchlistItemResponse(BaseModel):
     currency: str
     sale_date: Optional[datetime] = None
     last_checked_at: datetime
+    freshness: FreshnessEnvelopeResponse
+    refresh_state: RefreshStateResponse
     created_at: datetime
     has_unseen_update: bool = False
     latest_change_at: Optional[datetime] = None
@@ -79,3 +83,7 @@ class WatchlistCreateResponse(BaseModel):
 
 class WatchlistListResponse(BaseModel):
     items: list[WatchlistItemResponse] = Field(default_factory=list)
+
+
+class WatchlistRefreshResponse(BaseModel):
+    tracked_lot: WatchlistItemResponse

@@ -140,6 +140,7 @@ def test_saved_search_poll_sends_push_when_new_lot_numbers_appear() -> None:
     assert result["processed"] == 1
     assert result["updated"] == 1
     assert result["failed"] == 0
+    assert result["skipped"] == 0
     assert result["notified"] == 1
     assert result["events"][0]["new_matches"] == 1
     assert result["events"][0]["new_lot_numbers"] == ["33333333"]
@@ -150,12 +151,17 @@ def test_saved_search_poll_sends_push_when_new_lot_numbers_appear() -> None:
     assert stored["result_count"] == 3
     assert stored["search_etag"] == "\"search-etag-2\""
     assert stored["last_checked_at"] == current_time
+    assert stored["last_refresh_priority_class"] == "recently_changed"
+    assert stored["last_refresh_new_matches"] == 1
+    assert stored["last_refresh_cached_new_count"] == 2
     cache_document = database["saved_search_results_cache"].find_one({"saved_search_id": ObjectId(saved["id"])})
     assert cache_document is not None
     assert cache_document["new_lot_numbers"] == ["11111111", "33333333"]
     assert cache_document["result_count"] == 3
     assert cache_document["last_synced_at"] == current_time
     assert len(provider.search_payloads) == 1
+    assert result["jobs"][0]["status"] == "succeeded"
+    assert result["jobs"][0]["outcome"] == "refreshed"
 
 
 def test_saved_search_poll_updates_cache_without_push_when_results_change_but_no_new_lot_numbers() -> None:
@@ -195,6 +201,7 @@ def test_saved_search_poll_updates_cache_without_push_when_results_change_but_no
 
     assert result["processed"] == 1
     assert result["updated"] == 1
+    assert result["skipped"] == 0
     assert result["notified"] == 0
     assert result["events"][0]["new_matches"] == 0
     assert result["events"][0]["new_lot_numbers"] == []
@@ -202,10 +209,12 @@ def test_saved_search_poll_updates_cache_without_push_when_results_change_but_no
     stored = database["saved_searches"].find_one({"owner_user_id": "user-2"})
     assert stored["result_count"] == 2
     assert stored["search_etag"] == "\"search-etag-2\""
+    assert stored["last_refresh_priority_class"] == "recently_changed"
     cache_document = database["saved_search_results_cache"].find_one({"saved_search_id": ObjectId(saved["id"])})
     assert cache_document is not None
     assert cache_document["new_lot_numbers"] == ["11111111"]
     assert len(provider.search_payloads) == 1
+    assert result["jobs"][0]["status"] == "succeeded"
 
 
 def test_saved_search_poll_skips_recently_checked_searches() -> None:
@@ -230,7 +239,9 @@ def test_saved_search_poll_skips_recently_checked_searches() -> None:
         "updated": 0,
         "failed": 0,
         "notified": 0,
+        "skipped": 0,
         "events": [],
+        "jobs": [],
     }
     assert provider.search_payloads == []
 
@@ -262,7 +273,9 @@ def test_saved_search_poll_uses_configured_interval() -> None:
         "updated": 0,
         "failed": 0,
         "notified": 0,
+        "skipped": 0,
         "events": [],
+        "jobs": [],
     }
     assert provider.search_payloads == []
 
@@ -302,6 +315,7 @@ def test_saved_search_poll_backfills_missing_cache_even_when_search_etag_is_not_
     assert result["updated"] == 1
     assert result["failed"] == 0
     assert result["notified"] == 0
+    assert result["skipped"] == 0
     assert result["events"][0]["new_matches"] == 0
     assert provider.count_calls[0][1] == "\"search-etag-1\""
     stored = database["saved_searches"].find_one({"_id": ObjectId(saved["id"])})
@@ -315,6 +329,7 @@ def test_saved_search_poll_backfills_missing_cache_even_when_search_etag_is_not_
     assert cache_document["last_synced_at"] == current_time
     assert len(provider.search_payloads) == 1
     assert notification_service.events == []
+    assert result["jobs"][0]["status"] == "succeeded"
 
 
 def test_saved_search_poll_skips_heavy_refresh_when_search_etag_is_not_modified_and_cache_exists() -> None:
@@ -343,19 +358,67 @@ def test_saved_search_poll_skips_heavy_refresh_when_search_etag_is_not_modified_
 
     result = service.poll_due_saved_searches(now=current_time)
 
-    assert result == {
-        "processed": 1,
-        "updated": 0,
-        "failed": 0,
-        "notified": 0,
-        "events": [],
-    }
+    assert result["processed"] == 1
+    assert result["updated"] == 0
+    assert result["failed"] == 0
+    assert result["notified"] == 0
+    assert result["skipped"] == 0
+    assert result["events"] == []
+    assert result["jobs"][0]["status"] == "succeeded"
+    assert result["jobs"][0]["outcome"] == "not_modified"
+    assert result["jobs"][0]["metadata"]["owner_user_id"] == "user-44"
+    assert result["jobs"][0]["metadata"]["priority_class"] == "cold"
     assert provider.count_calls[0][1] == "\"search-etag-1\""
     assert provider.search_payloads == []
     stored = database["saved_searches"].find_one({"_id": ObjectId(saved["id"])})
     assert stored["search_etag"] == "\"search-etag-2\""
     assert stored["result_count"] == 1
     assert notification_service.events == []
+
+
+def test_saved_search_poll_skips_when_execution_is_locked_by_active_runtime() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    notification_service = FakeNotificationService()
+    provider = ConditionalSearchProvider(not_modified=False, etag="\"search-etag-1\"", results=[_build_result("11111111")])
+    service = SearchService(
+        database,
+        provider_factory=lambda: provider,
+        notification_service=notification_service,
+    )
+    current_time = datetime(2026, 3, 13, 12, 0, tzinfo=timezone.utc)
+    saved = service.save_search(
+        {"id": "user-lock"},
+        SavedSearchCreateRequest(make="Ford", model="Mustang Mach-E", result_count=1),
+    )["saved_search"]
+    database["saved_searches"].update_one(
+        {"_id": ObjectId(saved["id"])},
+        {"$set": {"last_checked_at": current_time - timedelta(minutes=16)}},
+    )
+    database["job_runtime"].insert_one(
+        {
+            "job_type": "saved_search_poll",
+            "resource_id": saved["id"],
+            "execution_key": f"saved_search_poll:{saved['id']}",
+            "status": "running",
+            "run_id": "existing-run",
+            "attempt_count": 1,
+            "last_started_at": current_time - timedelta(seconds=5),
+            "lease_acquired_at": current_time - timedelta(seconds=5),
+            "lease_expires_at": current_time + timedelta(seconds=60),
+            "next_retry_at": None,
+            "updated_at": current_time - timedelta(seconds=5),
+        }
+    )
+
+    result = service.poll_due_saved_searches(now=current_time)
+
+    assert result["processed"] == 0
+    assert result["updated"] == 0
+    assert result["failed"] == 0
+    assert result["skipped"] == 1
+    assert result["jobs"][0]["status"] == "skipped"
+    assert result["jobs"][0]["skip_reason"] == "locked"
+    assert provider.search_payloads == []
 
 
 def test_saved_search_poll_counts_gateway_failure_without_crashing_loop() -> None:
@@ -378,14 +441,20 @@ def test_saved_search_poll_counts_gateway_failure_without_crashing_loop() -> Non
 
     result = service.poll_due_saved_searches(now=current_time)
 
-    assert result == {
-        "processed": 1,
-        "updated": 0,
-        "failed": 1,
-        "notified": 0,
-        "events": [],
-    }
+    assert result["processed"] == 1
+    assert result["updated"] == 0
+    assert result["failed"] == 1
+    assert result["notified"] == 0
+    assert result["skipped"] == 0
+    assert result["events"] == []
+    assert result["jobs"][0]["status"] == "retryable_failure"
+    assert result["jobs"][0]["outcome"] == "refresh_failed"
+    assert result["jobs"][0]["error_message"] == "Failed to fetch search results from Copart."
+    assert result["jobs"][0]["metadata"]["owner_user_id"] == "user-5"
+    assert result["jobs"][0]["metadata"]["priority_class"] == "cold"
     stored = database["saved_searches"].find_one({"_id": ObjectId(saved["id"])})
     assert stored["result_count"] == 5
     assert stored["last_checked_at"] == current_time - timedelta(minutes=16)
+    assert stored["refresh_status"] == "retryable_failure"
+    assert stored["last_refresh_retryable"] is True
     assert notification_service.events == []

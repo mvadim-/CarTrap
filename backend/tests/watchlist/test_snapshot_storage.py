@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
 
 
 from cartrap.modules.copart_provider.models import CopartLotSnapshot
+from cartrap.modules.monitoring.service import MonitoringService
 from cartrap.modules.watchlist.service import WatchlistService
 
 
@@ -83,3 +84,75 @@ def test_initial_snapshot_is_stored_with_tracked_lot_state() -> None:
     assert len(snapshots) == 1
     assert snapshots[0]["current_bid"] == 4200.0
     assert snapshots[0]["tracked_lot_id"] == result["tracked_lot"]["id"]
+
+
+def test_monitoring_repair_updates_legacy_tracked_lot_after_read_path_schedules_backfill() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    snapshot = CopartLotSnapshot(
+        lot_number="12345678",
+        title="2020 TOYOTA CAMRY SE",
+        url="https://www.copart.com/lot/12345678",
+        thumbnail_url="https://img.copart.com/12345678-detail.jpg",
+        image_urls=["https://img.copart.com/12345678-detail.jpg"],
+        odometer="12,345 ACTUAL",
+        primary_damage="FRONT END",
+        estimated_retail_value=36500.0,
+        has_key=True,
+        drivetrain="AWD",
+        highlights=["Run and Drive"],
+        vin="1FA6P8TH0J5100001",
+        status="on_approval",
+        raw_status="On Approval",
+        sale_date=datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+        current_bid=4200.0,
+        buy_now_price=6500.0,
+        currency="USD",
+    )
+    owner_id = "user-legacy"
+    tracked_lot_id = database["tracked_lots"].insert_one(
+        {
+            "owner_user_id": owner_id,
+            "lot_number": "12345678",
+            "url": "https://www.copart.com/lot/12345678",
+            "title": "2020 TOYOTA CAMRY SE",
+            "thumbnail_url": None,
+            "image_urls": [],
+            "status": "on_approval",
+            "raw_status": "On Approval",
+            "sale_date": datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+            "current_bid": 4200.0,
+            "buy_now_price": 6500.0,
+            "currency": "USD",
+            "last_checked_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+            "repair_requested_at": datetime(2026, 3, 13, 12, 0, tzinfo=timezone.utc),
+            "active": True,
+            "created_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+            "auction_reminder_sale_date": datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+            "auction_reminder_sent_minutes": [],
+        }
+    ).inserted_id
+    database["lot_snapshots"].insert_one(
+        {
+            "tracked_lot_id": str(tracked_lot_id),
+            "owner_user_id": owner_id,
+            "lot_number": "12345678",
+            "status": "on_approval",
+            "raw_status": "On Approval",
+            "sale_date": datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+            "current_bid": 4200.0,
+            "buy_now_price": 6500.0,
+            "currency": "USD",
+            "detected_at": datetime(2026, 3, 12, 18, 0, tzinfo=timezone.utc),
+        }
+    )
+
+    monitoring = MonitoringService(database, provider_factory=lambda: FakeProvider(snapshot))
+
+    result = monitoring.poll_due_lots(now=datetime(2026, 3, 13, 12, 5, tzinfo=timezone.utc))
+    tracked_lot = database["tracked_lots"].find_one({"_id": tracked_lot_id})
+
+    assert result["processed"] == 1
+    assert tracked_lot["thumbnail_url"] == "https://img.copart.com/12345678-detail.jpg"
+    assert tracked_lot["vin"] == "1FA6P8TH0J5100001"
+    assert tracked_lot.get("repair_requested_at") is None

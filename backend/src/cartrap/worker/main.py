@@ -7,7 +7,7 @@ import time
 from typing import Optional
 
 from cartrap.config import get_settings
-from cartrap.core.logging import configure_logging
+from cartrap.core.logging import configure_logging, make_log_extra, new_correlation_id
 from cartrap.db.mongo import MongoManager
 from cartrap.modules.monitoring.service import MonitoringService
 from cartrap.modules.notifications.service import NotificationService, build_web_push_sender
@@ -23,18 +23,23 @@ def run_single_poll_cycle(
     search_service: SearchService,
     system_status_service: Optional[SystemStatusService] = None,
 ) -> dict[str, dict]:
+    correlation_id = new_correlation_id("worker-cycle")
     watchlist_result = {
         "processed": 0,
         "updated": 0,
         "failed": 0,
+        "skipped": 0,
         "events": [],
+        "jobs": [],
     }
     saved_search_result = {
         "processed": 0,
         "updated": 0,
         "failed": 0,
         "notified": 0,
+        "skipped": 0,
         "events": [],
+        "jobs": [],
     }
 
     try:
@@ -42,26 +47,46 @@ def run_single_poll_cycle(
     except Exception as exc:
         if system_status_service is not None:
             system_status_service.mark_live_sync_degraded("watchlist_poll", exc)
-        LOGGER.exception("Worker watchlist polling cycle failed.")
+        LOGGER.exception(
+            "worker.poll_cycle.watchlist_failed",
+            extra=make_log_extra(
+                "worker.poll_cycle.watchlist_failed",
+                correlation_id=correlation_id,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            ),
+        )
 
     try:
         saved_search_result = search_service.poll_due_saved_searches()
     except Exception as exc:
         if system_status_service is not None:
             system_status_service.mark_live_sync_degraded("saved_search_poll", exc)
-        LOGGER.exception("Worker saved-search polling cycle failed.")
+        LOGGER.exception(
+            "worker.poll_cycle.saved_search_failed",
+            extra=make_log_extra(
+                "worker.poll_cycle.saved_search_failed",
+                correlation_id=correlation_id,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            ),
+        )
 
     LOGGER.info(
-        "Worker poll cycle complete",
-        extra={
-            "watchlist_processed": watchlist_result["processed"],
-            "watchlist_updated": watchlist_result["updated"],
-            "watchlist_failed": watchlist_result["failed"],
-            "saved_search_processed": saved_search_result["processed"],
-            "saved_search_updated": saved_search_result["updated"],
-            "saved_search_failed": saved_search_result["failed"],
-            "saved_search_notified": saved_search_result["notified"],
-        },
+        "worker.poll_cycle.completed",
+        extra=make_log_extra(
+            "worker.poll_cycle.completed",
+            correlation_id=correlation_id,
+            watchlist_processed=watchlist_result["processed"],
+            watchlist_updated=watchlist_result["updated"],
+            watchlist_failed=watchlist_result["failed"],
+            watchlist_skipped=watchlist_result["skipped"],
+            saved_search_processed=saved_search_result["processed"],
+            saved_search_updated=saved_search_result["updated"],
+            saved_search_failed=saved_search_result["failed"],
+            saved_search_notified=saved_search_result["notified"],
+            saved_search_skipped=saved_search_result["skipped"],
+        ),
     )
     return {
         "watchlist": watchlist_result,

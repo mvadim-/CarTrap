@@ -1,5 +1,7 @@
 """System endpoints."""
 
+from datetime import timedelta
+
 from fastapi import APIRouter, Request
 
 from cartrap.modules.system_status.service import SystemStatusService
@@ -27,4 +29,14 @@ def system_status(request: Request) -> dict:
         "service": settings.app_name,
         "environment": settings.environment,
         "live_sync": status_service.get_live_sync_status(),
+        "freshness_policies": {
+            "saved_searches": {
+                "stale_after_seconds": int(timedelta(minutes=settings.saved_search_poll_interval_minutes).total_seconds()),
+            },
+            "watchlist": {
+                "stale_after_seconds": int(
+                    timedelta(minutes=settings.watchlist_default_poll_interval_minutes).total_seconds()
+                ),
+            },
+        },
     }

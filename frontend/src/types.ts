@@ -1,5 +1,46 @@
 export type UserRole = "admin" | "user";
 
+export type FreshnessStatus = "live" | "cached" | "degraded" | "outdated" | "unknown";
+
+export type FreshnessEnvelope = {
+  status: FreshnessStatus;
+  last_synced_at: string | null;
+  stale_after: string | null;
+  degraded_reason: string | null;
+  retryable: boolean;
+};
+
+export type RefreshStatus = "idle" | "repair_pending" | "retryable_failure" | "failed";
+
+export type RefreshState = {
+  status: RefreshStatus;
+  last_attempted_at: string | null;
+  last_succeeded_at: string | null;
+  next_retry_at: string | null;
+  error_message: string | null;
+  retryable: boolean;
+  priority_class: string | null;
+  last_outcome: string | null;
+  metrics: Record<string, number>;
+};
+
+export type ReliabilitySummary = {
+  total: number;
+  attention: number;
+  retryable_failures: number;
+  repair_pending: number;
+  failed: number;
+  outdated: number;
+  degraded: number;
+  cached: number;
+};
+
+export type ReliabilityDiagnostics = {
+  saved_searches: ReliabilitySummary;
+  watchlist: ReliabilitySummary;
+  total_attention: number;
+};
+
 export type User = {
   id: string;
   email: string;
@@ -34,6 +75,8 @@ export type WatchlistItem = {
   currency: string;
   sale_date: string | null;
   last_checked_at: string;
+  freshness: FreshnessEnvelope;
+  refresh_state: RefreshState;
   created_at: string;
   has_unseen_update: boolean;
   latest_change_at: string | null;
@@ -81,6 +124,8 @@ export type SavedSearch = {
   cached_result_count: number | null;
   new_count: number;
   last_synced_at: string | null;
+  freshness: FreshnessEnvelope;
+  refresh_state: RefreshState;
   created_at: string;
 };
 
@@ -184,4 +229,12 @@ export type SystemStatus = {
   service: string;
   environment: string;
   live_sync: LiveSyncStatus;
+  freshness_policies?: {
+    saved_searches?: {
+      stale_after_seconds: number;
+    };
+    watchlist?: {
+      stale_after_seconds: number;
+    };
+  };
 };

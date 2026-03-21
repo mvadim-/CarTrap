@@ -34,10 +34,70 @@ function buildTrackedLot(overrides: Record<string, unknown> = {}) {
     currency: "USD",
     sale_date: null,
     last_checked_at: "2026-03-11T12:00:00Z",
+    freshness: buildFreshness({ last_synced_at: "2026-03-11T12:00:00Z", stale_after: "2026-03-11T12:15:00Z" }),
+    refresh_state: buildRefreshState({
+      priority_class: "normal",
+      metrics: { change_count: 0, reminder_count: 0 },
+    }),
     created_at: "2026-03-11T12:00:00Z",
     has_unseen_update: false,
     latest_change_at: null,
     latest_changes: {},
+    ...overrides,
+  };
+}
+
+function buildFreshness(overrides: Record<string, unknown> = {}) {
+  return {
+    status: "live",
+    last_synced_at: "2026-03-16T11:00:00Z",
+    stale_after: "2026-03-16T11:15:00Z",
+    degraded_reason: null,
+    retryable: false,
+    ...overrides,
+  };
+}
+
+function buildRefreshState(overrides: Record<string, unknown> = {}) {
+  return {
+    status: "idle",
+    last_attempted_at: "2026-03-16T11:00:00Z",
+    last_succeeded_at: "2026-03-16T11:00:00Z",
+    next_retry_at: null,
+    error_message: null,
+    retryable: false,
+    priority_class: "normal",
+    last_outcome: "refreshed",
+    metrics: {},
+    ...overrides,
+  };
+}
+
+function buildSavedSearch(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "saved-1",
+    label: "FORD MUSTANG MACH-E 2025-2027",
+    criteria: {
+      make: "FORD",
+      model: "MUSTANG MACH-E",
+      year_from: 2025,
+      year_to: 2027,
+    },
+    external_url:
+      "https://www.copart.com/lotSearchResults?free=true&displayStr=FORD%20MUSTANG%20MACH-E%202025-2027&from=%2FvehicleFinder&fromSource=widget&qId=test-qid-1&searchCriteria=%7B%22query%22%3A%5B%22FORD%20MUSTANG%20MACH-E%202025-2027%22%5D%2C%22filter%22%3A%7B%22YEAR%22%3A%5B%22lot_year%3A%5B2025%20TO%202027%5D%22%5D%2C%22MAKE%22%3A%5B%22lot_make_desc%3A%5C%22FORD%5C%22%22%5D%2C%22MODL%22%3A%5B%22lot_model_desc%3A%5C%22MUSTANG%20MACH-E%5C%22%22%5D%2C%22DRIV%22%3A%5B%22drive%3A%5C%22ALL%20WHEEL%20DRIVE%5C%22%22%5D%7D%2C%22searchName%22%3A%22%22%2C%22watchListOnly%22%3Afalse%2C%22freeFormSearch%22%3Atrue%7D",
+    result_count: 1,
+    cached_result_count: 1,
+    new_count: 0,
+    last_synced_at: "2026-03-16T12:00:00Z",
+    freshness: buildFreshness({
+      last_synced_at: "2026-03-16T12:00:00Z",
+      stale_after: "2026-03-16T12:15:00Z",
+    }),
+    refresh_state: buildRefreshState({
+      priority_class: "normal",
+      metrics: { new_matches: 0, cached_new_count: 0 },
+    }),
+    created_at: "2026-03-12T18:00:00Z",
     ...overrides,
   };
 }
@@ -163,8 +223,10 @@ describe("CarTrap app", () => {
   let liveSyncStatus: Record<string, unknown>;
   let searchShouldFail: boolean;
   let savedSearchesShouldFail: boolean;
+  let savedSearchRefreshShouldFail: boolean;
   let pushTestShouldFail: boolean;
   let watchlistAddShouldFail: boolean;
+  let watchlistRefreshShouldFail: boolean;
   let liveSearchCallCount: number;
   let watchlistListCallCount: number;
   let savedSearchesListCallCount: number;
@@ -172,7 +234,8 @@ describe("CarTrap app", () => {
   let savedSearchViewCallCount: number;
   let savedSearchRefreshCallCount: number;
   let nextSavedSearchSeedNewLotNumbers: string[];
-  let watchlistItems: Array<Record<string, unknown>>;
+  let watchlistItems: Array<ReturnType<typeof buildTrackedLot>>;
+  let savedSearches: Array<ReturnType<typeof buildSavedSearch>>;
   let serviceWorkerMessageListener: ((event: MessageEvent) => void) | null;
 
   beforeEach(() => {
@@ -196,31 +259,9 @@ describe("CarTrap app", () => {
     watchlistItems = [];
     serviceWorkerMessageListener = null;
     savedSearchesShouldFail = false;
+    savedSearchRefreshShouldFail = false;
     pushTestShouldFail = false;
-    const savedSearches: Array<{
-      id: string;
-      label: string;
-      criteria: {
-        make?: string;
-        model?: string;
-        make_filter?: string;
-        model_filter?: string;
-        drive_type?: string;
-        primary_damage?: string;
-        title_type?: string;
-        fuel_type?: string;
-        lot_condition?: string;
-        odometer_range?: string;
-        year_from?: number;
-        year_to?: number;
-      };
-      external_url: string;
-      result_count: number | null;
-      cached_result_count: number | null;
-      new_count: number;
-      last_synced_at: string | null;
-      created_at: string;
-    }> = [];
+    savedSearches = [];
     const savedSearchCaches = new Map<
       string,
       {
@@ -234,6 +275,7 @@ describe("CarTrap app", () => {
     liveSyncStatus = buildLiveSyncStatus();
     searchShouldFail = false;
     watchlistAddShouldFail = false;
+    watchlistRefreshShouldFail = false;
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => void storage.set(key, value),
@@ -284,6 +326,54 @@ describe("CarTrap app", () => {
           }
           if ((init?.method ?? "GET") === "GET") {
             watchlistListCallCount += 1;
+          }
+          if ((init?.method ?? "GET") === "POST" && url.endsWith("/refresh-live")) {
+            const id = url.split("/watchlist/")[1]?.replace("/refresh-live", "") ?? "";
+            const trackedLot = watchlistItems.find((item) => item.id === id);
+            if (!trackedLot) {
+              return new Response(JSON.stringify({ detail: "Tracked lot not found." }), { status: 404 });
+            }
+            if (watchlistRefreshShouldFail) {
+              const failedTrackedLot = {
+                ...trackedLot,
+                freshness: buildFreshness({
+                  status: "outdated",
+                  last_synced_at: trackedLot.last_checked_at ?? "2026-03-11T12:00:00Z",
+                  stale_after: trackedLot.last_checked_at ?? "2026-03-11T12:15:00Z",
+                  degraded_reason: "gateway timeout",
+                  retryable: true,
+                }),
+                refresh_state: buildRefreshState({
+                  status: "retryable_failure",
+                  error_message: "gateway timeout",
+                  retryable: true,
+                  next_retry_at: "2026-03-16T12:25:00Z",
+                  priority_class: "auction_imminent",
+                  last_outcome: "refresh_failed",
+                  metrics: { change_count: 0, reminder_count: 0 },
+                }),
+              };
+              watchlistItems = watchlistItems.map((item) => (item.id === id ? failedTrackedLot : item));
+              return new Response(JSON.stringify({ detail: "gateway timeout" }), { status: 502 });
+            }
+            const refreshedTrackedLot = {
+              ...trackedLot,
+              last_checked_at: "2026-03-16T12:18:00Z",
+              freshness: buildFreshness({
+                last_synced_at: "2026-03-16T12:18:00Z",
+                stale_after: "2026-03-16T12:33:00Z",
+              }),
+              refresh_state: buildRefreshState({
+                status: "idle",
+                last_attempted_at: "2026-03-16T12:18:00Z",
+                last_succeeded_at: "2026-03-16T12:18:00Z",
+                priority_class: "manual",
+                last_outcome: "refreshed",
+                metrics: { change_count: 0, reminder_count: 0 },
+              }),
+            };
+            watchlistItems = watchlistItems.map((item) => (item.id === id ? refreshedTrackedLot : item));
+            return new Response(JSON.stringify({ tracked_lot: refreshedTrackedLot }), { status: 200 });
           }
           if ((init?.method ?? "GET") === "POST") {
             if (watchlistAddShouldFail) {
@@ -474,6 +564,30 @@ describe("CarTrap app", () => {
           if (!savedSearch) {
             return new Response(JSON.stringify({ detail: "Saved search not found." }), { status: 404 });
           }
+          if (savedSearchRefreshShouldFail) {
+            const failedSavedSearch = {
+              ...savedSearch,
+              freshness: buildFreshness({
+                status: "outdated",
+                last_synced_at: savedSearch.last_synced_at ?? "2026-03-16T12:00:00Z",
+                stale_after: savedSearch.last_synced_at ?? "2026-03-16T12:15:00Z",
+                degraded_reason: "gateway timeout",
+                retryable: true,
+              }),
+              refresh_state: buildRefreshState({
+                status: "retryable_failure",
+                error_message: "gateway timeout",
+                retryable: true,
+                next_retry_at: "2026-03-16T12:20:00Z",
+                priority_class: "recently_changed",
+                last_outcome: "refresh_failed",
+                metrics: { new_matches: 0, cached_new_count: 0 },
+              }),
+            };
+            const index = savedSearches.findIndex((item) => item.id === id);
+            savedSearches.splice(index, 1, failedSavedSearch);
+            return new Response(JSON.stringify({ detail: "gateway timeout" }), { status: 502 });
+          }
           const refreshedResults = [
             buildSearchResult(),
             buildSearchResult({
@@ -492,6 +606,18 @@ describe("CarTrap app", () => {
             cached_result_count: refreshedResults.length,
             new_count: 0,
             last_synced_at: "2026-03-16T12:15:00Z",
+            freshness: buildFreshness({
+              last_synced_at: "2026-03-16T12:15:00Z",
+              stale_after: "2026-03-16T12:30:00Z",
+            }),
+            refresh_state: buildRefreshState({
+              status: "idle",
+              last_attempted_at: "2026-03-16T12:15:00Z",
+              last_succeeded_at: "2026-03-16T12:15:00Z",
+              priority_class: "manual",
+              last_outcome: "refreshed",
+              metrics: { new_matches: 0, cached_new_count: 0 },
+            }),
           };
           const index = savedSearches.findIndex((item) => item.id === id);
           savedSearches.splice(index, 1, refreshedSavedSearch);
@@ -548,7 +674,7 @@ describe("CarTrap app", () => {
               return new Response("Search is already saved.", { status: 409 });
             }
             const seedResults = Array.isArray(body.seed_results) ? body.seed_results : [];
-            const savedSearch = {
+            const savedSearch = buildSavedSearch({
               id: `saved-${savedSearches.length + 1}`,
               label: body.label ?? `${body.make ?? ""} ${body.model ?? ""} ${body.year_from ?? ""}-${body.year_to ?? ""}`.trim(),
               criteria: {
@@ -565,14 +691,22 @@ describe("CarTrap app", () => {
                 year_from: body.year_from,
                 year_to: body.year_to,
               },
-              external_url:
-                "https://www.copart.com/lotSearchResults?free=true&displayStr=FORD%20MUSTANG%20MACH-E%202025-2027&from=%2FvehicleFinder&fromSource=widget&qId=test-qid-1&searchCriteria=%7B%22query%22%3A%5B%22FORD%20MUSTANG%20MACH-E%202025-2027%22%5D%2C%22filter%22%3A%7B%22YEAR%22%3A%5B%22lot_year%3A%5B2025%20TO%202027%5D%22%5D%2C%22MAKE%22%3A%5B%22lot_make_desc%3A%5C%22FORD%5C%22%22%5D%2C%22MODL%22%3A%5B%22lot_model_desc%3A%5C%22MUSTANG%20MACH-E%5C%22%22%5D%2C%22DRIV%22%3A%5B%22drive%3A%5C%22ALL%20WHEEL%20DRIVE%5C%22%22%5D%7D%2C%22searchName%22%3A%22%22%2C%22watchListOnly%22%3Afalse%2C%22freeFormSearch%22%3Atrue%7D",
               result_count: body.result_count ?? seedResults.length ?? null,
               cached_result_count: seedResults.length,
               new_count: nextSavedSearchSeedNewLotNumbers.length,
               last_synced_at: seedResults.length > 0 ? "2026-03-16T12:00:00Z" : null,
-              created_at: "2026-03-12T18:00:00Z",
-            };
+              freshness: buildFreshness({
+                status: seedResults.length > 0 ? "live" : "unknown",
+                last_synced_at: seedResults.length > 0 ? "2026-03-16T12:00:00Z" : null,
+                stale_after: seedResults.length > 0 ? "2026-03-16T12:15:00Z" : null,
+              }),
+              refresh_state: buildRefreshState({
+                last_attempted_at: seedResults.length > 0 ? "2026-03-16T12:00:00Z" : null,
+                last_succeeded_at: seedResults.length > 0 ? "2026-03-16T12:00:00Z" : null,
+                last_outcome: seedResults.length > 0 ? "refreshed" : null,
+                metrics: { new_matches: 0, cached_new_count: 0 },
+              }),
+            });
             savedSearches.unshift(savedSearch);
             savedSearchCaches.set(savedSearch.id, {
               results: seedResults,
@@ -633,6 +767,10 @@ describe("CarTrap app", () => {
               service: "CarTrap API",
               environment: "test",
               live_sync: liveSyncStatus,
+              freshness_policies: {
+                saved_searches: { stale_after_seconds: 900 },
+                watchlist: { stale_after_seconds: 900 },
+              },
             }),
             { status: 200 },
           );
@@ -889,6 +1027,58 @@ describe("CarTrap app", () => {
     });
   });
 
+  it("surfaces per-resource reliability states and admin diagnostics", async () => {
+    savedSearches = [
+      buildSavedSearch({
+        freshness: buildFreshness({
+          status: "cached",
+          last_synced_at: "2026-03-16T11:40:00Z",
+          stale_after: "2026-03-16T11:55:00Z",
+          degraded_reason: "gateway unavailable",
+          retryable: true,
+        }),
+        refresh_state: buildRefreshState({
+          status: "retryable_failure",
+          error_message: "gateway unavailable",
+          retryable: true,
+          next_retry_at: "2026-03-16T12:20:00Z",
+          priority_class: "recently_changed",
+          last_outcome: "refresh_failed",
+          metrics: { new_matches: 0, cached_new_count: 0 },
+        }),
+      }),
+    ];
+    watchlistItems = [
+      buildTrackedLot({
+        freshness: buildFreshness({
+          status: "outdated",
+          last_synced_at: "2026-03-11T12:00:00Z",
+          stale_after: "2026-03-11T12:15:00Z",
+        }),
+        refresh_state: buildRefreshState({
+          status: "repair_pending",
+          priority_class: "auction_imminent",
+          metrics: { change_count: 1, reminder_count: 0 },
+        }),
+      }),
+    ];
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    expect(screen.getByText(/^Degraded$/i)).toBeTruthy();
+    expect(screen.getByText(/gateway unavailable/i)).toBeTruthy();
+    expect(screen.getByText(/legacy lot enrichment is queued for repair/i)).toBeTruthy();
+
+    openAccountMenu();
+    await screen.findByRole("dialog", { name: /account menu/i });
+    expect(screen.getByText(/refresh diagnostics/i)).toBeTruthy();
+    expect(screen.getByText(/2 items need attention/i)).toBeTruthy();
+    expect(screen.getByText(/1 attention, 1 cached, 0 outdated/i)).toBeTruthy();
+    expect(screen.getByText(/1 attention, 0 cached, 1 outdated/i)).toBeTruthy();
+  });
+
   it("refreshes a saved search from inside the cached modal", async () => {
     render(<App />);
     submitLoginForm();
@@ -905,6 +1095,27 @@ describe("CarTrap app", () => {
     await screen.findByText(/2018 HONDA CIVIC EX/i);
     expect(savedSearchRefreshCallCount).toBe(1);
     expect(screen.getAllByText(/2 lots found/i).length).toBeGreaterThan(0);
+  });
+
+  it("keeps cached saved-search results open and surfaces retryable refresh failure metadata", async () => {
+    savedSearchRefreshShouldFail = true;
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    await runDefaultManualSearch();
+    fireEvent.click(screen.getByRole("button", { name: /save search/i }));
+    await screen.findByRole("button", { name: /^ford mustang mach-e 2025-2027/i });
+    fireEvent.click(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i }));
+
+    await screen.findByRole("dialog", { name: /search results/i });
+    fireEvent.click(screen.getByRole("button", { name: /refresh live/i }));
+
+    expect(await screen.findAllByText(/gateway timeout/i)).toHaveLength(3);
+    await waitFor(() => {
+      expect(screen.queryAllByText(/^degraded$/i).length).toBeGreaterThanOrEqual(1);
+    });
   });
 
   it("renders saved-search results as a fullscreen mobile surface and locks background scroll", async () => {
@@ -1096,6 +1307,33 @@ describe("CarTrap app", () => {
     const lotLink = screen.getByRole("link", { name: /open copart lot 99251295/i });
     expect(lotLink.getAttribute("href")).toBe("https://www.copart.com/lot/99251295");
     expect(lotLink.getAttribute("target")).toBe("_blank");
+  });
+
+  it("refreshes a tracked lot live from the watchlist", async () => {
+    watchlistItems = [buildTrackedLot()];
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.click(screen.getByRole("button", { name: /refresh live/i }));
+
+    expect(await screen.findByText(/live refresh completed for 2020 toyota camry se\./i)).toBeTruthy();
+    expect(screen.getByText(/last successful sync/i)).toBeTruthy();
+  });
+
+  it("keeps watchlist visible and shows retryable failure details when tracked-lot refresh fails", async () => {
+    watchlistItems = [buildTrackedLot()];
+    watchlistRefreshShouldFail = true;
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    fireEvent.click(screen.getByRole("button", { name: /refresh live/i }));
+
+    expect(await screen.findAllByText(/gateway timeout/i)).toHaveLength(2);
+    expect(screen.getByText(/^Degraded$/i)).toBeTruthy();
   });
 
   it("highlights updated tracked lots without breaking auction-date ordering", async () => {
@@ -1373,6 +1611,36 @@ describe("CarTrap app", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/2020 TOYOTA CAMRY SE/i)).toBeTruthy();
+    });
+    expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
+  });
+
+  it("accepts object-shaped push refresh targets from the service worker bridge", async () => {
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    const initialWatchlistLoads = watchlistListCallCount;
+
+    watchlistItems = [
+      buildTrackedLot({
+        has_unseen_update: true,
+        latest_change_at: "2026-03-18T10:00:00Z",
+        latest_changes: {
+          current_bid: { before: 4200, after: 5100 },
+        },
+      }),
+    ];
+
+    serviceWorkerMessageListener?.({
+      data: {
+        type: "cartrap:push-received",
+        payload: { refresh_targets: { targets: ["watchlist"] } },
+      },
+    } as MessageEvent);
+
+    await waitFor(() => {
+      expect(watchlistListCallCount).toBeGreaterThan(initialWatchlistLoads);
     });
     expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
   });

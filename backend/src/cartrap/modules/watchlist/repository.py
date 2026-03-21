@@ -66,6 +66,12 @@ class WatchlistRepository:
             {"$set": {**payload, "updated_at": updated_at}},
         )
 
+    def request_legacy_backfill(self, tracked_lot_id: str, requested_at: datetime) -> None:
+        self.tracked_lots.update_one(
+            {"_id": ObjectId(tracked_lot_id)},
+            {"$set": {"repair_requested_at": requested_at, "updated_at": requested_at}},
+        )
+
     def clear_unseen_updates(self, tracked_lot_ids: list[str]) -> None:
         if not tracked_lot_ids:
             return

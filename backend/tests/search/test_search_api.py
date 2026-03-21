@@ -343,6 +343,7 @@ def test_user_can_save_and_list_saved_searches(client: TestClient) -> None:
     assert create_response.json()["saved_search"]["criteria"]["odometer_range"] == "under_25000"
     assert create_response.json()["saved_search"]["external_url"].startswith("https://www.copart.com/lotSearchResults?")
     assert create_response.json()["saved_search"]["result_count"] == 21
+    assert create_response.json()["saved_search"]["refresh_state"]["status"] == "idle"
     assert list_response.status_code == 200
     assert len(list_response.json()["items"]) == 1
     assert stored_saved_search["last_checked_at"] is not None
@@ -379,6 +380,9 @@ def test_save_search_seeds_cached_results_without_extra_live_request(client: Tes
     assert create_response.json()["saved_search"]["cached_result_count"] == 2
     assert create_response.json()["saved_search"]["new_count"] == 0
     assert create_response.json()["saved_search"]["last_synced_at"] is not None
+    assert create_response.json()["saved_search"]["freshness"]["status"] == "live"
+    assert create_response.json()["saved_search"]["freshness"]["retryable"] is False
+    assert create_response.json()["saved_search"]["refresh_state"]["status"] == "idle"
     assert cache_document is not None
     assert len(cache_document["results"]) == 2
     assert cache_document["new_lot_numbers"] == []
@@ -420,6 +424,8 @@ def test_view_saved_search_returns_cached_results_and_clears_new_markers(client:
     assert view_response.json()["results"][0]["is_new"] is False
     assert view_response.json()["results"][1]["is_new"] is True
     assert view_response.json()["saved_search"]["new_count"] == 0
+    assert view_response.json()["saved_search"]["freshness"]["status"] == "live"
+    assert view_response.json()["saved_search"]["refresh_state"]["status"] == "idle"
     assert cache_document is not None
     assert cache_document["new_lot_numbers"] == []
     assert cache_document["seen_at"] is not None
@@ -450,6 +456,8 @@ def test_refresh_saved_search_live_updates_cache_and_saved_search_metadata(clien
     assert len(refresh_response.json()["results"]) == 2
     assert refresh_response.json()["saved_search"]["cached_result_count"] == 2
     assert refresh_response.json()["saved_search"]["result_count"] == 2
+    assert refresh_response.json()["saved_search"]["freshness"]["status"] == "live"
+    assert refresh_response.json()["saved_search"]["refresh_state"]["status"] == "idle"
     assert cache_document is not None
     assert cache_document["result_count"] == 2
     assert cache_document["seen_at"] is not None
@@ -495,6 +503,37 @@ def test_saved_search_view_and_refresh_are_owner_scoped_and_return_not_found(cli
     assert missing_view_response.json()["detail"] == "Saved search not found."
     assert missing_refresh_response.status_code == 404
     assert missing_refresh_response.json()["detail"] == "Saved search not found."
+
+
+def test_saved_search_refresh_failure_keeps_cached_read_access_and_persists_retryable_state(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "refresh-fail@example.com", "RefreshFailPass123")
+        seed_results = [result.model_dump(mode="json") for result in client.app.state.fake_provider._results]
+        create_response = client.post(
+            "/api/search/saved",
+            json={"make": "Ford", "model": "Mustang Mach-E", "result_count": 2, "seed_results": seed_results},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        saved_search_id = create_response.json()["saved_search"]["id"]
+        client.app.state.copart_provider_factory = lambda: GatewayUnavailableProvider()
+
+        refresh_response = client.post(
+            f"/api/search/saved/{saved_search_id}/refresh-live",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        view_response = client.post(
+            f"/api/search/saved/{saved_search_id}/view",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert refresh_response.status_code == 502
+    assert refresh_response.json()["detail"] == "Failed to fetch search results from Copart."
+    assert view_response.status_code == 200
+    assert view_response.json()["cached_result_count"] == 2
+    assert len(view_response.json()["results"]) == 2
+    assert view_response.json()["saved_search"]["refresh_state"]["status"] == "retryable_failure"
+    assert view_response.json()["saved_search"]["refresh_state"]["retryable"] is True
+    assert view_response.json()["saved_search"]["refresh_state"]["error_message"] == "Failed to fetch search results from Copart."
 
 
 def test_user_can_delete_saved_search(client: TestClient) -> None:

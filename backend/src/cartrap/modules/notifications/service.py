@@ -177,7 +177,9 @@ class NotificationService:
             "notification_type": "saved_search_match",
             "refresh_targets": ["savedSearches", "liveSync"],
         }
-        return self._send_payload_to_owner(event["owner_user_id"], payload)
+        dedupe_suffix = ",".join(event.get("new_lot_numbers", []))
+        dedupe_key = f"saved_search_match:{event['saved_search_id']}:{event.get('result_count')}:{dedupe_suffix}"
+        return self._send_payload_to_owner(event["owner_user_id"], payload, dedupe_key=dedupe_key)
 
     def send_lot_change_notification(self, event: dict) -> dict:
         change_summary = self._format_change_summary(event["changes"], currency=event.get("currency"))
@@ -189,7 +191,8 @@ class NotificationService:
             "notification_type": "lot_change",
             "refresh_targets": ["watchlist", "liveSync"],
         }
-        return self._send_payload_to_owner(event["owner_user_id"], payload)
+        dedupe_key = f"lot_change:{event['tracked_lot_id']}:{event.get('snapshot_id')}"
+        return self._send_payload_to_owner(event["owner_user_id"], payload, dedupe_key=dedupe_key)
 
     def send_auction_reminder_notification(self, event: dict) -> dict:
         payload = {
@@ -201,9 +204,12 @@ class NotificationService:
             "notification_type": "auction_reminder",
             "refresh_targets": ["watchlist", "liveSync"],
         }
-        return self._send_payload_to_owner(event["owner_user_id"], payload)
+        dedupe_key = (
+            f"auction_reminder:{event['tracked_lot_id']}:{event.get('sale_date')}:{event['reminder_offset_minutes']}"
+        )
+        return self._send_payload_to_owner(event["owner_user_id"], payload, dedupe_key=dedupe_key)
 
-    def _send_payload_to_owner(self, owner_user_id: str, payload: dict) -> dict:
+    def _send_payload_to_owner(self, owner_user_id: str, payload: dict, *, dedupe_key: str | None = None) -> dict:
         if self._sender is None:
             LOGGER.warning(
                 "Push delivery skipped because sender is not configured.",
@@ -222,8 +228,31 @@ class NotificationService:
         delivered_endpoints: list[str] = []
 
         for subscription in subscriptions:
+            endpoint_dedupe_key = None
+            if dedupe_key:
+                endpoint_dedupe_key = f"{dedupe_key}:{subscription['endpoint']}"
+                if self.repository.has_delivery_receipt(endpoint_dedupe_key):
+                    LOGGER.info(
+                        "Skipped duplicate push delivery.",
+                        extra={
+                            "owner_user_id": owner_user_id,
+                            "endpoint": subscription["endpoint"],
+                            "dedupe_key": endpoint_dedupe_key,
+                        },
+                    )
+                    continue
             try:
                 self._sender.send(subscription, payload)
+                if endpoint_dedupe_key:
+                    self.repository.create_delivery_receipt(
+                        endpoint_dedupe_key,
+                        {
+                            "owner_user_id": owner_user_id,
+                            "endpoint": subscription["endpoint"],
+                            "notification_type": payload.get("notification_type"),
+                            "created_at": self._now(),
+                        },
+                    )
                 delivered += 1
                 delivered_endpoints.append(subscription["endpoint"])
                 LOGGER.info(

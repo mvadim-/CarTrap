@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 from cartrap.modules.copart_provider.models import CopartApiSearchRequest
 from cartrap.modules.copart_provider.models import CopartSearchResult
+from cartrap.modules.system_status.schemas import FreshnessEnvelopeResponse, RefreshStateResponse
 from cartrap.modules.watchlist.schemas import WatchlistCreateResponse
 
 DRIVE_TYPE_FILTER_VARIANTS = {
@@ -311,6 +312,8 @@ class SavedSearchResponse(BaseModel):
     cached_result_count: Optional[int] = None
     new_count: int = 0
     last_synced_at: Optional[datetime] = None
+    freshness: FreshnessEnvelopeResponse
+    refresh_state: RefreshStateResponse
     created_at: datetime
 
 

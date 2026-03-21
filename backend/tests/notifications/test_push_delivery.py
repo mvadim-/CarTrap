@@ -71,6 +71,10 @@ def test_notification_delivery_sends_to_active_subscriptions() -> None:
         {"id": "user-1"},
         "https://www.copart.com/lot/12345678",
     )
+    database["tracked_lots"].update_one(
+        {"lot_number": "12345678"},
+        {"$set": {"last_checked_at": datetime(2026, 3, 20, 16, 0, tzinfo=timezone.utc)}},
+    )
 
     changed_snapshot = CopartLotSnapshot(
         lot_number="12345678",
@@ -93,6 +97,9 @@ def test_notification_delivery_sends_to_active_subscriptions() -> None:
 
     assert result["updated"] == 1
     assert result["reminded"] == 1
+    assert result["skipped"] == 0
+    assert len(result["jobs"]) == 1
+    assert result["jobs"][0]["status"] == "succeeded"
     assert len(sender.sent) == 2
     assert sender.sent[0][1]["tracked_lot_id"] == result["events"][0]["tracked_lot_id"]
     assert sender.sent[0][1]["title"] == "2020 TOYOTA CAMRY SE (12345678)"
@@ -202,6 +209,71 @@ def test_auction_reminder_notification_formats_expected_copy() -> None:
     assert sender.sent[0][1]["body"] == "Auction starts in 15 min."
     assert sender.sent[0][1]["notification_type"] == "auction_reminder"
     assert sender.sent[0][1]["refresh_targets"] == ["watchlist", "liveSync"]
+
+
+def test_notification_delivery_dedupes_same_lot_change_per_endpoint() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    sender = FakeSender()
+    notification_service = NotificationService(database, sender=sender)
+    notification_service.upsert_subscription(
+        {"id": "user-5"},
+        {
+            "subscription": {
+                "endpoint": "https://push.example.test/subscriptions/5",
+                "expirationTime": None,
+                "keys": {"p256dh": "abc", "auth": "def"},
+            }
+        },
+    )
+    event = {
+        "tracked_lot_id": "tracked-5",
+        "snapshot_id": "snapshot-1",
+        "owner_user_id": "user-5",
+        "lot_number": "12345678",
+        "title": "2020 TOYOTA CAMRY SE",
+        "currency": "USD",
+        "changes": {"current_bid": {"before": 1000, "after": 1200}},
+    }
+
+    first = notification_service.send_lot_change_notification(event)
+    second = notification_service.send_lot_change_notification(event)
+
+    assert first["delivered"] == 1
+    assert second == {"delivered": 0, "failed": 0, "removed": 0, "endpoints": []}
+    assert len(sender.sent) == 1
+    assert database["push_delivery_receipts"].count_documents({}) == 1
+
+
+def test_notification_delivery_dedupes_same_auction_reminder_per_endpoint() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    sender = FakeSender()
+    notification_service = NotificationService(database, sender=sender)
+    notification_service.upsert_subscription(
+        {"id": "user-6"},
+        {
+            "subscription": {
+                "endpoint": "https://push.example.test/subscriptions/6",
+                "expirationTime": None,
+                "keys": {"p256dh": "abc", "auth": "def"},
+            }
+        },
+    )
+    event = {
+        "tracked_lot_id": "tracked-6",
+        "owner_user_id": "user-6",
+        "lot_number": "12344321",
+        "title": "2020 TOYOTA CAMRY SE",
+        "sale_date": datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+        "reminder_offset_minutes": 15,
+    }
+
+    first = notification_service.send_auction_reminder_notification(event)
+    second = notification_service.send_auction_reminder_notification(event)
+
+    assert first["delivered"] == 1
+    assert second == {"delivered": 0, "failed": 0, "removed": 0, "endpoints": []}
+    assert len(sender.sent) == 1
+    assert database["push_delivery_receipts"].count_documents({}) == 1
 
 
 def test_web_push_sender_serializes_payload_and_vapid_claims(monkeypatch: pytest.MonkeyPatch) -> None:

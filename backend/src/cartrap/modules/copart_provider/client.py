@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from threading import Lock
+from time import perf_counter
 from typing import Optional, Protocol
 
 import httpx
 
 from cartrap.config import Settings, get_settings
+from cartrap.core.logging import make_log_extra, new_correlation_id
 from cartrap.modules.copart_provider.errors import (
     CopartConfigurationError,
     CopartGatewayMalformedResponseError,
@@ -26,6 +29,7 @@ GATEWAY_LOT_DETAILS_PATH = "/v1/lot-details"
 GATEWAY_SEARCH_KEYWORDS_PATH = "/v1/search-keywords"
 GATEWAY_ERROR_HEADER = "x-copart-gateway-error"
 GATEWAY_UPSTREAM_STATUS_HEADER = "x-copart-upstream-status"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -90,13 +94,19 @@ def reset_shared_http_client_pool() -> None:
 
 
 class CopartTransport(Protocol):
-    def search_with_metadata(self, payload: dict, etag: Optional[str] = None) -> CopartHttpPayloadResponse: ...
+    def search_with_metadata(
+        self, payload: dict, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse: ...
 
-    def search_count_with_metadata(self, payload: dict, etag: Optional[str] = None) -> CopartHttpPayloadResponse: ...
+    def search_count_with_metadata(
+        self, payload: dict, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse: ...
 
-    def lot_details_with_metadata(self, lot_number: str, etag: Optional[str] = None) -> CopartHttpPayloadResponse: ...
+    def lot_details_with_metadata(
+        self, lot_number: str, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse: ...
 
-    def search_keywords(self) -> dict: ...
+    def search_keywords(self, correlation_id: Optional[str] = None) -> dict: ...
 
     def close(self) -> None: ...
 
@@ -185,19 +195,100 @@ class DirectCopartTransport(_BaseHttpTransport):
     def mode(self) -> str:
         return "direct"
 
-    def search_with_metadata(self, payload: dict, etag: Optional[str] = None) -> CopartHttpPayloadResponse:
-        return self._request_json("POST", self._search_path, json=payload, etag=etag)
+    def search_with_metadata(
+        self, payload: dict, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse:
+        return self._request_json("POST", self._search_path, json=payload, etag=etag, correlation_id=correlation_id)
 
-    def search_count_with_metadata(self, payload: dict, etag: Optional[str] = None) -> CopartHttpPayloadResponse:
-        return self.search_with_metadata(payload, etag=etag)
+    def search_count_with_metadata(
+        self, payload: dict, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse:
+        return self.search_with_metadata(payload, etag=etag, correlation_id=correlation_id)
 
-    def lot_details_with_metadata(self, lot_number: str, etag: Optional[str] = None) -> CopartHttpPayloadResponse:
-        return self._request_json("POST", self._lot_details_path, json={"lotNumber": int(lot_number)}, etag=etag)
+    def lot_details_with_metadata(
+        self, lot_number: str, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse:
+        return self._request_json(
+            "POST",
+            self._lot_details_path,
+            json={"lotNumber": int(lot_number)},
+            etag=etag,
+            correlation_id=correlation_id,
+        )
 
-    def search_keywords(self) -> dict:
-        response = self._client.get(self._search_keywords_path, headers=self._auth_headers())
-        response.raise_for_status()
-        return response.json()
+    def search_keywords(self, correlation_id: Optional[str] = None) -> dict:
+        cid = correlation_id or new_correlation_id("copart-direct")
+        started_at = perf_counter()
+        logger.info(
+            "copart_client.request.start",
+            extra=make_log_extra(
+                "copart_client.request.start",
+                correlation_id=cid,
+                transport_mode=self.mode,
+                method="GET",
+                path=self._search_keywords_path,
+            ),
+        )
+        try:
+            response = self._client.get(self._search_keywords_path, headers=self._auth_headers())
+            response.raise_for_status()
+            payload = response.json()
+        except CopartConfigurationError:
+            logger.exception(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method="GET",
+                    path=self._search_keywords_path,
+                    failure_class="configuration_error",
+                ),
+            )
+            raise
+        except httpx.TimeoutException as exc:
+            logger.warning(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method="GET",
+                    path=self._search_keywords_path,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    failure_class="timeout",
+                    error_type=type(exc).__name__,
+                ),
+            )
+            raise
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method="GET",
+                    path=self._search_keywords_path,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    failure_class="upstream_http_error",
+                    status_code=exc.response.status_code,
+                ),
+            )
+            raise
+        logger.info(
+            "copart_client.request.success",
+            extra=make_log_extra(
+                "copart_client.request.success",
+                correlation_id=cid,
+                transport_mode=self.mode,
+                method="GET",
+                path=self._search_keywords_path,
+                duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                status_code=response.status_code,
+            ),
+        )
+        return payload
 
     def _auth_headers(self) -> dict[str, str]:
         if not self._device_name or not self._d_token or not self._cookie:
@@ -216,15 +307,119 @@ class DirectCopartTransport(_BaseHttpTransport):
         *,
         json: Optional[dict] = None,
         etag: Optional[str] = None,
+        correlation_id: Optional[str] = None,
     ) -> CopartHttpPayloadResponse:
-        headers = self._auth_headers()
-        if etag:
-            headers["If-None-Match"] = etag
-        response = self._client.request(method, path, json=json, headers=headers)
-        if response.status_code == httpx.codes.NOT_MODIFIED:
-            return CopartHttpPayloadResponse(payload=None, etag=response.headers.get("etag") or etag, not_modified=True)
-        response.raise_for_status()
-        return CopartHttpPayloadResponse(payload=response.json(), etag=response.headers.get("etag"), not_modified=False)
+        cid = correlation_id or new_correlation_id("copart-direct")
+        started_at = perf_counter()
+        logger.info(
+            "copart_client.request.start",
+            extra=make_log_extra(
+                "copart_client.request.start",
+                correlation_id=cid,
+                transport_mode=self.mode,
+                method=method,
+                path=path,
+                has_etag=bool(etag),
+            ),
+        )
+        try:
+            headers = self._auth_headers()
+            if etag:
+                headers["If-None-Match"] = etag
+            response = self._client.request(method, path, json=json, headers=headers)
+            if response.status_code == httpx.codes.NOT_MODIFIED:
+                logger.info(
+                    "copart_client.request.success",
+                    extra=make_log_extra(
+                        "copart_client.request.success",
+                        correlation_id=cid,
+                        transport_mode=self.mode,
+                        method=method,
+                        path=path,
+                        duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                        status_code=response.status_code,
+                        outcome="not_modified",
+                    ),
+                )
+                return CopartHttpPayloadResponse(
+                    payload=None,
+                    etag=response.headers.get("etag") or etag,
+                    not_modified=True,
+                )
+            response.raise_for_status()
+            payload = response.json()
+        except CopartConfigurationError:
+            logger.exception(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method=method,
+                    path=path,
+                    failure_class="configuration_error",
+                ),
+            )
+            raise
+        except httpx.TimeoutException as exc:
+            logger.warning(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method=method,
+                    path=path,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    failure_class="timeout",
+                    error_type=type(exc).__name__,
+                ),
+            )
+            raise
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method=method,
+                    path=path,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    failure_class="upstream_http_error",
+                    status_code=exc.response.status_code,
+                ),
+            )
+            raise
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method=method,
+                    path=path,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    failure_class="transport_error",
+                    error_type=type(exc).__name__,
+                ),
+            )
+            raise
+        logger.info(
+            "copart_client.request.success",
+            extra=make_log_extra(
+                "copart_client.request.success",
+                correlation_id=cid,
+                transport_mode=self.mode,
+                method=method,
+                path=path,
+                duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                status_code=response.status_code,
+                outcome="refreshed",
+            ),
+        )
+        return CopartHttpPayloadResponse(payload=payload, etag=response.headers.get("etag"), not_modified=False)
 
 
 class GatewayCopartTransport(_BaseHttpTransport):
@@ -272,17 +467,35 @@ class GatewayCopartTransport(_BaseHttpTransport):
     def mode(self) -> str:
         return "gateway"
 
-    def search_with_metadata(self, payload: dict, etag: Optional[str] = None) -> CopartHttpPayloadResponse:
-        return self._request_json("POST", GATEWAY_SEARCH_PATH, json=payload, etag=etag)
+    def search_with_metadata(
+        self, payload: dict, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse:
+        return self._request_json("POST", GATEWAY_SEARCH_PATH, json=payload, etag=etag, correlation_id=correlation_id)
 
-    def search_count_with_metadata(self, payload: dict, etag: Optional[str] = None) -> CopartHttpPayloadResponse:
-        return self._request_json("POST", "/v1/search-count", json=payload, etag=etag)
+    def search_count_with_metadata(
+        self, payload: dict, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse:
+        return self._request_json(
+            "POST",
+            "/v1/search-count",
+            json=payload,
+            etag=etag,
+            correlation_id=correlation_id,
+        )
 
-    def lot_details_with_metadata(self, lot_number: str, etag: Optional[str] = None) -> CopartHttpPayloadResponse:
-        return self._request_json("POST", GATEWAY_LOT_DETAILS_PATH, json={"lotNumber": int(lot_number)}, etag=etag)
+    def lot_details_with_metadata(
+        self, lot_number: str, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse:
+        return self._request_json(
+            "POST",
+            GATEWAY_LOT_DETAILS_PATH,
+            json={"lotNumber": int(lot_number)},
+            etag=etag,
+            correlation_id=correlation_id,
+        )
 
-    def search_keywords(self) -> dict:
-        return self._request_json("GET", GATEWAY_SEARCH_KEYWORDS_PATH).payload or {}
+    def search_keywords(self, correlation_id: Optional[str] = None) -> dict:
+        return self._request_json("GET", GATEWAY_SEARCH_KEYWORDS_PATH, correlation_id=correlation_id).payload or {}
 
     def _request_json(
         self,
@@ -291,28 +504,142 @@ class GatewayCopartTransport(_BaseHttpTransport):
         *,
         json: Optional[dict] = None,
         etag: Optional[str] = None,
+        correlation_id: Optional[str] = None,
     ) -> CopartHttpPayloadResponse:
+        cid = correlation_id or new_correlation_id("copart-gateway")
+        started_at = perf_counter()
+        logger.info(
+            "copart_client.request.start",
+            extra=make_log_extra(
+                "copart_client.request.start",
+                correlation_id=cid,
+                transport_mode=self.mode,
+                method=method,
+                path=path,
+                has_etag=bool(etag),
+            ),
+        )
         headers: dict[str, str] = {}
         if etag:
             headers["If-None-Match"] = etag
 
         try:
             response = self._client.request(method, path, json=json, headers=headers)
+        except httpx.TimeoutException as exc:
+            logger.warning(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method=method,
+                    path=path,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    failure_class="timeout",
+                    error_type=type(exc).__name__,
+                ),
+            )
+            raise CopartGatewayUnavailableError("Copart gateway is unavailable.") from exc
         except httpx.HTTPError as exc:
+            logger.warning(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method=method,
+                    path=path,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    failure_class="transport_error",
+                    error_type=type(exc).__name__,
+                ),
+            )
             raise CopartGatewayUnavailableError("Copart gateway is unavailable.") from exc
 
         if response.status_code == httpx.codes.NOT_MODIFIED:
+            logger.info(
+                "copart_client.request.success",
+                extra=make_log_extra(
+                    "copart_client.request.success",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method=method,
+                    path=path,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    status_code=response.status_code,
+                    outcome="not_modified",
+                ),
+            )
             return CopartHttpPayloadResponse(payload=None, etag=response.headers.get("etag") or etag, not_modified=True)
         if response.is_error:
+            gateway_error = (response.headers.get(GATEWAY_ERROR_HEADER) or "").strip().lower()
+            failure_class = (
+                "upstream_rejected"
+                if gateway_error == "upstream_rejected"
+                else "malformed_response"
+                if gateway_error == "malformed_response"
+                else "gateway_unavailable"
+            )
+            logger.warning(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method=method,
+                    path=path,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    failure_class=failure_class,
+                    status_code=response.status_code,
+                    upstream_status=response.headers.get(GATEWAY_UPSTREAM_STATUS_HEADER),
+                ),
+            )
             self._raise_gateway_error(response)
 
         try:
             payload = response.json()
         except ValueError as exc:
+            logger.warning(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method=method,
+                    path=path,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    failure_class="invalid_json",
+                ),
+            )
             raise CopartGatewayMalformedResponseError("Copart gateway returned invalid JSON.") from exc
 
         if not isinstance(payload, dict):
+            logger.warning(
+                "copart_client.request.failed",
+                extra=make_log_extra(
+                    "copart_client.request.failed",
+                    correlation_id=cid,
+                    transport_mode=self.mode,
+                    method=method,
+                    path=path,
+                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                    failure_class="non_object_json",
+                ),
+            )
             raise CopartGatewayMalformedResponseError("Copart gateway response must be a JSON object.")
+        logger.info(
+            "copart_client.request.success",
+            extra=make_log_extra(
+                "copart_client.request.success",
+                correlation_id=cid,
+                transport_mode=self.mode,
+                method=method,
+                path=path,
+                duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                status_code=response.status_code,
+                outcome="refreshed",
+            ),
+        )
         return CopartHttpPayloadResponse(payload=payload, etag=response.headers.get("etag"), not_modified=False)
 
     @staticmethod
@@ -408,11 +735,15 @@ class CopartHttpClient:
             raise RuntimeError("Search payload is not available for a 304 response.")
         return response.payload
 
-    def search_with_metadata(self, payload: dict, etag: Optional[str] = None) -> CopartHttpPayloadResponse:
-        return self._transport.search_with_metadata(payload, etag=etag)
+    def search_with_metadata(
+        self, payload: dict, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse:
+        return self._transport.search_with_metadata(payload, etag=etag, correlation_id=correlation_id)
 
-    def search_count_with_metadata(self, payload: dict, etag: Optional[str] = None) -> CopartHttpPayloadResponse:
-        return self._transport.search_count_with_metadata(payload, etag=etag)
+    def search_count_with_metadata(
+        self, payload: dict, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse:
+        return self._transport.search_count_with_metadata(payload, etag=etag, correlation_id=correlation_id)
 
     def lot_details(self, lot_number: str) -> dict:
         response = self.lot_details_with_metadata(lot_number)
@@ -420,11 +751,13 @@ class CopartHttpClient:
             raise RuntimeError("Lot details payload is not available for a 304 response.")
         return response.payload
 
-    def lot_details_with_metadata(self, lot_number: str, etag: Optional[str] = None) -> CopartHttpPayloadResponse:
-        return self._transport.lot_details_with_metadata(lot_number, etag=etag)
+    def lot_details_with_metadata(
+        self, lot_number: str, etag: Optional[str] = None, correlation_id: Optional[str] = None
+    ) -> CopartHttpPayloadResponse:
+        return self._transport.lot_details_with_metadata(lot_number, etag=etag, correlation_id=correlation_id)
 
-    def search_keywords(self) -> dict:
-        return self._transport.search_keywords()
+    def search_keywords(self, correlation_id: Optional[str] = None) -> dict:
+        return self._transport.search_keywords(correlation_id=correlation_id)
 
     def close(self) -> None:
         self._transport.close()
