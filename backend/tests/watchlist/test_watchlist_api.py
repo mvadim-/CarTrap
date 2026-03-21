@@ -192,7 +192,7 @@ def test_watchlist_rejects_duplicate_lot(client: TestClient) -> None:
     assert duplicate_response.status_code == 409
 
 
-def test_watchlist_lists_updated_lots_first_and_clears_update_marker_after_view(client: TestClient) -> None:
+def test_watchlist_keeps_auction_date_order_when_updated_lot_has_unseen_changes(client: TestClient) -> None:
     with client:
         user_token = _create_user(client, "updates@example.com", "UpdatesPass123")
         older_id = client.post(
@@ -228,9 +228,9 @@ def test_watchlist_lists_updated_lots_first_and_clears_update_marker_after_view(
     assert first_list_response.json()["items"][0]["latest_changes"]["current_bid"] == {"before": 4200.0, "after": 5100.0}
 
     assert second_list_response.status_code == 200
-    assert [item["id"] for item in second_list_response.json()["items"]] == [newer_id, older_id]
-    assert second_list_response.json()["items"][1]["has_unseen_update"] is False
-    assert second_list_response.json()["items"][1]["latest_changes"] == {}
+    assert [item["id"] for item in second_list_response.json()["items"]] == [older_id, newer_id]
+    assert second_list_response.json()["items"][0]["has_unseen_update"] is False
+    assert second_list_response.json()["items"][0]["latest_changes"] == {}
 
 
 def test_watchlist_accepts_lot_number_input(client: TestClient) -> None:

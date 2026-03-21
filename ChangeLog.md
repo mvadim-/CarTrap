@@ -1,5 +1,9 @@
 # Change Log
 
+## [2026-03-21 17:25] Fix watchlist ordering to follow auction date instead of update time
+- Оновлено `backend/src/cartrap/modules/watchlist/{repository.py,service.py}` і `backend/tests/watchlist/test_watchlist_api.py`: watchlist більше не сортується за `has_unseen_update/latest_change_at`; items тепер стабільно впорядковуються за найближчим `sale_date` угору, а regression test перевіряє, що unseen update не підкидає пізніший аукціон на верх списку.
+- Оновлено `frontend/src/App.tsx` і `frontend/tests/app.test.tsx`: додано єдине локальне сортування watchlist по `sale_date`, яке застосовується і після reload, і після add-to-watchlist flows, щоб UI не показував тимчасово неправильний порядок під час refresh/add.
+
 ## [2026-03-19 16:24] Add completed-state affordance after search result is tracked
 - Оновлено `frontend/src/{App.tsx,styles.css}` і `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx}`: add-to-watchlist CTA у results rows тепер переходить з `+` у completed-state `✓`, блокує повторне додавання для вже tracked lot URLs і показує success-повідомлення в модалці після успішного add.
 - Оновлено `frontend/tests/app.test.tsx`: додано assertion на disabled completed-state button і success message після додавання лота з search results.

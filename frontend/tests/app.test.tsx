@@ -1098,12 +1098,13 @@ describe("CarTrap app", () => {
     expect(lotLink.getAttribute("target")).toBe("_blank");
   });
 
-  it("highlights updated tracked lots and keeps them at the top of the watchlist", async () => {
+  it("highlights updated tracked lots without breaking auction-date ordering", async () => {
     watchlistItems = [
       buildTrackedLot({
         id: "tracked-updated",
         lot_number: "12345678",
         title: "2020 TOYOTA CAMRY SE",
+        sale_date: "2026-03-21T18:30:00Z",
         has_unseen_update: true,
         latest_change_at: "2026-03-17T15:40:00Z",
         latest_changes: {
@@ -1116,6 +1117,7 @@ describe("CarTrap app", () => {
         lot_number: "99251295",
         title: "2025 FORD MUSTANG MACH-E PREMIUM",
         url: "https://www.copart.com/lot/99251295",
+        sale_date: "2026-03-20T17:00:00Z",
         created_at: "2026-03-17T15:45:00Z",
         last_checked_at: "2026-03-17T15:45:00Z",
       }),
@@ -1126,7 +1128,8 @@ describe("CarTrap app", () => {
 
     await screen.findByText(/cartrap dispatch board/i);
     const watchlistCards = document.querySelectorAll(".watchlist-card");
-    expect(watchlistCards[0]?.textContent).toContain("2020 TOYOTA CAMRY SE");
+    expect(watchlistCards[0]?.textContent).toContain("2025 FORD MUSTANG MACH-E PREMIUM");
+    expect(watchlistCards[1]?.textContent).toContain("2020 TOYOTA CAMRY SE");
     expect(screen.getByText(/^Updated$/i)).toBeTruthy();
     expect(screen.getByText(/Status: On Approval -> Live/i)).toBeTruthy();
     expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();

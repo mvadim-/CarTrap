@@ -38,11 +38,7 @@ class WatchlistRepository:
         return self.tracked_lots.find_one({"owner_user_id": owner_user_id, "lot_number": lot_number})
 
     def list_tracked_lots_for_owner(self, owner_user_id: str) -> list[dict]:
-        return list(
-            self.tracked_lots.find({"owner_user_id": owner_user_id}).sort(
-                [("has_unseen_update", -1), ("latest_change_at", -1), ("created_at", -1)]
-            )
-        )
+        return list(self.tracked_lots.find({"owner_user_id": owner_user_id}))
 
     def list_active_tracked_lots(self) -> list[dict]:
         return list(self.tracked_lots.find({"active": True}).sort("last_checked_at", 1))

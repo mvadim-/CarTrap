@@ -85,12 +85,14 @@ class WatchlistService:
 
     def list_watchlist(self, owner_user: dict) -> dict:
         unseen_update_ids: list[str] = []
-        items = []
+        hydrated_items: list[dict] = []
         for item in self.repository.list_tracked_lots_for_owner(owner_user["id"]):
             hydrated_item = self._ensure_tracked_lot_fields(item)
             if hydrated_item.get("has_unseen_update"):
                 unseen_update_ids.append(str(hydrated_item["_id"]))
-            items.append(self.serialize_tracked_lot(hydrated_item))
+            hydrated_items.append(hydrated_item)
+        hydrated_items.sort(key=self._watchlist_sort_key)
+        items = [self.serialize_tracked_lot(item) for item in hydrated_items]
         if unseen_update_ids:
             self.repository.clear_unseen_updates(unseen_update_ids)
         return {"items": items}
@@ -169,6 +171,14 @@ class WatchlistService:
         if detail_etag is not None:
             payload["detail_etag"] = detail_etag
         return payload
+
+    @staticmethod
+    def _watchlist_sort_key(tracked_lot: dict) -> tuple[int, float, float, str]:
+        sale_date = tracked_lot.get("sale_date")
+        created_at = tracked_lot.get("created_at")
+        sale_timestamp = sale_date.timestamp() if isinstance(sale_date, datetime) else float("inf")
+        created_timestamp = created_at.timestamp() if isinstance(created_at, datetime) else float("inf")
+        return (0 if sale_date is not None else 1, sale_timestamp, created_timestamp, str(tracked_lot.get("lot_number", "")))
 
     @staticmethod
     def serialize_tracked_lot(document: dict) -> dict:

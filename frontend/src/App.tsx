@@ -215,6 +215,30 @@ function countWatchlistUpdates(previousItems: WatchlistItem[], nextItems: Watchl
   return updates;
 }
 
+function getWatchlistSaleTimestamp(item: WatchlistItem): number {
+  if (!item.sale_date) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const saleTimestamp = new Date(item.sale_date).getTime();
+  return Number.isNaN(saleTimestamp) ? Number.POSITIVE_INFINITY : saleTimestamp;
+}
+
+function sortWatchlistItems(items: WatchlistItem[]): WatchlistItem[] {
+  return [...items].sort((left, right) => {
+    const saleDifference = getWatchlistSaleTimestamp(left) - getWatchlistSaleTimestamp(right);
+    if (saleDifference !== 0) {
+      return saleDifference;
+    }
+
+    const createdDifference = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+    if (!Number.isNaN(createdDifference) && createdDifference !== 0) {
+      return createdDifference;
+    }
+
+    return left.lot_number.localeCompare(right.lot_number);
+  });
+}
+
 function countSavedSearchUpdates(
   previousItems: SavedSearch[],
   nextItems: SavedSearch[],
@@ -498,7 +522,7 @@ export function App() {
 
   async function loadWatchlistResource(token: string, options: DashboardLoaderOptions = {}) {
     return runDashboardLoader("watchlist", "Could not load tracked lots.", async () => {
-      const items = await listWatchlist(token);
+      const items = sortWatchlistItems(await listWatchlist(token));
       setWatchlist(items);
       return items;
     }, options);
@@ -1066,7 +1090,7 @@ export function App() {
     try {
       const trackedLot = await addFromSearch(lotUrl, session.accessToken);
       await refreshLiveSyncStatus(session.accessToken);
-      setWatchlist((current) => [trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]);
+      setWatchlist((current) => sortWatchlistItems([trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]));
       return trackedLot;
     } catch (caught) {
       const status = isBrowserOffline ? liveSyncStatus : await refreshLiveSyncStatus(session.accessToken);
@@ -1126,7 +1150,7 @@ export function App() {
     try {
       const trackedLot = await addLotNumberToWatchlist(lotNumber, session.accessToken);
       await refreshLiveSyncStatus(session.accessToken);
-      setWatchlist((current) => [trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]);
+      setWatchlist((current) => sortWatchlistItems([trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]));
       return trackedLot;
     } catch (caught) {
       const status = isBrowserOffline ? liveSyncStatus : await refreshLiveSyncStatus(session.accessToken);
