@@ -27,7 +27,14 @@ from cartrap.modules.copart_provider.errors import CopartLoginRejectedError
 
 
 class FakeDirectConnectorClient:
-    def bootstrap_connector_session(self, *, username: str, password: str) -> CopartConnectorBootstrapResult:
+    def bootstrap_connector_session(
+        self,
+        *,
+        username: str,
+        password: str,
+        client_ip: str | None = None,
+    ) -> CopartConnectorBootstrapResult:
+        del client_ip
         if password == "bad":
             raise CopartAuthenticationError("bad credentials")
         if password == "blocked":

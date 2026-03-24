@@ -59,4 +59,3 @@ class ProviderConnectionDiagnosticResponse(BaseModel):
     message: str
     connection_id: Optional[str] = None
     reconnect_required: bool = False
-

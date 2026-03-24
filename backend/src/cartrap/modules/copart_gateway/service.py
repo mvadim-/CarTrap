@@ -108,11 +108,11 @@ class CopartGatewayService:
         bootstrap = self.bootstrap_connector(username=username, password=password)
         return self.execute_connector_lot_details(bootstrap.session_bundle, lot_number=lot_number)
 
-    def bootstrap_connector(self, *, username: str, password: str) -> GatewayConnectorResponse:
+    def bootstrap_connector(self, *, username: str, password: str, client_ip: Optional[str] = None) -> GatewayConnectorResponse:
         self._enforce_connect_rate_limit(username)
         client = self._client_factory()
         try:
-            result = client.bootstrap_connector_session(username=username, password=password)
+            result = client.bootstrap_connector_session(username=username, password=password, client_ip=client_ip)
         finally:
             client.close()
         raw_bundle = self._require_raw_bundle(result.bundle)

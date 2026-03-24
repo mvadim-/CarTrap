@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+
 from fastapi import APIRouter, Depends, Request
 
 from cartrap.api.dependencies import get_current_user
@@ -37,19 +39,31 @@ def list_provider_connections(
 @router.post("/copart/connect", response_model=ProviderConnectionMutationResponse)
 def connect_copart(
     payload: CopartConnectionRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     service: ProviderConnectionService = Depends(get_provider_connection_service),
 ) -> dict:
-    return service.connect_copart(current_user, username=payload.username, password=payload.password)
+    return service.connect_copart(
+        current_user,
+        username=payload.username,
+        password=payload.password,
+        client_ip=_extract_client_ip(request),
+    )
 
 
 @router.post("/copart/reconnect", response_model=ProviderConnectionMutationResponse)
 def reconnect_copart(
     payload: CopartConnectionRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     service: ProviderConnectionService = Depends(get_provider_connection_service),
 ) -> dict:
-    return service.reconnect_copart(current_user, username=payload.username, password=payload.password)
+    return service.reconnect_copart(
+        current_user,
+        username=payload.username,
+        password=payload.password,
+        client_ip=_extract_client_ip(request),
+    )
 
 
 @router.delete(f"/{PROVIDER_COPART}", response_model=ProviderConnectionMutationResponse)
@@ -58,3 +72,21 @@ def disconnect_copart(
     service: ProviderConnectionService = Depends(get_provider_connection_service),
 ) -> dict:
     return service.disconnect_copart(current_user)
+
+
+def _extract_client_ip(request: Request) -> str | None:
+    for header_name in ("cf-connecting-ip", "x-forwarded-for", "x-real-ip"):
+        raw_value = request.headers.get(header_name)
+        if not raw_value:
+            continue
+        candidate = raw_value.split(",", 1)[0].strip()
+        if not candidate or candidate.lower() == "unknown":
+            continue
+        try:
+            ip = ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+        if ip.is_unspecified:
+            continue
+        return candidate
+    return None

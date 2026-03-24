@@ -62,14 +62,30 @@ class ProviderConnectionService:
         items = [self.serialize_connection(item) for item in self._repository.list_for_owner(owner_user["id"])]
         return {"items": items}
 
-    def connect_copart(self, owner_user: dict, *, username: str, password: str) -> dict:
-        return {"connection": self._connect(owner_user, username=username, password=password, reconnect=False)}
+    def connect_copart(self, owner_user: dict, *, username: str, password: str, client_ip: Optional[str] = None) -> dict:
+        return {
+            "connection": self._connect(
+                owner_user,
+                username=username,
+                password=password,
+                reconnect=False,
+                client_ip=client_ip,
+            )
+        }
 
-    def reconnect_copart(self, owner_user: dict, *, username: str, password: str) -> dict:
+    def reconnect_copart(self, owner_user: dict, *, username: str, password: str, client_ip: Optional[str] = None) -> dict:
         existing = self._repository.find_by_user_and_provider(owner_user["id"], PROVIDER_COPART)
         if existing is None or existing.get("status") == STATUS_DISCONNECTED:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Copart connection not found.")
-        return {"connection": self._connect(owner_user, username=username, password=password, reconnect=True)}
+        return {
+            "connection": self._connect(
+                owner_user,
+                username=username,
+                password=password,
+                reconnect=True,
+                client_ip=client_ip,
+            )
+        }
 
     def disconnect_copart(self, owner_user: dict) -> dict:
         existing = self._repository.find_by_user_and_provider(owner_user["id"], PROVIDER_COPART)
@@ -227,12 +243,20 @@ class ProviderConnectionService:
             "updated_at": document["updated_at"],
         }
 
-    def _connect(self, owner_user: dict, *, username: str, password: str, reconnect: bool) -> dict:
+    def _connect(
+        self,
+        owner_user: dict,
+        *,
+        username: str,
+        password: str,
+        reconnect: bool,
+        client_ip: Optional[str],
+    ) -> dict:
         correlation_id = new_correlation_id("provider-connect")
         started_at = perf_counter()
         client = self._connector_client_factory()
         try:
-            result = client.bootstrap_connector_session(username=username, password=password)
+            result = client.bootstrap_connector_session(username=username, password=password, client_ip=client_ip)
         except CopartAuthenticationError as exc:
             self._log_connect_failure(owner_user["id"], correlation_id, started_at, exc)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Copart credentials were rejected.") from exc

@@ -43,7 +43,16 @@ class FakeMongoManager:
 
 
 class FakeConnectorClient:
-    def bootstrap_connector_session(self, *, username: str, password: str) -> CopartConnectorBootstrapResult:
+    last_client_ip: str | None = None
+
+    def bootstrap_connector_session(
+        self,
+        *,
+        username: str,
+        password: str,
+        client_ip: str | None = None,
+    ) -> CopartConnectorBootstrapResult:
+        type(self).last_client_ip = client_ip
         if password == "bad-password":
             raise CopartAuthenticationError("bad credentials")
         if password == "challenge-password":
@@ -128,9 +137,13 @@ def _create_user(client: TestClient, email: str, password: str) -> str:
 
 
 def test_provider_connection_router_lists_connects_reconnects_and_disconnects(client: TestClient) -> None:
+    FakeConnectorClient.last_client_ip = None
     with client:
         token = _create_user(client, "owner@example.com", "OwnerPass123")
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "CF-Connecting-IP": "203.0.113.10",
+        }
 
         initial_list = client.get("/api/provider-connections", headers=headers)
         connect_response = client.post(
@@ -157,6 +170,7 @@ def test_provider_connection_router_lists_connects_reconnects_and_disconnects(cl
     assert final_list.json()["items"][0]["account_label"] == "second@example.com"
     assert disconnect_response.status_code == 200
     assert disconnect_response.json()["connection"]["status"] == "disconnected"
+    assert FakeConnectorClient.last_client_ip == "203.0.113.10"
 
 
 def test_provider_connection_router_maps_invalid_credentials_and_missing_connection(client: TestClient) -> None:

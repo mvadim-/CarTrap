@@ -325,6 +325,7 @@ class CopartTransport(Protocol):
         username: str,
         password: str,
         correlation_id: Optional[str] = None,
+        client_ip: Optional[str] = None,
     ) -> CopartConnectorBootstrapResult: ...
 
     def verify_connector_session(
@@ -536,18 +537,20 @@ class DirectCopartTransport(_BaseHttpTransport):
         username: str,
         password: str,
         correlation_id: Optional[str] = None,
+        client_ip: Optional[str] = None,
     ) -> CopartConnectorBootstrapResult:
         cid = correlation_id or new_correlation_id("copart-bootstrap")
         profile = self._build_header_profile()
         device_id = str(uuid4()).upper()
         ins_sess = str(uuid4()).upper()
+        resolved_client_ip = client_ip or self._settings.copart_connector_mobile_ip_address
         bootstrap_headers = profile.to_headers()
         bootstrap_headers["deviceid"] = device_id
         bootstrap_headers["ins-sess"] = ins_sess
         if self._settings.copart_api_d_token:
             bootstrap_headers["x-d-token"] = self._settings.copart_api_d_token
-        if self._settings.copart_connector_mobile_ip_address:
-            bootstrap_headers["ip_address"] = self._settings.copart_connector_mobile_ip_address
+        if resolved_client_ip:
+            bootstrap_headers["ip_address"] = resolved_client_ip
         if self._settings.copart_connector_bootstrap_path:
             self._client.get(self._settings.copart_connector_bootstrap_path, headers=bootstrap_headers)
         login_payload = {
@@ -555,7 +558,7 @@ class DirectCopartTransport(_BaseHttpTransport):
             "password": password,
             "keepSession": False,
             "loginLocationInfo": _build_login_location_info(
-                ip_address=self._settings.copart_connector_mobile_ip_address,
+                ip_address=resolved_client_ip,
             ),
             "anonymousCrmId": str(uuid4()),
         }
@@ -972,11 +975,16 @@ class GatewayCopartTransport(_BaseHttpTransport):
         username: str,
         password: str,
         correlation_id: Optional[str] = None,
+        client_ip: Optional[str] = None,
     ) -> CopartConnectorBootstrapResult:
         response = self._request_connector_json(
             "POST",
             GATEWAY_CONNECTOR_BOOTSTRAP_PATH,
-            json={"username": username, "password": password},
+            json={
+                "username": username,
+                "password": password,
+                "client_ip": client_ip,
+            },
             correlation_id=correlation_id,
         )
         payload = response.payload or {}
@@ -1321,8 +1329,14 @@ class CopartHttpClient:
         username: str,
         password: str,
         correlation_id: Optional[str] = None,
+        client_ip: Optional[str] = None,
     ) -> CopartConnectorBootstrapResult:
-        return self._transport.bootstrap_connector_session(username, password, correlation_id=correlation_id)
+        return self._transport.bootstrap_connector_session(
+            username,
+            password,
+            correlation_id=correlation_id,
+            client_ip=client_ip,
+        )
 
     def verify_connector_session(
         self,

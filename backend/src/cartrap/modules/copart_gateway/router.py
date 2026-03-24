@@ -105,7 +105,13 @@ def bootstrap_connector(
     payload: GatewayConnectorBootstrapRequest,
     service: CopartGatewayService = Depends(get_gateway_service),
 ):
-    return _invoke_connector(lambda: service.bootstrap_connector(username=payload.username, password=payload.password))
+    return _invoke_connector(
+        lambda: service.bootstrap_connector(
+            username=payload.username,
+            password=payload.password,
+            client_ip=payload.client_ip,
+        )
+    )
 
 
 @router.post("/v1/connector/verify", dependencies=[Depends(require_gateway_auth)], response_model=GatewayConnectorExecutionResponse)

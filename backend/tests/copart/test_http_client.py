@@ -255,7 +255,11 @@ def test_gateway_connector_methods_parse_internal_contract() -> None:
         key_version="v1",
     )
 
-    bootstrap = client.bootstrap_connector_session(username="user@example.com", password="secret")
+    bootstrap = client.bootstrap_connector_session(
+        username="user@example.com",
+        password="secret",
+        client_ip="203.0.113.10",
+    )
     search = client.search_with_connector_session({"pageNumber": 1}, bundle)
 
     assert bootstrap.account_label == "user@example.com"
@@ -308,7 +312,11 @@ def test_direct_connector_bootstrap_uses_seed_d_token_and_me_info_verify_path() 
         base_url="https://mmember.copart.com",
     )
 
-    bootstrap = client.bootstrap_connector_session(username="user@example.com", password="secret")
+    bootstrap = client.bootstrap_connector_session(
+        username="user@example.com",
+        password="secret",
+        client_ip="203.0.113.10",
+    )
 
     assert bootstrap.account_label == "user@example.com"
     assert bootstrap.bundle.session_id == "session-1"
@@ -319,6 +327,7 @@ def test_direct_connector_bootstrap_uses_seed_d_token_and_me_info_verify_path() 
     assert login_headers["user-agent"] == "MemberMobile/5 CFNetwork/3860.400.51 Darwin/25.3.0"
     assert login_headers["accept-language"] == "en-US,en;q=0.9"
     assert login_headers["ins-sess"]
+    assert login_headers["ip_address"] == "203.0.113.10"
     assert login_body == {
         "username": "user@example.com",
         "password": "secret",
@@ -333,7 +342,7 @@ def test_direct_connector_bootstrap_uses_seed_d_token_and_me_info_verify_path() 
             "stateCode": "",
             "stateName": "",
             "zipCode": "",
-            "ip": "",
+            "ip": "203.0.113.10",
         },
         "anonymousCrmId": login_body["anonymousCrmId"],
     }
@@ -360,3 +369,41 @@ def test_direct_connector_bootstrap_maps_login_forbidden_to_profile_reject_error
         client.bootstrap_connector_session(username="user@example.com", password="secret")
 
     assert exc_info.value.status_code == 403
+
+
+def test_gateway_connector_bootstrap_sends_client_ip_to_gateway() -> None:
+    captured_json: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_json.update(json.loads(request.content.decode()))
+        return httpx.Response(
+            200,
+            json={
+                "session_bundle": {
+                    "encrypted_bundle": "ciphertext",
+                    "key_version": "v1",
+                },
+                "status": "connected",
+            },
+        )
+
+    client = CopartHttpClient(
+        settings=make_direct_settings().model_copy(
+            update={
+                "copart_gateway_base_url": "https://gateway.example.test",
+                "copart_gateway_token": "gateway-token",
+            }
+        ),
+        transport=httpx.MockTransport(handler),
+        base_url="https://gateway.example.test",
+        gateway_base_url="https://gateway.example.test",
+        gateway_token="gateway-token",
+    )
+
+    client.bootstrap_connector_session(username="user@example.com", password="secret", client_ip="203.0.113.10")
+
+    assert captured_json == {
+        "username": "user@example.com",
+        "password": "secret",
+        "client_ip": "203.0.113.10",
+    }
