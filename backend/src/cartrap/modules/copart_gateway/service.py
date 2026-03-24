@@ -278,7 +278,10 @@ class CopartGatewayService:
     def _build_fernet(self) -> Fernet:
         if not self._settings.copart_connector_encryption_key:
             raise CopartConfigurationError("COPART_CONNECTOR_ENCRYPTION_KEY is required for connector operations.")
-        return Fernet(self._settings.copart_connector_encryption_key.encode("utf-8"))
+        try:
+            return Fernet(self._settings.copart_connector_encryption_key.encode("utf-8"))
+        except (TypeError, ValueError) as exc:
+            raise CopartConfigurationError("COPART_CONNECTOR_ENCRYPTION_KEY is invalid.") from exc
 
     def _enforce_connect_rate_limit(self, username: str) -> None:
         window = timedelta(seconds=self._settings.copart_connector_connect_rate_limit_window_seconds)

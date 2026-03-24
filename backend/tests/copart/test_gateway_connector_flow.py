@@ -177,3 +177,31 @@ def test_gateway_connector_maps_auth_invalid_and_invalid_credentials(client: Tes
     assert invalid_credentials.headers["x-copart-gateway-error"] == "invalid_credentials"
     assert auth_invalid.status_code == 409
     assert auth_invalid.headers["x-copart-gateway-error"] == "auth_invalid"
+
+
+def test_gateway_connector_reports_invalid_encryption_key_configuration() -> None:
+    settings = Settings(
+        ENVIRONMENT="test",
+        APP_NAME="CarTrap Gateway Test",
+        MONGO_URI="mongodb://unused",
+        MONGO_DB="cartrap_test",
+        COPART_GATEWAY_BASE_URL=None,
+        COPART_GATEWAY_TOKEN="gateway-secret",
+        COPART_CONNECTOR_ENCRYPTION_KEY="not-a-valid-fernet-key",
+    )
+    app = create_gateway_app(settings)
+    client = TestClient(app)
+
+    with client:
+        client.app.state.gateway_service_factory = lambda: CopartGatewayService(
+            settings=client.app.state.settings,
+            client_factory=FakeDirectConnectorClient,
+        )
+        response = client.post(
+            "/v1/connector/bootstrap",
+            json={"username": "user@example.com", "password": "secret"},
+            headers={"Authorization": "Bearer gateway-secret"},
+        )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "COPART_CONNECTOR_ENCRYPTION_KEY is invalid."

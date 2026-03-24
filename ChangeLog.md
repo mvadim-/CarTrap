@@ -752,3 +752,8 @@
 - Оновлено `backend/src/cartrap/modules/provider_connections/service.py`: `CopartChallengeError` більше не провалюється в неочікуваний `500`; backend повертає керований `502 Bad Gateway` із явним bootstrap/challenge detail.
 - Оновлено `backend/tests/{copart/test_http_client.py,provider_connections/test_router.py}`: додано regression coverage для bootstrap без `x-d-token` у login response headers та для router mapping challenge failure -> `502`.
 - Verification: `./.venv/bin/pytest backend/tests/copart/test_http_client.py backend/tests/provider_connections/test_router.py backend/tests/test_config.py` -> `16 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime).
+
+## [2026-03-24 18:41] Surface invalid connector encryption key after successful bootstrap
+- Оновлено `backend/src/cartrap/modules/copart_gateway/service.py`: `Fernet(...)` build для `COPART_CONNECTOR_ENCRYPTION_KEY` тепер обгорнуто в явний `CopartConfigurationError`, щоб bootstrap не падав безіменним `500` після успішних `login` і `me-info`.
+- Оновлено `backend/tests/copart/test_gateway_connector_flow.py`: додано regression coverage для невалідного `COPART_CONNECTOR_ENCRYPTION_KEY`, яка перевіряє, що gateway повертає керований `500` з detail `COPART_CONNECTOR_ENCRYPTION_KEY is invalid.`.
+- Verification: `./.venv/bin/pytest backend/tests/copart/test_gateway_connector_flow.py` -> `3 passed`.
