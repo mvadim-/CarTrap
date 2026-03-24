@@ -1,7 +1,7 @@
 import { useEffect, useRef, type UIEvent } from "react";
 import { createPortal } from "react-dom";
 
-import type { FreshnessEnvelope, RefreshState, SearchResult } from "../../types";
+import type { FreshnessEnvelope, ProviderConnectionDiagnostic, RefreshState, SearchResult } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
 import { LotThumbnail } from "../shared/LotThumbnail";
 import { shouldUseMobileFullscreen } from "../shared/mobileFullscreen";
@@ -26,6 +26,7 @@ type Props = {
   lastSyncedAt?: string | null;
   freshness?: FreshnessEnvelope | null;
   refreshState?: RefreshState | null;
+  connectionDiagnostic?: ProviderConnectionDiagnostic | null;
   refreshError?: string | null;
   statusMessage?: string | null;
   mobileFullscreen?: boolean;
@@ -143,6 +144,7 @@ export function SearchResultsModal({
   lastSyncedAt = null,
   freshness = null,
   refreshState = null,
+  connectionDiagnostic = null,
   refreshError = null,
   statusMessage = null,
   mobileFullscreen = false,
@@ -314,6 +316,7 @@ export function SearchResultsModal({
   const hasStatusPanels = isRefreshingLive || Boolean(statusMessage) || Boolean(refreshError);
   const vehicleCountLabel = `${totalResults} ${totalResults === 1 ? "Vehicle" : "Vehicles"}`;
   const reliabilityBadge = getReliabilityBadge(freshness, refreshState, isRefreshingLive);
+  const liveRefreshBlocked = Boolean(connectionDiagnostic && connectionDiagnostic.status !== "ready");
 
   const modal = (
     <div
@@ -349,10 +352,10 @@ export function SearchResultsModal({
                     <button
                       type="button"
                       onClick={() => void onRefreshLive?.()}
-                      disabled={isRefreshingLive}
+                      disabled={isRefreshingLive || liveRefreshBlocked}
                       aria-busy={isRefreshingLive}
                     >
-                      {isRefreshingLive ? "Refreshing..." : "Refresh Live"}
+                      {isRefreshingLive ? "Refreshing..." : liveRefreshBlocked ? "Copart action blocked" : "Refresh Live"}
                     </button>
                   ) : null}
                   <button type="button" className="ghost-button" onClick={onClose}>
@@ -375,6 +378,9 @@ export function SearchResultsModal({
                       <span className={`status-pill status-pill--${reliabilityBadge.tone}`}>{reliabilityBadge.label}</span>
                       <p className="search-results-modal__reliability-copy">{reliabilityBadge.detail}</p>
                     </div>
+                  ) : null}
+                  {connectionDiagnostic && connectionDiagnostic.status !== "ready" ? (
+                    <AsyncStatus tone="neutral" compact message={connectionDiagnostic.message} className="panel-status" />
                   ) : null}
                   {hasStatusPanels ? (
                     <div className="search-results-modal__status-stack">
@@ -426,10 +432,10 @@ export function SearchResultsModal({
                     <button
                       type="button"
                       onClick={() => void onRefreshLive?.()}
-                      disabled={isRefreshingLive}
+                      disabled={isRefreshingLive || liveRefreshBlocked}
                       aria-busy={isRefreshingLive}
                     >
-                      {isRefreshingLive ? "Refreshing..." : "Refresh Live"}
+                      {isRefreshingLive ? "Refreshing..." : liveRefreshBlocked ? "Copart action blocked" : "Refresh Live"}
                     </button>
                   ) : null}
                   <button type="button" className="ghost-button" onClick={onClose}>
@@ -447,6 +453,9 @@ export function SearchResultsModal({
                   <span className={`status-pill status-pill--${reliabilityBadge.tone}`}>{reliabilityBadge.label}</span>
                   <p className="search-results-modal__reliability-copy">{reliabilityBadge.detail}</p>
                 </div>
+              ) : null}
+              {connectionDiagnostic && connectionDiagnostic.status !== "ready" ? (
+                <AsyncStatus tone="neutral" compact message={connectionDiagnostic.message} className="panel-status" />
               ) : null}
               {hasStatusPanels ? (
                 <div className="search-results-modal__status-stack">

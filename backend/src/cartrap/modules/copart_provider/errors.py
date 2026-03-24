@@ -13,6 +13,22 @@ class CopartConfigurationError(CopartClientError):
     """Raised when required transport configuration is missing or invalid."""
 
 
+class CopartAuthenticationError(CopartClientError):
+    """Raised when Copart rejects connector credentials."""
+
+
+class CopartChallengeError(CopartClientError):
+    """Raised when the native challenge/bootstrap flow cannot be replayed."""
+
+
+class CopartSessionInvalidError(CopartClientError):
+    """Raised when an existing session bundle is no longer authorized."""
+
+
+class CopartRateLimitError(CopartClientError):
+    """Raised when the gateway applies connector connect throttling."""
+
+
 class CopartGatewayError(CopartClientError):
     """Base exception for NAS gateway failures."""
 

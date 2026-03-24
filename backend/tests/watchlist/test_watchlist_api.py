@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 import sys
 
@@ -18,6 +19,11 @@ if str(ROOT) not in sys.path:
 
 import cartrap.app as app_module
 from cartrap.config import Settings
+from cartrap.modules.copart_provider.client import (
+    CopartConnectorBootstrapResult,
+    CopartConnectorExecutionResult,
+    CopartEncryptedSessionBundle,
+)
 from cartrap.modules.copart_provider.errors import CopartGatewayUnavailableError
 from cartrap.modules.copart_provider.models import CopartLotSnapshot
 
@@ -56,6 +62,79 @@ class GatewayUnavailableProvider:
     def fetch_lot(self, url: str) -> CopartLotSnapshot:
         del url
         raise CopartGatewayUnavailableError("gateway unavailable")
+
+    def close(self) -> None:
+        return None
+
+
+class FakeConnectorClient:
+    def __init__(self, app) -> None:
+        self._app = app
+
+    def bootstrap_connector_session(self, *, username: str, password: str) -> CopartConnectorBootstrapResult:
+        del password
+        bundle = CopartEncryptedSessionBundle(
+            encrypted_bundle=f"bundle:{username}",
+            key_version="v1",
+            captured_at=datetime.now(timezone.utc),
+            expires_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+        )
+        return CopartConnectorBootstrapResult(
+            bundle=bundle,
+            account_label=username,
+            connection_status="connected",
+            verified_at=datetime.now(timezone.utc),
+        )
+
+    def search_with_connector_session(self, payload: dict, bundle: CopartEncryptedSessionBundle) -> CopartConnectorExecutionResult:
+        del payload
+        del bundle
+        raise RuntimeError("Search execution is not used in watchlist tests.")
+
+    def lot_details_with_connector_session(
+        self,
+        lot_number: str,
+        bundle: CopartEncryptedSessionBundle,
+        etag: str | None = None,
+    ) -> CopartConnectorExecutionResult:
+        del bundle
+        del etag
+        provider = self._app.state.copart_provider_factory()
+        snapshot = provider.fetch_lot(f"https://www.copart.com/lot/{lot_number}")
+        payload = {
+            "lotDetails": {
+                "lotNumber": int(snapshot.lot_number),
+                "lotDescription": snapshot.title,
+                "saleDate": snapshot.sale_date.isoformat() if snapshot.sale_date else None,
+                "currentBid": snapshot.current_bid,
+                "buyTodayBid": snapshot.buy_now_price,
+                "currencyCode": snapshot.currency,
+                "status": snapshot.raw_status,
+                "lotImages": [{"url": str(url)} for url in snapshot.image_urls],
+                "thumbnailUrl": str(snapshot.thumbnail_url) if snapshot.thumbnail_url else None,
+                "odometer": snapshot.odometer,
+                "primaryDamage": snapshot.primary_damage,
+                "estimatedRetailValue": snapshot.estimated_retail_value,
+                "hasKey": snapshot.has_key,
+                "drivetrain": snapshot.drivetrain,
+                "highlights": snapshot.highlights,
+                "encryptedVIN": _encode_vin(snapshot.vin),
+            }
+        }
+        return CopartConnectorExecutionResult(
+            payload=payload,
+            bundle=CopartEncryptedSessionBundle(
+                encrypted_bundle="bundle:rotated",
+                key_version="v1",
+                captured_at=datetime.now(timezone.utc),
+                expires_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+            ),
+            etag='"lot-etag"',
+            not_modified=False,
+            connection_status="connected",
+            verified_at=datetime.now(timezone.utc),
+            used_at=datetime.now(timezone.utc),
+        )
 
     def close(self) -> None:
         return None
@@ -121,6 +200,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         ),
     }
     app.state.copart_provider_factory = lambda: FakeProvider(snapshots)
+    app.state.copart_connector_client_factory = lambda: FakeConnectorClient(app)
     return TestClient(app)
 
 
@@ -137,7 +217,26 @@ def _create_user(client: TestClient, email: str, password: str) -> str:
         headers={"Authorization": f"Bearer {admin_token}"},
     ).json()
     client.post("/api/auth/invites/accept", json={"token": invite["token"], "password": password})
-    return _login(client, email, password)
+    token = _login(client, email, password)
+    _connect_copart(client, token, email)
+    return token
+
+
+def _connect_copart(client: TestClient, token: str, username: str) -> None:
+    response = client.post(
+        "/api/provider-connections/copart/connect",
+        json={"username": username, "password": "copart-secret"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+
+
+def _encode_vin(vin: str | None) -> str | None:
+    if not vin:
+        return None
+    key = "g2memberutil97534"
+    encoded = bytes(ord(char) ^ ord(key[index]) for index, char in enumerate(vin))
+    return base64.b64encode(encoded).decode("ascii")
 
 
 def test_watchlist_crud_for_user(client: TestClient) -> None:
@@ -290,7 +389,7 @@ def test_watchlist_returns_upstream_error_on_invalid_lot_source(client: TestClie
 
         response = client.post(
             "/api/watchlist",
-            json={"lot_url": "https://www.copart.com/lot/404"},
+            json={"lot_url": "https://www.copart.com/lot/12345678"},
             headers={"Authorization": f"Bearer {user_token}"},
         )
 
@@ -307,10 +406,10 @@ def test_watchlist_returns_gateway_unavailable_error_without_direct_fallback(cli
             "/api/watchlist",
             json={"lot_url": "https://www.copart.com/lot/12345678"},
             headers={"Authorization": f"Bearer {user_token}"},
-        )
+    )
 
     assert response.status_code == 502
-    assert response.json()["detail"] == "Failed to fetch lot details from Copart: gateway unavailable"
+    assert response.json()["detail"] == "Copart gateway is unavailable."
 
 
 def test_watchlist_delete_is_scoped_to_owner(client: TestClient) -> None:

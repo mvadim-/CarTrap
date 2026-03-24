@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 
 
 from cartrap.config import Settings
-from cartrap.modules.copart_provider.client import CopartHttpClient
+from cartrap.modules.copart_provider.client import CopartEncryptedSessionBundle, CopartHttpClient
 
 
 def make_direct_settings() -> Settings:
@@ -199,3 +199,69 @@ def test_client_requires_api_credentials() -> None:
 
     with pytest.raises(RuntimeError, match="credentials are not configured"):
         client.search({"MISC": []})
+
+
+def test_gateway_connector_methods_parse_internal_contract() -> None:
+    requests: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, str(request.url)))
+        if request.url.path == "/v1/connector/bootstrap":
+            return httpx.Response(
+                200,
+                json={
+                    "session_bundle": {
+                        "encrypted_bundle": "ciphertext",
+                        "key_version": "v1",
+                        "captured_at": "2026-03-24T17:00:00Z",
+                        "expires_at": "2026-12-31T00:00:00Z",
+                    },
+                    "status": "connected",
+                    "verified_at": "2026-03-24T17:00:00Z",
+                    "account_label": "user@example.com",
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "payload": {"response": {"docs": [], "numFound": 0}},
+                "session_bundle": {
+                    "encrypted_bundle": "ciphertext-2",
+                    "key_version": "v1",
+                    "captured_at": "2026-03-24T17:05:00Z",
+                    "expires_at": "2026-12-31T00:00:00Z",
+                },
+                "status": "connected",
+                "verified_at": "2026-03-24T17:05:00Z",
+                "used_at": "2026-03-24T17:05:00Z",
+            },
+        )
+
+    client = CopartHttpClient(
+        settings=make_direct_settings().model_copy(
+            update={
+                "copart_gateway_base_url": "https://gateway.example.test",
+                "copart_gateway_token": "gateway-token",
+            }
+        ),
+        transport=httpx.MockTransport(handler),
+        base_url="https://gateway.example.test",
+        gateway_base_url="https://gateway.example.test",
+        gateway_token="gateway-token",
+    )
+    bundle = CopartEncryptedSessionBundle(
+        encrypted_bundle="ciphertext",
+        key_version="v1",
+    )
+
+    bootstrap = client.bootstrap_connector_session(username="user@example.com", password="secret")
+    search = client.search_with_connector_session({"pageNumber": 1}, bundle)
+
+    assert bootstrap.account_label == "user@example.com"
+    assert bootstrap.bundle.encrypted_bundle == "ciphertext"
+    assert search.payload == {"response": {"docs": [], "numFound": 0}}
+    assert search.bundle.encrypted_bundle == "ciphertext-2"
+    assert requests == [
+        ("POST", "https://gateway.example.test/v1/connector/bootstrap"),
+        ("POST", "https://gateway.example.test/v1/connector/execute/search"),
+    ]

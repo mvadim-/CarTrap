@@ -143,6 +143,43 @@ function buildLiveSyncStatus(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function buildProviderConnection(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "provider-connection-1",
+    provider: "copart",
+    status: "connected",
+    account_label: "copart-user@example.com",
+    connected_at: "2026-03-24T09:30:00Z",
+    disconnected_at: null,
+    last_verified_at: "2026-03-24T09:35:00Z",
+    last_used_at: "2026-03-24T10:00:00Z",
+    expires_at: "2026-03-24T12:30:00Z",
+    reconnect_required: false,
+    usable: true,
+    bundle_version: 3,
+    bundle: {
+      key_version: "v1",
+      captured_at: "2026-03-24T09:30:00Z",
+      expires_at: "2026-03-24T12:30:00Z",
+    },
+    last_error: null,
+    created_at: "2026-03-24T09:30:00Z",
+    updated_at: "2026-03-24T10:00:00Z",
+    ...overrides,
+  };
+}
+
+function buildConnectionDiagnostic(overrides: Record<string, unknown> = {}) {
+  return {
+    provider: "copart",
+    status: "reconnect_required",
+    message: "Reconnect Copart from Account to restore live search and refresh actions.",
+    connection_id: "provider-connection-1",
+    reconnect_required: true,
+    ...overrides,
+  };
+}
+
 function submitLoginForm() {
   fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "admin@example.com" } });
   fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "secret123" } });
@@ -236,6 +273,7 @@ describe("CarTrap app", () => {
   let nextSavedSearchSeedNewLotNumbers: string[];
   let watchlistItems: Array<ReturnType<typeof buildTrackedLot>>;
   let savedSearches: Array<ReturnType<typeof buildSavedSearch>>;
+  let providerConnections: Array<ReturnType<typeof buildProviderConnection>>;
   let serviceWorkerMessageListener: ((event: MessageEvent) => void) | null;
 
   beforeEach(() => {
@@ -257,6 +295,7 @@ describe("CarTrap app", () => {
     savedSearchRefreshCallCount = 0;
     nextSavedSearchSeedNewLotNumbers = [];
     watchlistItems = [];
+    providerConnections = [buildProviderConnection()];
     serviceWorkerMessageListener = null;
     savedSearchesShouldFail = false;
     savedSearchRefreshShouldFail = false;
@@ -319,6 +358,58 @@ describe("CarTrap app", () => {
             }),
             { status: 200 },
           );
+        }
+        if (url.includes("/provider-connections")) {
+          const method = init?.method ?? "GET";
+          if (method === "GET") {
+            return new Response(JSON.stringify({ items: providerConnections }), { status: 200 });
+          }
+          if (method === "POST" && url.endsWith("/copart/connect")) {
+            const body = init?.body ? JSON.parse(String(init.body)) : {};
+            const connection = buildProviderConnection({
+              account_label: body.username ?? "copart-user@example.com",
+              status: "connected",
+              reconnect_required: false,
+              usable: true,
+              disconnected_at: null,
+              last_error: null,
+              updated_at: "2026-03-24T10:15:00Z",
+            });
+            providerConnections = [connection];
+            return new Response(JSON.stringify({ connection }), { status: 200 });
+          }
+          if (method === "POST" && url.endsWith("/copart/reconnect")) {
+            const body = init?.body ? JSON.parse(String(init.body)) : {};
+            const current = providerConnections.find((item) => item.provider === "copart");
+            const connection = buildProviderConnection({
+              id: current?.id ?? "provider-connection-1",
+              account_label: body.username ?? current?.account_label ?? "copart-user@example.com",
+              status: "connected",
+              reconnect_required: false,
+              usable: true,
+              disconnected_at: null,
+              last_error: null,
+              updated_at: "2026-03-24T10:20:00Z",
+            });
+            providerConnections = [connection];
+            return new Response(JSON.stringify({ connection }), { status: 200 });
+          }
+          if (method === "DELETE" && url.endsWith("/provider-connections/copart")) {
+            const current = providerConnections.find((item) => item.provider === "copart");
+            const connection = buildProviderConnection({
+              id: current?.id ?? "provider-connection-1",
+              account_label: current?.account_label ?? "copart-user@example.com",
+              status: "disconnected",
+              reconnect_required: false,
+              usable: false,
+              disconnected_at: "2026-03-24T10:25:00Z",
+              bundle: null,
+              last_error: null,
+              updated_at: "2026-03-24T10:25:00Z",
+            });
+            providerConnections = [connection];
+            return new Response(JSON.stringify({ connection }), { status: 200 });
+          }
         }
         if (url.includes("/watchlist") && !url.includes("/search/watchlist")) {
           if ((init?.method ?? "GET") === "GET" && authHeader === "Bearer expired-token") {
@@ -1895,6 +1986,129 @@ describe("CarTrap app", () => {
     expect(appShell?.contains(galleryDialog)).toBe(false);
     expect(galleryDialog.className).toContain("modal-card--mobile-screen");
     expect(document.body.style.position).toBe("fixed");
+  });
+
+  it("connects Copart from a disconnected state and re-enables live actions", async () => {
+    providerConnections = [
+      buildProviderConnection({
+        status: "disconnected",
+        usable: false,
+        disconnected_at: "2026-03-24T10:25:00Z",
+        bundle: null,
+      }),
+    ];
+
+    render(<App />);
+    submitLoginForm();
+
+    expect((await screen.findAllByText(/connect copart to enable live search and watchlist refreshes\./i)).length).toBe(2);
+    const newSearchButtons = screen.getAllByRole("button", { name: /new search|copart required/i });
+    expect((newSearchButtons[0] as HTMLButtonElement).disabled).toBe(true);
+
+    openAccountMenu();
+    const connectionCard = await screen.findByLabelText(/copart connection/i);
+    expect(within(connectionCard).getByText(/^Disconnected$/i)).toBeTruthy();
+    fireEvent.change(within(connectionCard).getByLabelText(/copart email/i), {
+      target: { value: "buyer@example.com" },
+    });
+    fireEvent.change(within(connectionCard).getByLabelText(/copart password/i), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(within(connectionCard).getByRole("button", { name: /connect copart/i }));
+
+    expect(await within(connectionCard).findByText(/copart connected\./i)).toBeTruthy();
+    await waitFor(() => {
+      expect(within(connectionCard).getByText(/^Connected$/i)).toBeTruthy();
+    });
+    expect(screen.queryByText(/connect copart to enable live search and watchlist refreshes\./i)).toBeNull();
+    expect((screen.getAllByRole("button", { name: /^new search$/i })[0] as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("shows reconnect-required notice and restores the connector after reconnect", async () => {
+    providerConnections = [
+      buildProviderConnection({
+        status: "reconnect_required",
+        reconnect_required: true,
+        usable: false,
+        last_error: {
+          code: "auth_invalid",
+          message: "Copart session expired.",
+          retryable: false,
+          occurred_at: "2026-03-24T10:10:00Z",
+        },
+      }),
+    ];
+
+    render(<App />);
+    submitLoginForm();
+
+    expect(await screen.findByText(/copart reconnect required/i)).toBeTruthy();
+
+    openAccountMenu();
+    const connectionCard = await screen.findByLabelText(/copart connection/i);
+    expect(within(connectionCard).getByText(/^Reconnect required$/i)).toBeTruthy();
+    fireEvent.change(within(connectionCard).getByLabelText(/copart password/i), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(within(connectionCard).getByRole("button", { name: /reconnect copart/i }));
+
+    expect(await within(connectionCard).findByText(/copart connection restored\./i)).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.queryByText(/copart reconnect required/i)).toBeNull();
+    });
+    expect(within(connectionCard).getByText(/^Connected$/i)).toBeTruthy();
+  });
+
+  it("disconnects Copart from the account menu and surfaces the missing-connection guardrail", async () => {
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    openAccountMenu();
+    const connectionCard = await screen.findByLabelText(/copart connection/i);
+    fireEvent.click(within(connectionCard).getByRole("button", { name: /^disconnect$/i }));
+
+    expect(await within(connectionCard).findByText(/copart connection removed\./i)).toBeTruthy();
+    await waitFor(() => {
+      expect(within(connectionCard).getByText(/^Disconnected$/i)).toBeTruthy();
+    });
+    expect(screen.getAllByText(/connect copart to enable live search and watchlist refreshes\./i).length).toBe(2);
+    expect((screen.getAllByRole("button", { name: /new search|copart required/i })[0] as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it("surfaces resource-level connection diagnostics and blocks affected live actions", async () => {
+    savedSearches = [
+      buildSavedSearch({
+        connection_diagnostic: buildConnectionDiagnostic({
+          message: "Reconnect Copart to refresh this saved search.",
+        }),
+      }),
+    ];
+    watchlistItems = [
+      buildTrackedLot({
+        connection_diagnostic: buildConnectionDiagnostic({
+          message: "Reconnect Copart to refresh this tracked lot.",
+        }),
+      }),
+    ];
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/reconnect copart to refresh this saved search\./i);
+    expect(screen.getByText(/reconnect copart to refresh this tracked lot\./i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /more actions for ford mustang mach-e 2025-2027/i }));
+    const refreshSavedSearchButton = await screen.findByRole("menuitem", { name: /copart action blocked/i });
+    expect((refreshSavedSearchButton as HTMLButtonElement).disabled).toBe(true);
+
+    const refreshWatchlistButton = screen.getAllByRole("button", { name: /copart action blocked/i }).find((button) =>
+      button.className.includes("ghost-button--quiet"),
+    );
+    expect(refreshWatchlistButton).toBeTruthy();
+    expect((refreshWatchlistButton as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("refreshes expired access token and keeps the session active", async () => {

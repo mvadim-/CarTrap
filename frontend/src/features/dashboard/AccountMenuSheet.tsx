@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 
-import type { LiveSyncStatus, ReliabilityDiagnostics, User } from "../../types";
+import type { LiveSyncStatus, ProviderConnection, ReliabilityDiagnostics, User } from "../../types";
+import { CopartConnectionCard } from "../integrations/CopartConnectionCard";
 import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 type Props = {
@@ -9,6 +10,13 @@ type Props = {
   user: User;
   liveSyncStatus: LiveSyncStatus | null;
   diagnostics: ReliabilityDiagnostics;
+  copartConnection: ProviderConnection | null;
+  copartConnectionError: string | null;
+  isLoadingCopartConnection: boolean;
+  isBrowserOffline: boolean;
+  onConnectCopart: (payload: { username: string; password: string }) => Promise<void>;
+  onReconnectCopart: (payload: { username: string; password: string }) => Promise<void>;
+  onDisconnectCopart: () => Promise<void>;
   onClose: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
@@ -31,6 +39,13 @@ export function AccountMenuSheet({
   user,
   liveSyncStatus,
   diagnostics,
+  copartConnection,
+  copartConnectionError,
+  isLoadingCopartConnection,
+  isBrowserOffline,
+  onConnectCopart,
+  onReconnectCopart,
+  onDisconnectCopart,
   onClose,
   onOpenSettings,
   onLogout,
@@ -85,6 +100,16 @@ export function AccountMenuSheet({
               <span className="status-pill">{user.role}</span>
             </div>
           </section>
+
+          <CopartConnectionCard
+            connection={copartConnection}
+            isLoading={isLoadingCopartConnection}
+            loadError={copartConnectionError}
+            isBrowserOffline={isBrowserOffline}
+            onConnect={onConnectCopart}
+            onReconnect={onReconnectCopart}
+            onDisconnect={onDisconnectCopart}
+          />
 
           {isAdmin ? (
             <>

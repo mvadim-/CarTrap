@@ -18,6 +18,7 @@ from cartrap.modules.copart_provider.models import CopartSearchResult
 from cartrap.modules.copart_provider.service import CopartProvider
 from cartrap.modules.notifications.service import NotificationService
 from cartrap.modules.monitoring.job_runtime import JobRuntimeService
+from cartrap.modules.provider_connections.service import ProviderConnectionService
 from cartrap.modules.search.catalog_refresh import SearchCatalogRefreshJob
 from cartrap.modules.search.repository import SavedSearchRepository, SearchCatalogRepository
 from cartrap.modules.search.schemas import SavedSearchCreateRequest, SearchRequest
@@ -44,6 +45,7 @@ class SearchService:
         notification_service: Optional[NotificationService] = None,
         saved_search_poll_interval_minutes: int = DEFAULT_SAVED_SEARCH_POLL_INTERVAL_MINUTES,
         refresh_job_runtime: JobRuntimeService | None = None,
+        provider_connection_service: ProviderConnectionService | None = None,
     ) -> None:
         self._database = database
         self._provider_factory = provider_factory or CopartProvider
@@ -56,14 +58,15 @@ class SearchService:
         self._system_status_service = SystemStatusService(database)
         self._saved_search_poll_interval_minutes = saved_search_poll_interval_minutes
         self._refresh_job_runtime = refresh_job_runtime or JobRuntimeService(database)
+        self._provider_connection_service = provider_connection_service
         self._catalog_refresh_factory = catalog_refresh_factory or (
             lambda: SearchCatalogRefreshJob(provider_factory=self._provider_factory, overrides_path=CATALOG_OVERRIDES_PATH)
         )
 
-    def search(self, payload: SearchRequest) -> dict:
-        return self._execute_search(payload, live_sync_source="manual_search")
+    def search(self, owner_user: dict, payload: SearchRequest) -> dict:
+        return self._execute_search(payload, live_sync_source="manual_search", owner_user_id=owner_user["id"])
 
-    def _execute_search(self, payload: SearchRequest, *, live_sync_source: str) -> dict:
+    def _execute_search(self, payload: SearchRequest, *, live_sync_source: str, owner_user_id: str | None = None) -> dict:
         correlation_id = new_correlation_id(live_sync_source)
         started_at = perf_counter()
         source_request = payload.to_api_request().to_payload()
@@ -78,7 +81,7 @@ class SearchService:
                 model=payload.model,
             ),
         )
-        provider = self._provider_factory()
+        provider = self._build_live_provider(owner_user_id)
         try:
             first_page = provider.search_lots(source_request)
             self._system_status_service.mark_live_sync_available(live_sync_source)
@@ -249,7 +252,11 @@ class SearchService:
             ),
         )
         try:
-            search_response = self._execute_search(criteria, live_sync_source="saved_search_refresh")
+            search_response = self._execute_search(
+                criteria,
+                live_sync_source="saved_search_refresh",
+                owner_user_id=owner_user["id"],
+            )
         except HTTPException as exc:
             retryable, error_message = self.classify_refresh_exception(exc)
             self._saved_search_repository.update_saved_search_refresh_state(
@@ -417,6 +424,31 @@ class SearchService:
                         resource_id=saved_search_id,
                         now=current_time,
                     )
+                )
+                continue
+
+            diagnostic = self._get_connection_diagnostic(saved_search["owner_user_id"])
+            if diagnostic is not None and diagnostic["status"] != "ready":
+                skipped += 1
+                jobs.append(
+                    self._refresh_job_runtime.fail_non_retryable(
+                        runtime,
+                        now=current_time,
+                        outcome=diagnostic["status"],
+                        error_message=diagnostic["message"],
+                        metadata={"owner_user_id": saved_search["owner_user_id"], "priority_class": priority_class},
+                    )
+                )
+                self._saved_search_repository.update_saved_search_refresh_state(
+                    saved_search_id,
+                    {
+                        **self._build_refresh_failure_payload(
+                            current_time,
+                            error_message=diagnostic["message"],
+                            retryable=False,
+                        ),
+                        "last_refresh_priority_class": priority_class,
+                    },
                 )
                 continue
 
@@ -610,7 +642,12 @@ class SearchService:
             saved_search_id,
             saved_search["owner_user_id"],
         )
-        fetch_result = self.fetch_result_count(criteria, etag=saved_search.get("search_etag"), checked_at=now)
+        fetch_result = self.fetch_result_count(
+            criteria,
+            etag=saved_search.get("search_etag"),
+            checked_at=now,
+            owner_user_id=saved_search["owner_user_id"],
+        )
         if fetch_result["not_modified"] and cache_document is not None:
             self._saved_search_repository.update_saved_search_poll_state(
                 saved_search_id,
@@ -625,7 +662,11 @@ class SearchService:
             )
             return None
 
-        search_response = self._execute_search(criteria, live_sync_source="saved_search_poll")
+        search_response = self._execute_search(
+            criteria,
+            live_sync_source="saved_search_poll",
+            owner_user_id=saved_search["owner_user_id"],
+        )
         next_result_count = search_response["total_results"]
         previous_result_count = saved_search.get("result_count")
         current_lot_numbers = self._ordered_unique_lot_numbers(search_response["results"])
@@ -668,9 +709,15 @@ class SearchService:
             "cached_new_count": len(refreshed_cache.get("new_lot_numbers", [])),
         }
 
-    def fetch_result_count(self, payload: SearchRequest, etag: str | None = None, checked_at: datetime | None = None) -> dict:
+    def fetch_result_count(
+        self,
+        payload: SearchRequest,
+        etag: str | None = None,
+        checked_at: datetime | None = None,
+        owner_user_id: str | None = None,
+    ) -> dict:
         source_request = payload.to_api_request().to_payload()
-        provider = self._provider_factory()
+        provider = self._build_live_provider(owner_user_id)
         try:
             if hasattr(provider, "fetch_search_count_conditional"):
                 result = provider.fetch_search_count_conditional(source_request, etag=etag)
@@ -774,6 +821,7 @@ class SearchService:
             "last_synced_at": cache_metadata["last_synced_at"],
             "freshness": freshness,
             "refresh_state": self.serialize_refresh_state(document),
+            "connection_diagnostic": self._get_connection_diagnostic(document.get("owner_user_id")),
             "created_at": document["created_at"],
         }
 
@@ -916,3 +964,13 @@ class SearchService:
             "last_refresh_outcome": "refresh_failed",
             "updated_at": now,
         }
+
+    def _build_live_provider(self, owner_user_id: str | None) -> CopartProvider:
+        if self._provider_connection_service is not None and owner_user_id is not None:
+            return self._provider_connection_service.build_provider_for_owner(owner_user_id)
+        return self._provider_factory()
+
+    def _get_connection_diagnostic(self, owner_user_id: str | None) -> dict | None:
+        if self._provider_connection_service is None or not owner_user_id:
+            return None
+        return self._provider_connection_service.get_connection_diagnostic(owner_user_id)

@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
+from cartrap.modules.provider_connections.schemas import ProviderConnectionDiagnosticResponse
 from cartrap.modules.system_status.schemas import FreshnessEnvelopeResponse, RefreshStateResponse
 
 
@@ -57,6 +58,7 @@ class WatchlistItemResponse(BaseModel):
     last_checked_at: datetime
     freshness: FreshnessEnvelopeResponse
     refresh_state: RefreshStateResponse
+    connection_diagnostic: Optional[ProviderConnectionDiagnosticResponse] = None
     created_at: datetime
     has_unseen_update: bool = False
     latest_change_at: Optional[datetime] = None

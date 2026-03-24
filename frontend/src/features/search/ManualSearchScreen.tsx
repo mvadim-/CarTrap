@@ -112,6 +112,8 @@ type Props = {
   onYearToChange: (value: string) => void;
   activeFilterLabels: string[];
   summaryLabel: string;
+  isSearchingDisabled?: boolean;
+  disabledReason?: string | null;
   onOpenFilters: () => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -142,6 +144,8 @@ export function ManualSearchScreen({
   onYearToChange,
   activeFilterLabels,
   summaryLabel,
+  isSearchingDisabled = false,
+  disabledReason = null,
   onOpenFilters,
   onClose,
   onSubmit,
@@ -207,6 +211,9 @@ export function ManualSearchScreen({
         {manualSearchError ? (
           <AsyncStatus tone="error" title="Search request failed" message={manualSearchError} className="panel-status" />
         ) : null}
+        {isSearchingDisabled && disabledReason ? (
+          <AsyncStatus tone="neutral" compact message={disabledReason} className="panel-status" />
+        ) : null}
 
         <div className="search-summary-bar search-summary-bar--screen" aria-live="polite">
           <p className="search-summary-bar__headline">{summaryLabel}</p>
@@ -228,7 +235,7 @@ export function ManualSearchScreen({
             placeholder="Type make prefix"
             options={makeOptions}
             emptyMessage={catalogReady ? "No makes found." : "Loading catalog..."}
-            disabled={isLoadingCatalog || !catalogReady}
+            disabled={isSearchingDisabled || isLoadingCatalog || !catalogReady}
             onQueryChange={onMakeQueryChange}
             onSelect={onMakeSelect}
           />
@@ -240,7 +247,7 @@ export function ManualSearchScreen({
             placeholder="Type model word"
             options={modelOptions}
             emptyMessage={selectedMakeLabel ? "No models found." : "Select make first."}
-            disabled={isModelDisabled}
+            disabled={isSearchingDisabled || isModelDisabled}
             onQueryChange={onModelQueryChange}
             onSelect={onModelSelect}
           />
@@ -252,6 +259,7 @@ export function ManualSearchScreen({
                 maxLength={4}
                 pattern="[0-9]*"
                 value={yearFrom}
+                disabled={isSearchingDisabled}
                 onChange={(event) => onYearFromChange(event.target.value)}
                 placeholder="2025"
               />
@@ -263,6 +271,7 @@ export function ManualSearchScreen({
                 maxLength={4}
                 pattern="[0-9]*"
                 value={yearTo}
+                disabled={isSearchingDisabled}
                 onChange={(event) => onYearToChange(event.target.value)}
                 placeholder="2027"
               />
@@ -275,6 +284,7 @@ export function ManualSearchScreen({
               className="ghost-button search-grid__filters-button"
               aria-label={activeFilterLabels.length > 0 ? `Filters (${activeFilterLabels.length} active)` : "Filters"}
               onClick={onOpenFilters}
+              disabled={isSearchingDisabled}
             >
               <span>Filters</span>
               {activeFilterLabels.length > 0 ? (
@@ -283,8 +293,8 @@ export function ManualSearchScreen({
                 </span>
               ) : null}
             </button>
-            <button type="submit" disabled={!selectedMakeLabel || isSearching} aria-busy={isSearching}>
-              {isSearching ? "Searching..." : "Search Lots"}
+            <button type="submit" disabled={!selectedMakeLabel || isSearching || isSearchingDisabled} aria-busy={isSearching}>
+              {isSearching ? "Searching..." : isSearchingDisabled ? "Copart action blocked" : "Search Lots"}
             </button>
           </div>
         </form>

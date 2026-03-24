@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request, status
 
 from cartrap.api.dependencies import get_current_user
+from cartrap.modules.provider_connections.service import ProviderConnectionService
 from cartrap.modules.watchlist.schemas import (
     WatchlistCreateRequest,
     WatchlistCreateResponse,
@@ -19,10 +20,16 @@ router = APIRouter(prefix="/watchlist", tags=["watchlist"])
 
 def get_watchlist_service(request: Request) -> WatchlistService:
     provider_factory = getattr(request.app.state, "copart_provider_factory", None)
+    connector_client_factory = getattr(request.app.state, "copart_connector_client_factory", None)
     settings = request.app.state.settings
     return WatchlistService(
         request.app.state.mongo.database,
         provider_factory=provider_factory,
+        provider_connection_service=ProviderConnectionService(
+            request.app.state.mongo.database,
+            settings=settings,
+            connector_client_factory=connector_client_factory,
+        ),
         default_poll_interval_minutes=settings.watchlist_default_poll_interval_minutes,
     )
 

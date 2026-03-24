@@ -1892,6 +1892,24 @@ button:focus-visible,
   color: #b13022;
 }
 
+.copart-connection-card__form {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.35rem;
+}
+
+.copart-connection-card__field {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  color: #36505c;
+}
+
+.copart-connection-card__actions {
+  display: grid;
+  gap: 0.6rem;
+}
+
 .admin-panel__details {
   margin: 0.85rem 0;
 }

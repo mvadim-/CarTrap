@@ -24,6 +24,50 @@ export type RefreshState = {
   metrics: Record<string, number>;
 };
 
+export type ProviderConnectionStatus = "connected" | "expiring" | "reconnect_required" | "disconnected" | "error";
+
+export type ProviderConnectionDiagnosticStatus = "ready" | "connection_missing" | "reconnect_required";
+
+export type ProviderConnectionDiagnostic = {
+  provider: string;
+  status: ProviderConnectionDiagnosticStatus;
+  message: string;
+  connection_id: string | null;
+  reconnect_required: boolean;
+};
+
+export type ProviderConnection = {
+  id: string;
+  provider: string;
+  status: ProviderConnectionStatus;
+  account_label: string | null;
+  connected_at: string | null;
+  disconnected_at: string | null;
+  last_verified_at: string | null;
+  last_used_at: string | null;
+  expires_at: string | null;
+  reconnect_required: boolean;
+  usable: boolean;
+  bundle_version: number;
+  bundle:
+    | {
+        key_version: string;
+        captured_at: string | null;
+        expires_at: string | null;
+      }
+    | null;
+  last_error:
+    | {
+        code: string;
+        message: string;
+        retryable: boolean;
+        occurred_at: string | null;
+      }
+    | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ReliabilitySummary = {
   total: number;
   attention: number;
@@ -77,6 +121,7 @@ export type WatchlistItem = {
   last_checked_at: string;
   freshness: FreshnessEnvelope;
   refresh_state: RefreshState;
+  connection_diagnostic?: ProviderConnectionDiagnostic | null;
   created_at: string;
   has_unseen_update: boolean;
   latest_change_at: string | null;
@@ -126,6 +171,7 @@ export type SavedSearch = {
   last_synced_at: string | null;
   freshness: FreshnessEnvelope;
   refresh_state: RefreshState;
+  connection_diagnostic?: ProviderConnectionDiagnostic | null;
   created_at: string;
 };
 

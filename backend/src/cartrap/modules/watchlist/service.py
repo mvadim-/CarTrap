@@ -13,6 +13,7 @@ from cartrap.modules.copart_provider.models import CopartLotSnapshot
 from cartrap.modules.monitoring.change_detection import detect_significant_changes
 from cartrap.modules.monitoring.polling_policy import DEFAULT_INTERVAL_MINUTES, get_poll_interval_minutes
 from cartrap.modules.copart_provider.service import CopartProvider
+from cartrap.modules.provider_connections.service import ProviderConnectionService
 from cartrap.modules.system_status.service import SystemStatusService, build_freshness_envelope
 from cartrap.modules.watchlist.repository import WatchlistRepository
 
@@ -36,15 +37,17 @@ class WatchlistService:
         database: Database,
         provider_factory: Optional[Callable[[], CopartProvider]] = None,
         default_poll_interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
+        provider_connection_service: ProviderConnectionService | None = None,
     ) -> None:
         self.repository = WatchlistRepository(database)
         self.repository.ensure_indexes()
         self._provider_factory = provider_factory or CopartProvider
         self._default_poll_interval_minutes = default_poll_interval_minutes
         self._system_status_service = SystemStatusService(database)
+        self._provider_connection_service = provider_connection_service
 
     def add_tracked_lot(self, owner_user: dict, lot_url: str) -> dict:
-        snapshot, detail_etag = self._fetch_snapshot(lot_url)
+        snapshot, detail_etag = self._fetch_snapshot(lot_url, owner_user_id=owner_user["id"])
         existing = self.repository.find_tracked_lot_by_owner_and_lot_number(owner_user["id"], snapshot.lot_number)
         if existing is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Lot is already in watchlist.")
@@ -125,7 +128,7 @@ class WatchlistService:
 
         now = self._now()
         try:
-            snapshot, detail_etag = self._fetch_snapshot(tracked_lot["url"])
+            snapshot, detail_etag = self._fetch_snapshot(tracked_lot["url"], owner_user_id=owner_user["id"])
         except HTTPException as exc:
             retryable, error_message = self.classify_refresh_exception(exc)
             self.repository.update_tracked_lot_state(
@@ -177,8 +180,8 @@ class WatchlistService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked lot not found.")
         return {"tracked_lot": self.serialize_tracked_lot(refreshed, live_sync_status=live_sync_status)}
 
-    def _fetch_snapshot(self, lot_url: str) -> tuple[CopartLotSnapshot, str | None]:
-        provider = self._provider_factory()
+    def _fetch_snapshot(self, lot_url: str, owner_user_id: str | None = None) -> tuple[CopartLotSnapshot, str | None]:
+        provider = self._build_live_provider(owner_user_id)
         try:
             if hasattr(provider, "fetch_lot_conditional"):
                 result = provider.fetch_lot_conditional(lot_url)
@@ -285,6 +288,7 @@ class WatchlistService:
             "last_checked_at": document["last_checked_at"],
             "freshness": freshness,
             "refresh_state": self.serialize_refresh_state(document),
+            "connection_diagnostic": self._get_connection_diagnostic(document.get("owner_user_id")),
             "created_at": document["created_at"],
             "has_unseen_update": document.get("has_unseen_update", False),
             "latest_change_at": document.get("latest_change_at"),
@@ -361,3 +365,13 @@ class WatchlistService:
     @staticmethod
     def _now() -> datetime:
         return datetime.now(timezone.utc)
+
+    def _build_live_provider(self, owner_user_id: str | None) -> CopartProvider:
+        if self._provider_connection_service is not None and owner_user_id is not None:
+            return self._provider_connection_service.build_provider_for_owner(owner_user_id)
+        return self._provider_factory()
+
+    def _get_connection_diagnostic(self, owner_user_id: str | None) -> dict | None:
+        if self._provider_connection_service is None or not owner_user_id:
+            return None
+        return self._provider_connection_service.get_connection_diagnostic(owner_user_id)

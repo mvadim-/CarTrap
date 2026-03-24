@@ -16,16 +16,20 @@ import {
   acceptInvite,
   addFromSearch,
   addLotNumberToWatchlist,
+  connectCopartConnection,
   configureAuthLifecycle,
   createInvite,
   deleteSavedSearch,
+  disconnectCopartConnection,
   getPushSubscriptionConfig,
   getSearchCatalog,
   getSystemStatus,
+  listProviderConnections,
   listPushSubscriptions,
   listSavedSearches,
   listWatchlist,
   login,
+  reconnectCopartConnection,
   refreshWatchlistLotLive,
   refreshSavedSearchLive,
   refreshSearchCatalog,
@@ -40,6 +44,8 @@ import {
 import type {
   Invite,
   LiveSyncStatus,
+  ProviderConnection,
+  ProviderConnectionDiagnostic,
   PushDeliveryResult,
   PushSubscriptionConfig,
   PushSubscriptionItem,
@@ -432,6 +438,7 @@ export function App() {
   const [searchTotalResults, setSearchTotalResults] = useState(0);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [providerConnections, setProviderConnections] = useState<ProviderConnection[]>([]);
   const [latestInvite, setLatestInvite] = useState<Invite | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [subscriptions, setSubscriptions] = useState<PushSubscriptionItem[]>([]);
@@ -450,6 +457,8 @@ export function App() {
   const [dashboardLoading, setDashboardLoading] = useState<DashboardState<boolean>>(INITIAL_DASHBOARD_LOADING);
   const [dashboardErrors, setDashboardErrors] = useState<DashboardState<string | null>>(INITIAL_DASHBOARD_ERRORS);
   const [actionState, setActionState] = useState<ActionState>(INITIAL_ACTION_STATE);
+  const [isLoadingProviderConnections, setIsLoadingProviderConnections] = useState(false);
+  const [providerConnectionsError, setProviderConnectionsError] = useState<string | null>(null);
   const [pullToRefreshOffset, setPullToRefreshOffset] = useState(0);
   const [pullToRefreshPhase, setPullToRefreshPhase] = useState<PullToRefreshPhase>("idle");
   const pushRefreshTimeoutRef = useRef<number | null>(null);
@@ -478,6 +487,31 @@ export function App() {
     "--pull-progress": `${Math.min(pullToRefreshOffset / PULL_TO_REFRESH_THRESHOLD, 1)}`,
   } as CSSProperties;
   const reliabilityDiagnostics = buildReliabilityDiagnostics(savedSearches, watchlist);
+  const copartConnection = providerConnections.find((item) => item.provider === "copart") ?? null;
+  const copartConnectionDiagnostic: ProviderConnectionDiagnostic =
+    copartConnection === null || copartConnection.status === "disconnected"
+      ? {
+          provider: "copart",
+          status: "connection_missing",
+          message: "Connect Copart to enable live search and watchlist refreshes.",
+          connection_id: null,
+          reconnect_required: false,
+        }
+      : copartConnection.status === "reconnect_required"
+        ? {
+            provider: "copart",
+            status: "reconnect_required",
+            message: "Reconnect Copart from Account to restore live search and refresh actions.",
+            connection_id: copartConnection.id,
+            reconnect_required: true,
+          }
+        : {
+            provider: "copart",
+            status: "ready",
+            message: "Copart live actions are available.",
+            connection_id: copartConnection.id,
+            reconnect_required: false,
+          };
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -537,6 +571,7 @@ export function App() {
     setSearchTotalResults(0);
     setSavedSearches([]);
     setWatchlist([]);
+    setProviderConnections([]);
     setSubscriptions([]);
     setSearchCatalog(null);
     setLiveSyncStatus(null);
@@ -548,6 +583,8 @@ export function App() {
     setDashboardErrors(INITIAL_DASHBOARD_ERRORS);
     setDashboardLoading(INITIAL_DASHBOARD_LOADING);
     setActionState(INITIAL_ACTION_STATE);
+    setIsLoadingProviderConnections(false);
+    setProviderConnectionsError(null);
     setIsAccountMenuOpen(false);
     setIsSettingsOpen(false);
     setIsManualSearchOpen(false);
@@ -609,6 +646,21 @@ export function App() {
       setSubscriptions(items);
       return items;
     }, options);
+  }
+
+  async function loadProviderConnectionsResource(token: string): Promise<ProviderConnection[] | null> {
+    setIsLoadingProviderConnections(true);
+    try {
+      const items = await listProviderConnections(token);
+      setProviderConnections(items);
+      setProviderConnectionsError(null);
+      return items;
+    } catch (caught) {
+      setProviderConnectionsError(toErrorMessage(caught, "Could not load provider connections."));
+      return null;
+    } finally {
+      setIsLoadingProviderConnections(false);
+    }
   }
 
   async function loadSearchCatalogResource(token: string, options: DashboardLoaderOptions = {}) {
@@ -711,6 +763,7 @@ export function App() {
     await Promise.allSettled([
       loadWatchlistResource(token),
       loadSavedSearchesResource(token),
+      loadProviderConnectionsResource(token),
       loadPushSubscriptionsResource(token),
       loadSearchCatalogResource(token),
       loadLiveSyncStatusResource(token),
@@ -1008,6 +1061,10 @@ export function App() {
     return fallbackMessage;
   }
 
+  async function refreshConnectorAwareResources(token: string) {
+    await Promise.allSettled([loadProviderConnectionsResource(token), loadSavedSearchesResource(token), loadWatchlistResource(token)]);
+  }
+
   async function handleLogin(email: string, password: string) {
     try {
       setGlobalError(null);
@@ -1303,6 +1360,30 @@ export function App() {
     }
   }
 
+  async function handleConnectCopart(payload: { username: string; password: string }) {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    await connectCopartConnection(payload, session.accessToken);
+    await refreshConnectorAwareResources(session.accessToken);
+  }
+
+  async function handleReconnectCopart(payload: { username: string; password: string }) {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    await reconnectCopartConnection(payload, session.accessToken);
+    await refreshConnectorAwareResources(session.accessToken);
+  }
+
+  async function handleDisconnectCopart() {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    await disconnectCopartConnection(session.accessToken);
+    await refreshConnectorAwareResources(session.accessToken);
+  }
+
   async function handleSubscribePush() {
     if (!session.accessToken) {
       throw new Error("Missing session");
@@ -1451,6 +1532,14 @@ export function App() {
             className="dashboard-status dashboard-grid__status"
           />
         ) : null}
+        {copartConnection?.status === "reconnect_required" ? (
+          <AsyncStatus
+            tone="neutral"
+            title="Copart reconnect required"
+            message="Live search and refresh actions are blocked until you reconnect Copart from Account."
+            className="dashboard-status dashboard-grid__status"
+          />
+        ) : null}
         <SearchPanel
           catalog={searchCatalog}
           isLoadingCatalog={dashboardLoading.searchCatalog}
@@ -1462,6 +1551,7 @@ export function App() {
           onRetrySavedSearches={() =>
             session.accessToken ? loadSavedSearchesResource(session.accessToken) : Promise.resolve()
           }
+          copartConnectionDiagnostic={copartConnectionDiagnostic}
           isSearching={actionState.isSearching}
           isSavingSearch={actionState.isSavingSearch}
           openingSavedSearchId={actionState.openingSavedSearchId}
@@ -1490,6 +1580,7 @@ export function App() {
           removingItemId={actionState.removingWatchlistId}
           isBrowserOffline={isBrowserOffline}
           liveSyncStatus={liveSyncStatus}
+          copartConnectionDiagnostic={copartConnectionDiagnostic}
           onRetry={() => (session.accessToken ? loadWatchlistResource(session.accessToken) : Promise.resolve())}
           onAddByLotNumber={handleAddByLotNumber}
           onRefreshItem={handleRefreshWatchlistLot}
@@ -1519,6 +1610,13 @@ export function App() {
         user={session.user!}
         liveSyncStatus={liveSyncStatus}
         diagnostics={reliabilityDiagnostics}
+        copartConnection={copartConnection}
+        copartConnectionError={providerConnectionsError}
+        isLoadingCopartConnection={isLoadingProviderConnections}
+        isBrowserOffline={isBrowserOffline}
+        onConnectCopart={handleConnectCopart}
+        onReconnectCopart={handleReconnectCopart}
+        onDisconnectCopart={handleDisconnectCopart}
         onClose={() => setIsAccountMenuOpen(false)}
         onOpenSettings={handleOpenSettings}
         onLogout={handleLogout}

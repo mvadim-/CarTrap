@@ -17,6 +17,7 @@ from cartrap.modules.search.schemas import (
     SearchResponse,
 )
 from cartrap.modules.search.service import SearchService
+from cartrap.modules.provider_connections.service import ProviderConnectionService
 from cartrap.modules.watchlist.service import WatchlistService
 
 
@@ -25,13 +26,21 @@ router = APIRouter(prefix="/search", tags=["search"])
 
 def get_search_service(request: Request) -> SearchService:
     provider_factory = getattr(request.app.state, "copart_provider_factory", None)
+    connector_client_factory = getattr(request.app.state, "copart_connector_client_factory", None)
     settings = request.app.state.settings
+    provider_connection_service = ProviderConnectionService(
+        request.app.state.mongo.database,
+        settings=settings,
+        connector_client_factory=connector_client_factory,
+    )
     return SearchService(
         request.app.state.mongo.database,
         provider_factory=provider_factory,
+        provider_connection_service=provider_connection_service,
         watchlist_service_factory=lambda: WatchlistService(
             request.app.state.mongo.database,
             provider_factory=provider_factory,
+            provider_connection_service=provider_connection_service,
             default_poll_interval_minutes=settings.watchlist_default_poll_interval_minutes,
         ),
         saved_search_poll_interval_minutes=settings.saved_search_poll_interval_minutes,
@@ -44,8 +53,7 @@ def search_lots(
     current_user: dict = Depends(get_current_user),
     search_service: SearchService = Depends(get_search_service),
 ) -> dict:
-    del current_user
-    return search_service.search(payload)
+    return search_service.search(current_user, payload)
 
 
 @router.get("/saved", response_model=SavedSearchListResponse)

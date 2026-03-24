@@ -14,6 +14,7 @@ This document describes the current HTTP API exposed by the FastAPI backend.
   - `POST /auth/refresh`
   - `POST /auth/invites/accept`
 - Authenticated user endpoints:
+  - `provider-connections/*`
   - `search/*`
   - `watchlist/*`
   - `notifications/*`
@@ -39,6 +40,7 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 | `404` | Requested entity was not found |
 | `409` | Conflict, duplicate resource, or invalid state transition |
 | `410` | Expired invite |
+| `429` | Rate limit exceeded |
 | `422` | FastAPI/Pydantic validation error |
 | `502` | Upstream Copart failure or failed catalog refresh |
 | `503` | Search catalog is unavailable |
@@ -47,6 +49,7 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 
 - `/api/system/status.live_sync` is the global backend-plus-gateway availability surface. It stays separate from per-resource freshness.
 - Saved searches and watchlist items now include `freshness` and `refresh_state` alongside legacy timestamps.
+- Saved searches and watchlist items may also include additive `connection_diagnostic` with `ready`, `connection_missing`, or `reconnect_required` when a user-scoped Copart connector blocks live actions.
 - Ordinary dashboard reads stay cache-backed even if a live refresh fails. Use explicit `refresh-live` endpoints when the client needs an immediate upstream refresh attempt.
 - `freshness.status` values:
   - `live`: snapshot is inside its freshness window and live sync is healthy
@@ -72,6 +75,10 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 | `POST` | `/admin/invites` | admin | Create invite |
 | `DELETE` | `/admin/invites/{invite_id}` | admin | Revoke pending invite |
 | `POST` | `/admin/search-catalog/refresh` | admin | Refresh Mongo-backed search catalog |
+| `GET` | `/provider-connections` | user/admin | List current user's provider connections |
+| `POST` | `/provider-connections/copart/connect` | user/admin | Create or replace current user's Copart connection |
+| `POST` | `/provider-connections/copart/reconnect` | user/admin | Re-bootstrap an existing Copart connection |
+| `DELETE` | `/provider-connections/copart` | user/admin | Disconnect current user's Copart connection |
 | `POST` | `/search` | user/admin | Manual Copart search |
 | `GET` | `/search/saved` | user/admin | List saved searches |
 | `POST` | `/search/saved` | user/admin | Save current search |
@@ -243,6 +250,108 @@ Response shape:
 - `makes[]`
 - `manual_override_count`
 
+### Provider Connections
+
+#### `GET /api/provider-connections`
+
+Lists provider connections for the authenticated user.
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "id": "mongo-object-id",
+      "provider": "copart",
+      "status": "connected",
+      "account_label": "buyer@example.com",
+      "connected_at": "2026-03-24T09:30:00Z",
+      "disconnected_at": null,
+      "last_verified_at": "2026-03-24T09:35:00Z",
+      "last_used_at": "2026-03-24T10:00:00Z",
+      "expires_at": "2026-03-24T12:30:00Z",
+      "reconnect_required": false,
+      "usable": true,
+      "bundle_version": 3,
+      "bundle": {
+        "key_version": "v1",
+        "captured_at": "2026-03-24T09:30:00Z",
+        "expires_at": "2026-03-24T12:30:00Z"
+      },
+      "last_error": null,
+      "created_at": "2026-03-24T09:30:00Z",
+      "updated_at": "2026-03-24T10:00:00Z"
+    }
+  ]
+}
+```
+
+Connection status values:
+
+- `connected`: live Copart actions are available
+- `expiring`: live actions still work, but bundle expiry is near
+- `reconnect_required`: stored session became invalid and the user must re-enter credentials
+- `disconnected`: connection exists historically, but live bundle is cleared
+- `error`: connector metadata exists, but the connection is not currently usable
+
+#### `POST /api/provider-connections/copart/connect`
+
+Creates or replaces the authenticated user's Copart connection. Passwords are used only for bootstrap and are not persisted after a successful session capture.
+
+Request:
+
+```json
+{
+  "username": "buyer@example.com",
+  "password": "secret123"
+}
+```
+
+Response:
+
+```json
+{
+  "connection": {
+    "id": "mongo-object-id",
+    "provider": "copart",
+    "status": "connected"
+  }
+}
+```
+
+Error semantics:
+
+- `401`: Copart credentials were rejected
+- `429`: connector bootstrap rate limit reached
+- `503`: NAS gateway/bootstrap path is unavailable
+
+#### `POST /api/provider-connections/copart/reconnect`
+
+Re-bootstrap an existing Copart connection after `reconnect_required`.
+
+Request body matches `POST /api/provider-connections/copart/connect`.
+
+Additional error semantics:
+
+- `404`: current user does not have an existing Copart connection to reconnect
+
+#### `DELETE /api/provider-connections/copart`
+
+Disconnects the authenticated user's Copart connection and clears the stored encrypted session bundle.
+
+Response:
+
+```json
+{
+  "connection": {
+    "id": "mongo-object-id",
+    "provider": "copart",
+    "status": "disconnected"
+  }
+}
+```
+
 ### Search
 
 #### `POST /api/search`
@@ -344,6 +453,8 @@ Response:
 }
 ```
 
+`items[].connection_diagnostic` is optional and appears when the saved search is readable from cache but its live Copart action is blocked by `connection_missing` or `reconnect_required`.
+
 #### `POST /api/search/saved`
 
 Stores a user-scoped saved search.
@@ -399,6 +510,11 @@ Returns the latest cached saved-search snapshot without forcing an upstream fetc
 #### `POST /api/search/saved/{saved_search_id}/refresh-live`
 
 Forces an immediate live refresh attempt for one saved search and returns the updated saved-search view payload.
+
+Error semantics:
+
+- `409`: current user has no usable Copart connection (`connection_required`, `reconnect_required`, or bundle unavailable)
+- `502`: NAS gateway / upstream Copart execution failed after a valid connector lookup
 
 #### `DELETE /api/search/saved/{saved_search_id}`
 
@@ -504,6 +620,8 @@ Response:
 }
 ```
 
+`items[].connection_diagnostic` is optional and appears when the tracked lot remains readable from cache but the owning user's live Copart connector is missing or requires re-login.
+
 #### `POST /api/watchlist`
 
 Adds a lot either by direct Copart URL or by raw lot number.
@@ -581,6 +699,11 @@ Response:
 #### `POST /api/watchlist/{tracked_lot_id}/refresh-live`
 
 Forces an immediate live refresh attempt for one tracked lot and returns the updated tracked-lot payload.
+
+Error semantics:
+
+- `409`: current user has no usable Copart connection (`connection_required`, `reconnect_required`, or bundle unavailable)
+- `502`: NAS gateway / upstream Copart execution failed after a valid connector lookup
 
 #### `DELETE /api/watchlist/{tracked_lot_id}`
 

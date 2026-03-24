@@ -1,6 +1,8 @@
 import type {
   FreshnessEnvelope,
   Invite,
+  ProviderConnection,
+  ProviderConnectionDiagnostic,
   PushDeliveryResult,
   PushSubscriptionConfig,
   PushSubscriptionItem,
@@ -145,6 +147,7 @@ function normalizeSavedSearch(item: SavedSearch): SavedSearch {
     ...item,
     freshness: normalizeFreshness(item.freshness, item.last_synced_at, DEFAULT_SAVED_SEARCH_STALE_AFTER_SECONDS),
     refresh_state: normalizeRefreshState(item.refresh_state, item.last_synced_at),
+    connection_diagnostic: normalizeConnectionDiagnostic(item.connection_diagnostic),
   };
 }
 
@@ -153,6 +156,22 @@ function normalizeWatchlistItem(item: WatchlistItem): WatchlistItem {
     ...item,
     freshness: normalizeFreshness(item.freshness, item.last_checked_at, DEFAULT_WATCHLIST_STALE_AFTER_SECONDS),
     refresh_state: normalizeRefreshState(item.refresh_state, item.last_checked_at),
+    connection_diagnostic: normalizeConnectionDiagnostic(item.connection_diagnostic),
+  };
+}
+
+function normalizeConnectionDiagnostic(
+  diagnostic: ProviderConnectionDiagnostic | null | undefined,
+): ProviderConnectionDiagnostic | null {
+  if (!diagnostic) {
+    return null;
+  }
+  return {
+    provider: diagnostic.provider,
+    status: diagnostic.status,
+    message: diagnostic.message,
+    connection_id: diagnostic.connection_id ?? null,
+    reconnect_required: Boolean(diagnostic.reconnect_required),
   };
 }
 
@@ -297,6 +316,43 @@ export async function getSearchCatalog(token: string): Promise<SearchCatalog> {
 
 export async function getSystemStatus(token: string): Promise<SystemStatus> {
   return normalizeSystemStatus(await request<SystemStatus>("/system/status", { token }));
+}
+
+export async function listProviderConnections(token: string): Promise<ProviderConnection[]> {
+  const response = await request<{ items: ProviderConnection[] }>("/provider-connections", { token });
+  return Array.isArray(response.items) ? response.items : [];
+}
+
+export async function connectCopartConnection(
+  payload: { username: string; password: string },
+  token: string,
+): Promise<ProviderConnection> {
+  const response = await request<{ connection: ProviderConnection }>("/provider-connections/copart/connect", {
+    method: "POST",
+    body: payload,
+    token,
+  });
+  return response.connection;
+}
+
+export async function reconnectCopartConnection(
+  payload: { username: string; password: string },
+  token: string,
+): Promise<ProviderConnection> {
+  const response = await request<{ connection: ProviderConnection }>("/provider-connections/copart/reconnect", {
+    method: "POST",
+    body: payload,
+    token,
+  });
+  return response.connection;
+}
+
+export async function disconnectCopartConnection(token: string): Promise<ProviderConnection> {
+  const response = await request<{ connection: ProviderConnection }>("/provider-connections/copart", {
+    method: "DELETE",
+    token,
+  });
+  return response.connection;
 }
 
 export async function listSavedSearches(token: string): Promise<SavedSearch[]> {

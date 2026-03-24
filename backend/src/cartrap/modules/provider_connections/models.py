@@ -1,0 +1,24 @@
+"""Provider-connection domain constants."""
+
+PROVIDER_CONNECTIONS_COLLECTION = "provider_connections"
+
+PROVIDER_COPART = "copart"
+
+STATUS_CONNECTED = "connected"
+STATUS_EXPIRING = "expiring"
+STATUS_RECONNECT_REQUIRED = "reconnect_required"
+STATUS_DISCONNECTED = "disconnected"
+STATUS_ERROR = "error"
+
+ACTIVE_CONNECTION_STATUSES = {
+    STATUS_CONNECTED,
+    STATUS_EXPIRING,
+    STATUS_RECONNECT_REQUIRED,
+    STATUS_ERROR,
+}
+
+USABLE_CONNECTION_STATUSES = {
+    STATUS_CONNECTED,
+    STATUS_EXPIRING,
+}
+

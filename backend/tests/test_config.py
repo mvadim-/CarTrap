@@ -35,6 +35,9 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("COPART_API_D_TOKEN", "token-123")
     monkeypatch.setenv("COPART_API_COOKIE", "SessionID=abc")
     monkeypatch.setenv("COPART_API_SITECODE", "CPRTUS")
+    monkeypatch.setenv("COPART_CONNECTOR_LOGIN_PATH", "/mds-api/v1/member/login")
+    monkeypatch.setenv("COPART_CONNECTOR_ENCRYPTION_KEY_VERSION", "v2")
+    monkeypatch.setenv("COPART_CONNECTOR_SESSION_EXPIRING_THRESHOLD_MINUTES", "45")
 
     settings = Settings()
 
@@ -58,6 +61,9 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.copart_api_d_token == "token-123"
     assert settings.copart_api_cookie == "SessionID=abc"
     assert settings.copart_api_site_code == "CPRTUS"
+    assert settings.copart_connector_login_path == "/mds-api/v1/member/login"
+    assert settings.copart_connector_encryption_key_version == "v2"
+    assert settings.copart_connector_session_expiring_threshold_minutes == 45
 
 
 def test_get_settings_caches_instance() -> None:
@@ -78,3 +84,8 @@ def test_settings_disable_default_cors_regex_in_production() -> None:
     settings = Settings(environment="production")
 
     assert settings.cors_origin_regex is None
+
+
+def test_settings_reject_blank_connector_encryption_key() -> None:
+    with pytest.raises(ValidationError):
+        Settings(COPART_CONNECTOR_ENCRYPTION_KEY=" ")

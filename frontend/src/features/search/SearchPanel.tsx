@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useState } from "react";
 import type {
   FreshnessEnvelope,
   LiveSyncStatus,
+  ProviderConnectionDiagnostic,
   RefreshState,
   SavedSearch,
   SavedSearchResultsResponse,
@@ -42,6 +43,7 @@ type Props = {
   isLoadingSavedSearches: boolean;
   savedSearchesError: string | null;
   onRetrySavedSearches: () => Promise<void>;
+  copartConnectionDiagnostic: ProviderConnectionDiagnostic | null;
   isSearching: boolean;
   isSavingSearch: boolean;
   openingSavedSearchId: string | null;
@@ -73,6 +75,7 @@ type SearchModalState = {
   lastSyncedAt: string | null;
   freshness: FreshnessEnvelope | null;
   refreshState: RefreshState | null;
+  connectionDiagnostic: ProviderConnectionDiagnostic | null;
   refreshError: string | null;
   statusMessage: string | null;
 };
@@ -214,6 +217,7 @@ export function SearchPanel({
   isLoadingSavedSearches,
   savedSearchesError,
   onRetrySavedSearches,
+  copartConnectionDiagnostic,
   isSearching,
   isSavingSearch,
   openingSavedSearchId,
@@ -265,9 +269,11 @@ export function SearchPanel({
     lastSyncedAt: null,
     freshness: null,
     refreshState: null,
+    connectionDiagnostic: null,
     refreshError: null,
     statusMessage: null,
   });
+  const isCopartActionBlocked = Boolean(copartConnectionDiagnostic && copartConnectionDiagnostic.status !== "ready");
 
   const filteredMakes = catalog?.makes.filter((item) => matchesMakeQuery(item.name, makeQuery)) ?? [];
   const selectedMake: SearchCatalogMake | null = catalog?.makes.find((item) => item.slug === selectedMakeSlug) ?? null;
@@ -373,6 +379,7 @@ export function SearchPanel({
             lastSyncedAt: activeSavedSearch.last_synced_at,
             freshness: activeSavedSearch.freshness,
             refreshState: activeSavedSearch.refresh_state,
+            connectionDiagnostic: activeSavedSearch.connection_diagnostic ?? null,
           }
         : current,
     );
@@ -409,6 +416,7 @@ export function SearchPanel({
       lastSyncedAt: response.last_synced_at,
       freshness: response.saved_search.freshness,
       refreshState: response.saved_search.refresh_state,
+      connectionDiagnostic: response.saved_search.connection_diagnostic ?? null,
       refreshError: null,
       statusMessage,
     });
@@ -429,6 +437,7 @@ export function SearchPanel({
       lastSyncedAt: null,
       freshness: null,
       refreshState: null,
+      connectionDiagnostic: null,
       refreshError: null,
       statusMessage: null,
     });
@@ -618,10 +627,19 @@ export function SearchPanel({
               secondary flow.
             </p>
           </div>
-          <button type="button" className="ghost-button search-panel__new-search-button" onClick={onOpenManualSearch}>
+          <button
+            type="button"
+            className="ghost-button search-panel__new-search-button"
+            onClick={onOpenManualSearch}
+            disabled={isCopartActionBlocked}
+          >
             New Search
           </button>
         </div>
+
+        {isCopartActionBlocked && copartConnectionDiagnostic ? (
+          <AsyncStatus tone="neutral" compact message={copartConnectionDiagnostic.message} className="panel-status" />
+        ) : null}
 
         {savedSearchNotice ? (
           <AsyncStatus tone="success" compact message={savedSearchNotice} className="panel-status" />
@@ -690,7 +708,7 @@ export function SearchPanel({
               <p className="muted">
                 Start with a manual search, then save the result set you want this inbox to monitor.
               </p>
-              <button type="button" onClick={onOpenManualSearch}>
+              <button type="button" onClick={onOpenManualSearch} disabled={isCopartActionBlocked}>
                 New Search
               </button>
             </div>
@@ -704,7 +722,7 @@ export function SearchPanel({
                 <button type="button" className="ghost-button" onClick={() => setQuickFilter("all")}>
                   Show all
                 </button>
-                <button type="button" onClick={onOpenManualSearch}>
+                <button type="button" onClick={onOpenManualSearch} disabled={isCopartActionBlocked}>
                   New Search
                 </button>
               </div>
@@ -751,6 +769,9 @@ export function SearchPanel({
                     <span className={`status-pill status-pill--${reliability.tone}`}>{reliability.label}</span>
                     <p className="saved-search-card__reliability-copy">{reliability.detail}</p>
                   </div>
+                  {item.connection_diagnostic && item.connection_diagnostic.status !== "ready" ? (
+                    <AsyncStatus tone="neutral" compact message={item.connection_diagnostic.message} className="panel-status" />
+                  ) : null}
 
                   <dl className="saved-search-card__metrics">
                     <div className="saved-search-card__metric">
@@ -784,9 +805,16 @@ export function SearchPanel({
                         role="menuitem"
                         className="saved-search-actions-menu__item"
                         onClick={() => void handleRefreshSavedSearchFromList(item)}
-                        disabled={refreshingSavedSearchId === item.id}
+                        disabled={
+                          refreshingSavedSearchId === item.id ||
+                          Boolean(item.connection_diagnostic && item.connection_diagnostic.status !== "ready")
+                        }
                       >
-                        {refreshingSavedSearchId === item.id ? "Refreshing..." : "Refresh Live"}
+                        {refreshingSavedSearchId === item.id
+                          ? "Refreshing..."
+                          : item.connection_diagnostic && item.connection_diagnostic.status !== "ready"
+                            ? "Copart action blocked"
+                            : "Refresh Live"}
                       </button>
                       <a
                         role="menuitem"
@@ -816,8 +844,13 @@ export function SearchPanel({
         </div>
 
         <div className="search-panel__sticky-cta">
-          <button type="button" className="search-panel__sticky-button" onClick={onOpenManualSearch}>
-            New Search
+          <button
+            type="button"
+            className="search-panel__sticky-button"
+            onClick={onOpenManualSearch}
+            disabled={isCopartActionBlocked}
+          >
+            {isCopartActionBlocked ? "Copart required" : "New Search"}
           </button>
         </div>
       </section>
@@ -861,6 +894,8 @@ export function SearchPanel({
         onOpenFilters={() => setIsFiltersOpen(true)}
         onClose={onCloseManualSearch}
         onSubmit={handleSubmit}
+        isSearchingDisabled={isCopartActionBlocked}
+        disabledReason={copartConnectionDiagnostic?.message ?? null}
       />
 
       <SearchResultsModal
@@ -891,6 +926,7 @@ export function SearchPanel({
         lastSyncedAt={searchModal.lastSyncedAt}
         freshness={searchModal.freshness}
         refreshState={searchModal.refreshState}
+        connectionDiagnostic={searchModal.connectionDiagnostic}
         refreshError={searchModal.refreshError}
         statusMessage={searchModal.statusMessage}
         mobileFullscreen={searchModal.mode === "saved"}

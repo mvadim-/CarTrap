@@ -82,6 +82,65 @@ class Settings(BaseSettings):
     copart_api_d_token: Optional[str] = Field(default=None, alias="COPART_API_D_TOKEN")
     copart_api_cookie: Optional[str] = Field(default=None, alias="COPART_API_COOKIE")
     copart_api_site_code: str = Field(default="CPRTUS", alias="COPART_API_SITECODE", min_length=1)
+    copart_connector_bootstrap_path: str = Field(default="/", alias="COPART_CONNECTOR_BOOTSTRAP_PATH", min_length=1)
+    copart_connector_login_path: str = Field(
+        default="/mds-api/v1/member/login",
+        alias="COPART_CONNECTOR_LOGIN_PATH",
+        min_length=1,
+    )
+    copart_connector_identity_path: Optional[str] = Field(
+        default="/mds-api/v1/member/bootstrap",
+        alias="COPART_CONNECTOR_IDENTITY_PATH",
+    )
+    copart_connector_challenge_path: Optional[str] = Field(
+        default="/mds-api/v1/member/challenge",
+        alias="COPART_CONNECTOR_CHALLENGE_PATH",
+    )
+    copart_connector_verify_path: Optional[str] = Field(
+        default="/mds-api/v1/member/me",
+        alias="COPART_CONNECTOR_VERIFY_PATH",
+    )
+    copart_connector_encryption_key: Optional[str] = Field(default=None, alias="COPART_CONNECTOR_ENCRYPTION_KEY")
+    copart_connector_encryption_key_version: str = Field(
+        default="v1",
+        alias="COPART_CONNECTOR_ENCRYPTION_KEY_VERSION",
+        min_length=1,
+    )
+    copart_connector_session_expiring_threshold_minutes: int = Field(
+        default=60,
+        alias="COPART_CONNECTOR_SESSION_EXPIRING_THRESHOLD_MINUTES",
+        ge=1,
+    )
+    copart_connector_mobile_company: str = Field(
+        default="Copart",
+        alias="COPART_CONNECTOR_MOBILE_COMPANY",
+        min_length=1,
+    )
+    copart_connector_mobile_os: str = Field(
+        default="iOS",
+        alias="COPART_CONNECTOR_MOBILE_OS",
+        min_length=1,
+    )
+    copart_connector_mobile_language_code: str = Field(
+        default="en",
+        alias="COPART_CONNECTOR_MOBILE_LANGUAGE_CODE",
+        min_length=1,
+    )
+    copart_connector_mobile_client_app_version: str = Field(
+        default="6.2.1",
+        alias="COPART_CONNECTOR_MOBILE_CLIENT_APP_VERSION",
+        min_length=1,
+    )
+    copart_connector_connect_rate_limit_attempts: int = Field(
+        default=5,
+        alias="COPART_CONNECTOR_CONNECT_RATE_LIMIT_ATTEMPTS",
+        ge=1,
+    )
+    copart_connector_connect_rate_limit_window_seconds: int = Field(
+        default=60,
+        alias="COPART_CONNECTOR_CONNECT_RATE_LIMIT_WINDOW_SECONDS",
+        ge=1,
+    )
     copart_http_timeout_seconds: float = Field(default=15.0, alias="COPART_HTTP_TIMEOUT_SECONDS", gt=0)
     copart_http_connect_timeout_seconds: float = Field(default=5.0, alias="COPART_HTTP_CONNECT_TIMEOUT_SECONDS", gt=0)
     copart_http_keepalive_expiry_seconds: float = Field(
@@ -135,6 +194,8 @@ class Settings(BaseSettings):
 
         if self.copart_http_max_keepalive_connections > self.copart_http_max_connections:
             raise ValueError("COPART_HTTP_MAX_KEEPALIVE_CONNECTIONS cannot exceed COPART_HTTP_MAX_CONNECTIONS.")
+        if self.copart_connector_encryption_key is not None and not self.copart_connector_encryption_key.strip():
+            raise ValueError("COPART_CONNECTOR_ENCRYPTION_KEY cannot be blank when set.")
         return self
 
 

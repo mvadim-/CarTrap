@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 
-import type { LiveSyncStatus, WatchlistItem } from "../../types";
+import type { LiveSyncStatus, ProviderConnectionDiagnostic, WatchlistItem } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
 import { LotThumbnail } from "../shared/LotThumbnail";
 import { buildResourceReliability } from "../shared/resourceReliability";
@@ -15,6 +15,7 @@ type Props = {
   removingItemId: string | null;
   isBrowserOffline: boolean;
   liveSyncStatus: LiveSyncStatus | null;
+  copartConnectionDiagnostic: ProviderConnectionDiagnostic | null;
   onRetry: () => Promise<void>;
   onAddByLotNumber: (lotNumber: string) => Promise<void>;
   onRefreshItem: (id: string) => Promise<WatchlistItem>;
@@ -30,6 +31,7 @@ export function WatchlistPanel({
   removingItemId,
   isBrowserOffline,
   liveSyncStatus,
+  copartConnectionDiagnostic,
   onRetry,
   onAddByLotNumber,
   onRefreshItem,
@@ -40,10 +42,11 @@ export function WatchlistPanel({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
+  const isCopartActionBlocked = Boolean(copartConnectionDiagnostic && copartConnectionDiagnostic.status !== "ready");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!lotNumber.trim() || isAddingLot) {
+    if (!lotNumber.trim() || isAddingLot || isCopartActionBlocked) {
       return;
     }
     setActionError(null);
@@ -250,6 +253,9 @@ export function WatchlistPanel({
         </div>
       </div>
       {contextMessage ? <AsyncStatus compact message={contextMessage} className="panel-status" /> : null}
+      {isCopartActionBlocked && copartConnectionDiagnostic ? (
+        <AsyncStatus tone="neutral" compact message={copartConnectionDiagnostic.message} className="panel-status" />
+      ) : null}
       {loadError ? (
         <AsyncStatus
           tone="error"
@@ -280,10 +286,11 @@ export function WatchlistPanel({
             autoCorrect="off"
             spellCheck={false}
             placeholder="99251295"
+            disabled={isCopartActionBlocked}
           />
         </label>
-        <button type="submit" disabled={!lotNumber.trim() || isAddingLot} aria-busy={isAddingLot}>
-          {isAddingLot ? "Adding..." : "Add Lot"}
+        <button type="submit" disabled={!lotNumber.trim() || isAddingLot || isCopartActionBlocked} aria-busy={isAddingLot}>
+          {isAddingLot ? "Adding..." : isCopartActionBlocked ? "Copart action blocked" : "Add Lot"}
         </button>
       </form>
       {isAddingLot ? (
@@ -366,6 +373,9 @@ export function WatchlistPanel({
                     <span className={`status-pill status-pill--${reliability.tone}`}>{reliability.label}</span>
                     <p className="watchlist-card__reliability-copy">{reliability.detail}</p>
                   </div>
+                  {item.connection_diagnostic && item.connection_diagnostic.status !== "ready" ? (
+                    <AsyncStatus tone="neutral" compact message={item.connection_diagnostic.message} className="panel-status" />
+                  ) : null}
                   {item.has_unseen_update ? (
                     <div className="watchlist-card__update-callout" role="status" aria-live="polite">
                       <p className="watchlist-card__update-summary">{formatLatestChangeSummary(item).join(" · ")}</p>
@@ -397,10 +407,17 @@ export function WatchlistPanel({
                     type="button"
                     className="ghost-button ghost-button--quiet"
                     onClick={() => void handleRefresh(item.id, item.title)}
-                    disabled={refreshingItemId === item.id}
+                    disabled={
+                      refreshingItemId === item.id ||
+                      Boolean(item.connection_diagnostic && item.connection_diagnostic.status !== "ready")
+                    }
                     aria-busy={refreshingItemId === item.id}
                   >
-                    {refreshingItemId === item.id ? "Refreshing..." : "Refresh Live"}
+                    {refreshingItemId === item.id
+                      ? "Refreshing..."
+                      : item.connection_diagnostic && item.connection_diagnostic.status !== "ready"
+                        ? "Copart action blocked"
+                        : "Refresh Live"}
                   </button>
                   <button
                     type="button"

@@ -11,6 +11,7 @@ from cartrap.core.logging import configure_logging, make_log_extra, new_correlat
 from cartrap.db.mongo import MongoManager
 from cartrap.modules.monitoring.service import MonitoringService
 from cartrap.modules.notifications.service import NotificationService, build_web_push_sender
+from cartrap.modules.provider_connections.service import ProviderConnectionService
 from cartrap.modules.search.service import SearchService
 from cartrap.modules.system_status.service import SystemStatusService
 
@@ -108,17 +109,20 @@ def run_polling_loop(sleep_seconds: int = 30) -> None:
         vapid_subject=settings.vapid_subject,
     )
     system_status_service = SystemStatusService(mongo.database)
+    provider_connection_service = ProviderConnectionService(mongo.database, settings=settings)
     monitoring_service = MonitoringService(
         mongo.database,
         notification_service=notification_service,
         default_poll_interval_minutes=settings.watchlist_default_poll_interval_minutes,
         near_auction_poll_interval_minutes=settings.watchlist_near_auction_poll_interval_minutes,
         near_auction_window_minutes=settings.watchlist_near_auction_window_minutes,
+        provider_connection_service=provider_connection_service,
     )
     search_service = SearchService(
         mongo.database,
         notification_service=notification_service,
         saved_search_poll_interval_minutes=settings.saved_search_poll_interval_minutes,
+        provider_connection_service=provider_connection_service,
     )
 
     try:

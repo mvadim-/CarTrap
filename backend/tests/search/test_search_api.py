@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 import sys
@@ -21,6 +22,11 @@ if str(ROOT) not in sys.path:
 
 import cartrap.app as app_module
 from cartrap.config import Settings
+from cartrap.modules.copart_provider.client import (
+    CopartConnectorExecutionResult,
+    CopartConnectorBootstrapResult,
+    CopartEncryptedSessionBundle,
+)
 from cartrap.modules.copart_provider.errors import CopartGatewayUnavailableError
 from cartrap.modules.copart_provider.models import CopartLotSnapshot, CopartSearchPage, CopartSearchResult
 from cartrap.modules.search.schemas import SearchRequest
@@ -93,6 +99,100 @@ class GatewayUnavailableProvider:
         return None
 
 
+class FakeConnectorClient:
+    def __init__(self, app) -> None:
+        self._app = app
+
+    def bootstrap_connector_session(self, *, username: str, password: str) -> CopartConnectorBootstrapResult:
+        del password
+        bundle = CopartEncryptedSessionBundle(
+            encrypted_bundle=f"bundle:{username}",
+            key_version="v1",
+            captured_at=datetime.now(timezone.utc),
+            expires_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+        )
+        return CopartConnectorBootstrapResult(
+            bundle=bundle,
+            account_label=username,
+            connection_status="connected",
+            verified_at=datetime.now(timezone.utc),
+        )
+
+    def search_with_connector_session(self, payload: dict, bundle: CopartEncryptedSessionBundle) -> CopartConnectorExecutionResult:
+        del bundle
+        provider = self._app.state.copart_provider_factory()
+        page = provider.search_lots(payload)
+        docs = [
+            {
+                "lot_number": item.lot_number,
+                "lot_desc": item.title,
+                "thumbnailUrl": str(item.thumbnail_url) if item.thumbnail_url else None,
+                "yard_name": item.location,
+                "odometer": item.odometer,
+                "auction_date_utc": item.sale_date.isoformat() if item.sale_date else None,
+                "current_high_bid": item.current_bid,
+                "buy_it_now_price": item.buy_now_price,
+                "currency_code": item.currency,
+                "status": item.raw_status,
+            }
+            for item in page.results
+        ]
+        return CopartConnectorExecutionResult(
+            payload={"response": {"docs": docs, "numFound": page.num_found}},
+            bundle=CopartEncryptedSessionBundle(
+                encrypted_bundle="bundle:rotated",
+                key_version="v1",
+                captured_at=datetime.now(timezone.utc),
+                expires_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+            ),
+            etag='"search-etag"',
+            not_modified=False,
+            connection_status="connected",
+            verified_at=datetime.now(timezone.utc),
+            used_at=datetime.now(timezone.utc),
+        )
+
+    def lot_details_with_connector_session(
+        self,
+        lot_number: str,
+        bundle: CopartEncryptedSessionBundle,
+        etag: str | None = None,
+    ) -> CopartConnectorExecutionResult:
+        del bundle
+        del etag
+        provider = self._app.state.copart_provider_factory()
+        snapshot = provider.fetch_lot(f"https://www.copart.com/lot/{lot_number}")
+        payload = {
+            "lotDetails": {
+                "lotNumber": int(snapshot.lot_number),
+                "lotDescription": snapshot.title,
+                "saleDate": snapshot.sale_date.isoformat() if snapshot.sale_date else None,
+                "currentBid": snapshot.current_bid,
+                "buyTodayBid": snapshot.buy_now_price,
+                "currencyCode": snapshot.currency,
+                "status": snapshot.raw_status,
+                "thumbnailUrl": str(snapshot.thumbnail_url) if snapshot.thumbnail_url else None,
+            }
+        }
+        return CopartConnectorExecutionResult(
+            payload=payload,
+            bundle=CopartEncryptedSessionBundle(
+                encrypted_bundle="bundle:rotated",
+                key_version="v1",
+                captured_at=datetime.now(timezone.utc),
+                expires_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+            ),
+            etag='"lot-etag"',
+            not_modified=False,
+            connection_status="connected",
+            verified_at=datetime.now(timezone.utc),
+            used_at=datetime.now(timezone.utc),
+        )
+
+    def close(self) -> None:
+        return None
+
+
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(app_module, "MongoManager", FakeMongoManager)
@@ -151,6 +251,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         },
     )
     app.state.copart_provider_factory = lambda: fake_provider
+    app.state.copart_connector_client_factory = lambda: FakeConnectorClient(app)
     app.state.fake_provider = fake_provider
     return TestClient(app)
 
@@ -168,7 +269,18 @@ def _create_user(client: TestClient, email: str, password: str) -> str:
         headers={"Authorization": f"Bearer {admin_token}"},
     ).json()
     client.post("/api/auth/invites/accept", json={"token": invite["token"], "password": password})
-    return _login(client, email, password)
+    token = _login(client, email, password)
+    _connect_copart(client, token, email)
+    return token
+
+
+def _connect_copart(client: TestClient, token: str, username: str) -> None:
+    response = client.post(
+        "/api/provider-connections/copart/connect",
+        json={"username": username, "password": "copart-secret"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
 
 
 def test_search_endpoint_returns_results(client: TestClient) -> None:

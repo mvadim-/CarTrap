@@ -24,6 +24,7 @@ from cartrap.modules.monitoring.polling_policy import (
     is_due_for_poll,
 )
 from cartrap.modules.notifications.service import NotificationService
+from cartrap.modules.provider_connections.service import ProviderConnectionService
 from cartrap.modules.system_status.service import SystemStatusService
 from cartrap.modules.watchlist.repository import WatchlistRepository
 from cartrap.modules.watchlist.service import WatchlistService
@@ -44,6 +45,7 @@ class MonitoringService:
         near_auction_poll_interval_minutes: int = NEAR_AUCTION_INTERVAL_MINUTES,
         near_auction_window_minutes: int = NEAR_AUCTION_WINDOW_MINUTES,
         refresh_job_runtime: JobRuntimeService | None = None,
+        provider_connection_service: ProviderConnectionService | None = None,
     ) -> None:
         self.repository = WatchlistRepository(database)
         self.repository.ensure_indexes()
@@ -54,6 +56,7 @@ class MonitoringService:
         self._near_auction_poll_interval_minutes = near_auction_poll_interval_minutes
         self._near_auction_window_minutes = near_auction_window_minutes
         self._refresh_job_runtime = refresh_job_runtime or JobRuntimeService(database)
+        self._provider_connection_service = provider_connection_service
 
     def poll_due_lots(self, now: datetime | None = None) -> dict:
         current_time = now or self._now()
@@ -105,6 +108,36 @@ class MonitoringService:
                         job_type="watchlist_poll",
                         resource_id=tracked_lot_id,
                         now=current_time,
+                    )
+                )
+                continue
+
+            diagnostic = self._get_connection_diagnostic(tracked_lot["owner_user_id"])
+            if diagnostic is not None and diagnostic["status"] != "ready":
+                skipped += 1
+                self.repository.update_tracked_lot_state(
+                    tracked_lot_id,
+                    {
+                        **WatchlistService._build_refresh_failure_payload(
+                            current_time,
+                            error_message=diagnostic["message"],
+                            retryable=False,
+                        ),
+                        "last_refresh_priority_class": priority_class,
+                    },
+                    updated_at=current_time,
+                )
+                jobs.append(
+                    self._refresh_job_runtime.fail_non_retryable(
+                        runtime,
+                        now=current_time,
+                        outcome=diagnostic["status"],
+                        error_message=diagnostic["message"],
+                        metadata={
+                            "owner_user_id": tracked_lot["owner_user_id"],
+                            "lot_number": tracked_lot["lot_number"],
+                            "priority_class": priority_class,
+                        },
                     )
                 )
                 continue
@@ -260,7 +293,7 @@ class MonitoringService:
         return self._crossed_pending_auction_reminder_threshold(tracked_lot, now)
 
     def _poll_single_lot(self, tracked_lot: dict, now: datetime) -> dict:
-        provider = self._provider_factory()
+        provider = self._build_live_provider(tracked_lot["owner_user_id"])
         priority_class = get_priority_class(
             tracked_lot,
             now,
@@ -361,6 +394,16 @@ class MonitoringService:
             },
             "reminder_events": reminder_events,
         }
+
+    def _build_live_provider(self, owner_user_id: str | None) -> CopartProvider:
+        if self._provider_connection_service is not None and owner_user_id is not None:
+            return self._provider_connection_service.build_provider_for_owner(owner_user_id)
+        return self._provider_factory()
+
+    def _get_connection_diagnostic(self, owner_user_id: str | None) -> dict | None:
+        if self._provider_connection_service is None or not owner_user_id:
+            return None
+        return self._provider_connection_service.get_connection_diagnostic(owner_user_id)
 
     def _build_auction_reminders(
         self,
