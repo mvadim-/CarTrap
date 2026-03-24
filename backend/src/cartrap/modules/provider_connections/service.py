@@ -22,6 +22,7 @@ from cartrap.modules.copart_provider.client import (
 from cartrap.modules.copart_provider.service import CopartProvider
 from cartrap.modules.copart_provider.errors import (
     CopartAuthenticationError,
+    CopartChallengeError,
     CopartConfigurationError,
     CopartGatewayUnavailableError,
     CopartRateLimitError,
@@ -236,6 +237,12 @@ class ProviderConnectionService:
         except CopartRateLimitError as exc:
             self._log_connect_failure(owner_user["id"], correlation_id, started_at, exc)
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Copart connect rate limit reached.") from exc
+        except CopartChallengeError as exc:
+            self._log_connect_failure(owner_user["id"], correlation_id, started_at, exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Copart connector bootstrap failed during upstream challenge replay.",
+            ) from exc
         except (CopartGatewayUnavailableError, CopartConfigurationError) as exc:
             self._log_connect_failure(owner_user["id"], correlation_id, started_at, exc)
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Copart gateway is unavailable.") from exc

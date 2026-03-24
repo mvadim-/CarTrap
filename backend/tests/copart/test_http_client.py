@@ -265,3 +265,45 @@ def test_gateway_connector_methods_parse_internal_contract() -> None:
         ("POST", "https://gateway.example.test/v1/connector/bootstrap"),
         ("POST", "https://gateway.example.test/v1/connector/execute/search"),
     ]
+
+
+def test_direct_connector_bootstrap_uses_seed_d_token_and_me_info_verify_path() -> None:
+    requests: list[tuple[str, str, dict[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, str(request.url), dict(request.headers)))
+        if request.method == "GET" and request.url.path == "/":
+            return httpx.Response(200, headers={"set-cookie": "incap_ses_1=edge-cookie; Path=/"})
+        if request.method == "POST" and request.url.path == "/mds-api/v1/member/login":
+            return httpx.Response(
+                200,
+                json={"email": "user@example.com"},
+                headers={"set-cookie": "SessionID=session-1; Path=/; HttpOnly"},
+            )
+        if request.method == "GET" and request.url.path == "/mds-api/v1/member/me-info":
+            return httpx.Response(
+                200,
+                json={"memberId": 21438641},
+                headers={"set-cookie": "SessionID=session-1; Path=/; HttpOnly"},
+            )
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    settings = make_direct_settings().model_copy(
+        update={
+            "copart_connector_identity_path": None,
+            "copart_connector_verify_path": "/mds-api/v1/member/me-info",
+        }
+    )
+    client = CopartHttpClient(
+        settings=settings,
+        transport=httpx.MockTransport(handler),
+        base_url="https://mmember.copart.com",
+    )
+
+    bootstrap = client.bootstrap_connector_session(username="user@example.com", password="secret")
+
+    assert bootstrap.account_label == "user@example.com"
+    assert bootstrap.bundle.session_id == "session-1"
+    assert bootstrap.bundle.d_token == "token-123"
+    assert requests[1][2]["x-d-token"] == "token-123"
+    assert requests[2][1] == "https://mmember.copart.com/mds-api/v1/member/me-info"

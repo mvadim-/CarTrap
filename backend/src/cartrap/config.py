@@ -89,7 +89,7 @@ class Settings(BaseSettings):
         min_length=1,
     )
     copart_connector_identity_path: Optional[str] = Field(
-        default="/mds-api/v1/member/bootstrap",
+        default=None,
         alias="COPART_CONNECTOR_IDENTITY_PATH",
     )
     copart_connector_challenge_path: Optional[str] = Field(
@@ -97,7 +97,7 @@ class Settings(BaseSettings):
         alias="COPART_CONNECTOR_CHALLENGE_PATH",
     )
     copart_connector_verify_path: Optional[str] = Field(
-        default="/mds-api/v1/member/me",
+        default="/mds-api/v1/member/me-info",
         alias="COPART_CONNECTOR_VERIFY_PATH",
     )
     copart_connector_encryption_key: Optional[str] = Field(default=None, alias="COPART_CONNECTOR_ENCRYPTION_KEY")
@@ -112,22 +112,22 @@ class Settings(BaseSettings):
         ge=1,
     )
     copart_connector_mobile_company: str = Field(
-        default="Copart",
+        default="COPART",
         alias="COPART_CONNECTOR_MOBILE_COMPANY",
         min_length=1,
     )
     copart_connector_mobile_os: str = Field(
-        default="iOS",
+        default="ios",
         alias="COPART_CONNECTOR_MOBILE_OS",
         min_length=1,
     )
     copart_connector_mobile_language_code: str = Field(
-        default="en",
+        default="en-US",
         alias="COPART_CONNECTOR_MOBILE_LANGUAGE_CODE",
         min_length=1,
     )
     copart_connector_mobile_client_app_version: str = Field(
-        default="6.2.1",
+        default="6.7.2",
         alias="COPART_CONNECTOR_MOBILE_CLIENT_APP_VERSION",
         min_length=1,
     )

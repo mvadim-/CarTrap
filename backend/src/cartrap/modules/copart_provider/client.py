@@ -161,6 +161,7 @@ class CopartSessionBundle:
         header_profile: CopartHeaderProfile,
         existing: Optional["CopartSessionBundle"] = None,
         device_id: Optional[str] = None,
+        fallback_d_token: Optional[str] = None,
     ) -> "CopartSessionBundle":
         cookie_map = {name: value for name, value in (existing.cookies if existing else ())}
         session_id = existing.session_id if existing is not None else ""
@@ -184,7 +185,11 @@ class CopartSessionBundle:
             session_id = response.cookies.get("SessionID", session_id)
         if not ins_sess:
             ins_sess = response.cookies.get("ins-sess", ins_sess)
-        d_token = response.headers.get("x-d-token") or (existing.d_token if existing is not None else "")
+        d_token = (
+            response.headers.get("x-d-token")
+            or (existing.d_token if existing is not None else "")
+            or (fallback_d_token or "")
+        )
         resolved_device_id = device_id or (existing.device_id if existing is not None else "")
         if not session_id or not d_token or not resolved_device_id:
             raise CopartChallengeError("Session bundle is missing required login artifacts.")
@@ -535,6 +540,8 @@ class DirectCopartTransport(_BaseHttpTransport):
         device_id = uuid4().hex
         bootstrap_headers = profile.to_headers()
         bootstrap_headers["deviceid"] = device_id
+        if self._settings.copart_api_d_token:
+            bootstrap_headers["x-d-token"] = self._settings.copart_api_d_token
         if self._settings.copart_connector_bootstrap_path:
             self._client.get(self._settings.copart_connector_bootstrap_path, headers=bootstrap_headers)
         login_response = self._client.post(
@@ -551,6 +558,7 @@ class DirectCopartTransport(_BaseHttpTransport):
             header_profile=profile,
             existing=None,
             device_id=device_id,
+            fallback_d_token=self._settings.copart_api_d_token,
         )
         if _response_requires_challenge(login_payload):
             challenge_payload = _build_challenge_payload(login_payload, device_id=device_id)
@@ -569,6 +577,7 @@ class DirectCopartTransport(_BaseHttpTransport):
                 header_profile=profile,
                 existing=bundle,
                 device_id=device_id,
+                fallback_d_token=self._settings.copart_api_d_token,
             )
         if self._settings.copart_connector_identity_path:
             identity_response = self._client.get(
@@ -581,6 +590,7 @@ class DirectCopartTransport(_BaseHttpTransport):
                 header_profile=profile,
                 existing=bundle,
                 device_id=device_id,
+                fallback_d_token=self._settings.copart_api_d_token,
             )
         verification = self.verify_connector_session(bundle, correlation_id=cid)
         return CopartConnectorBootstrapResult(
@@ -619,6 +629,7 @@ class DirectCopartTransport(_BaseHttpTransport):
             header_profile=resolved_bundle.header_profile,
             existing=resolved_bundle,
             device_id=resolved_bundle.device_id,
+            fallback_d_token=self._settings.copart_api_d_token,
         )
         used_at = datetime.now(timezone.utc)
         return CopartConnectorExecutionResult(
@@ -651,6 +662,7 @@ class DirectCopartTransport(_BaseHttpTransport):
             header_profile=resolved_bundle.header_profile,
             existing=resolved_bundle,
             device_id=resolved_bundle.device_id,
+            fallback_d_token=self._settings.copart_api_d_token,
         )
         used_at = datetime.now(timezone.utc)
         return CopartConnectorExecutionResult(
@@ -701,6 +713,7 @@ class DirectCopartTransport(_BaseHttpTransport):
             header_profile=resolved_bundle.header_profile,
             existing=resolved_bundle,
             device_id=resolved_bundle.device_id,
+            fallback_d_token=self._settings.copart_api_d_token,
         )
         used_at = datetime.now(timezone.utc)
         return CopartConnectorExecutionResult(
