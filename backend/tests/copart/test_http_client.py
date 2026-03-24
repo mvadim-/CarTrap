@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
 
 from cartrap.config import Settings
 from cartrap.modules.copart_provider.client import CopartEncryptedSessionBundle, CopartHttpClient
+from cartrap.modules.copart_provider.errors import CopartLoginRejectedError
 
 
 def make_direct_settings() -> Settings:
@@ -268,10 +269,17 @@ def test_gateway_connector_methods_parse_internal_contract() -> None:
 
 
 def test_direct_connector_bootstrap_uses_seed_d_token_and_me_info_verify_path() -> None:
-    requests: list[tuple[str, str, dict[str, str]]] = []
+    requests: list[tuple[str, str, dict[str, str], dict | None]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        requests.append((request.method, str(request.url), dict(request.headers)))
+        requests.append(
+            (
+                request.method,
+                str(request.url),
+                dict(request.headers),
+                json.loads(request.content.decode()) if request.content else None,
+            )
+        )
         if request.method == "GET" and request.url.path == "/":
             return httpx.Response(200, headers={"set-cookie": "incap_ses_1=edge-cookie; Path=/"})
         if request.method == "POST" and request.url.path == "/mds-api/v1/member/login":
@@ -305,5 +313,50 @@ def test_direct_connector_bootstrap_uses_seed_d_token_and_me_info_verify_path() 
     assert bootstrap.account_label == "user@example.com"
     assert bootstrap.bundle.session_id == "session-1"
     assert bootstrap.bundle.d_token == "token-123"
-    assert requests[1][2]["x-d-token"] == "token-123"
+    login_headers = requests[1][2]
+    login_body = requests[1][3]
+    assert login_headers["x-d-token"] == "token-123"
+    assert login_headers["user-agent"] == "MemberMobile/5 CFNetwork/3860.400.51 Darwin/25.3.0"
+    assert login_headers["accept-language"] == "en-US,en;q=0.9"
+    assert login_headers["ins-sess"]
+    assert login_body == {
+        "username": "user@example.com",
+        "password": "secret",
+        "keepSession": False,
+        "loginLocationInfo": {
+            "cityName": "",
+            "countryCode": "",
+            "countryName": "",
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "registrationSourceCode": "MOBILE",
+            "stateCode": "",
+            "stateName": "",
+            "zipCode": "",
+            "ip": "",
+        },
+        "anonymousCrmId": login_body["anonymousCrmId"],
+    }
+    assert isinstance(login_body["anonymousCrmId"], str)
     assert requests[2][1] == "https://mmember.copart.com/mds-api/v1/member/me-info"
+    assert requests[2][2]["accept-language"] == "en-US,en;q=0.9"
+
+
+def test_direct_connector_bootstrap_maps_login_forbidden_to_profile_reject_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/":
+            return httpx.Response(200)
+        if request.method == "POST" and request.url.path == "/mds-api/v1/member/login":
+            return httpx.Response(403, json={"detail": "blocked"})
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    client = CopartHttpClient(
+        settings=make_direct_settings(),
+        transport=httpx.MockTransport(handler),
+        base_url="https://mmember.copart.com",
+    )
+
+    with pytest.raises(CopartLoginRejectedError) as exc_info:
+        client.bootstrap_connector_session(username="user@example.com", password="secret")
+
+    assert exc_info.value.status_code == 403

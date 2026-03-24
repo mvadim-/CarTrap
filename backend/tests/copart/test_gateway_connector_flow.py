@@ -23,12 +23,15 @@ from cartrap.modules.copart_provider.client import (
     CopartHeaderProfile,
 )
 from cartrap.modules.copart_provider.errors import CopartAuthenticationError, CopartSessionInvalidError
+from cartrap.modules.copart_provider.errors import CopartLoginRejectedError
 
 
 class FakeDirectConnectorClient:
     def bootstrap_connector_session(self, *, username: str, password: str) -> CopartConnectorBootstrapResult:
         if password == "bad":
             raise CopartAuthenticationError("bad credentials")
+        if password == "blocked":
+            raise CopartLoginRejectedError("blocked profile", status_code=403)
         return CopartConnectorBootstrapResult(
             bundle=_make_raw_bundle(),
             account_label=username,
@@ -177,6 +180,24 @@ def test_gateway_connector_maps_auth_invalid_and_invalid_credentials(client: Tes
     assert invalid_credentials.headers["x-copart-gateway-error"] == "invalid_credentials"
     assert auth_invalid.status_code == 409
     assert auth_invalid.headers["x-copart-gateway-error"] == "auth_invalid"
+
+
+def test_gateway_connector_maps_login_profile_rejection_to_upstream_rejected(client: TestClient) -> None:
+    with client:
+        client.app.state.gateway_service_factory = lambda: CopartGatewayService(
+            settings=client.app.state.settings,
+            client_factory=FakeDirectConnectorClient,
+        )
+        blocked_response = client.post(
+            "/v1/connector/bootstrap",
+            json={"username": "user@example.com", "password": "blocked"},
+            headers={"Authorization": "Bearer gateway-secret"},
+        )
+
+    assert blocked_response.status_code == 502
+    assert blocked_response.headers["x-copart-gateway-error"] == "upstream_rejected"
+    assert blocked_response.headers["x-copart-upstream-status"] == "403"
+    assert blocked_response.json()["detail"] == "Copart rejected connector bootstrap request."
 
 
 def test_gateway_connector_reports_invalid_encryption_key_configuration() -> None:

@@ -27,6 +27,7 @@ from cartrap.modules.copart_provider.errors import (
     CopartAuthenticationError,
     CopartChallengeError,
     CopartConfigurationError,
+    CopartLoginRejectedError,
     CopartRateLimitError,
     CopartSessionInvalidError,
 )
@@ -185,6 +186,15 @@ def _invoke_proxy(operation) -> Response:
 def _invoke_connector(operation):
     try:
         return operation()
+    except CopartLoginRejectedError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            content={"detail": "Copart rejected connector bootstrap request."},
+            headers={
+                GATEWAY_ERROR_HEADER: "upstream_rejected",
+                GATEWAY_UPSTREAM_STATUS_HEADER: str(exc.status_code or status.HTTP_403_FORBIDDEN),
+            },
+        )
     except CopartAuthenticationError:
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,

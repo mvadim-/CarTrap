@@ -131,6 +131,15 @@ class Settings(BaseSettings):
         alias="COPART_CONNECTOR_MOBILE_CLIENT_APP_VERSION",
         min_length=1,
     )
+    copart_connector_mobile_user_agent: str = Field(
+        default="MemberMobile/5 CFNetwork/3860.400.51 Darwin/25.3.0",
+        alias="COPART_CONNECTOR_MOBILE_USER_AGENT",
+        min_length=1,
+    )
+    copart_connector_mobile_ip_address: Optional[str] = Field(
+        default=None,
+        alias="COPART_CONNECTOR_MOBILE_IP_ADDRESS",
+    )
     copart_connector_connect_rate_limit_attempts: int = Field(
         default=5,
         alias="COPART_CONNECTOR_CONNECT_RATE_LIMIT_ATTEMPTS",

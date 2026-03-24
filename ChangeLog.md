@@ -757,3 +757,8 @@
 - Оновлено `backend/src/cartrap/modules/copart_gateway/service.py`: `Fernet(...)` build для `COPART_CONNECTOR_ENCRYPTION_KEY` тепер обгорнуто в явний `CopartConfigurationError`, щоб bootstrap не падав безіменним `500` після успішних `login` і `me-info`.
 - Оновлено `backend/tests/copart/test_gateway_connector_flow.py`: додано regression coverage для невалідного `COPART_CONNECTOR_ENCRYPTION_KEY`, яка перевіряє, що gateway повертає керований `500` з detail `COPART_CONNECTOR_ENCRYPTION_KEY is invalid.`.
 - Verification: `./.venv/bin/pytest backend/tests/copart/test_gateway_connector_flow.py` -> `3 passed`.
+
+## [2026-03-24 18:56] Align connector login bootstrap with native Copart profile and upstream rejection mapping
+- Оновлено `backend/src/cartrap/modules/copart_provider/{client.py,errors.py}` і `backend/src/cartrap/config.py`: connector bootstrap тепер шле ближчий до Charles native login shape (`keepSession`, `anonymousCrmId`, `loginLocationInfo`, `ins-sess`, `Accept-Language`, mobile `User-Agent`), генерує UUID-подібні `deviceid/ins-sess` і відокремлює `403` login profile rejection від реального `401 invalid credentials` через новий `CopartLoginRejectedError`.
+- Оновлено `backend/src/cartrap/modules/{copart_gateway/router.py,provider_connections/service.py}`: `Copart` bootstrap `403` тепер прокидається як `502 upstream_rejected` / `Copart rejected connector bootstrap request.`, а не як помилковий `401 Copart credentials were rejected.`.
+- Оновлено `backend/tests/{copart/test_http_client.py,copart/test_gateway_connector_flow.py,provider_connections/test_router.py}`: додано regression coverage для native-style bootstrap payload/headers, direct `403 -> CopartLoginRejectedError`, gateway `upstream_rejected` mapping і backend `502` router mapping.

@@ -17,6 +17,14 @@ class CopartAuthenticationError(CopartClientError):
     """Raised when Copart rejects connector credentials."""
 
 
+class CopartLoginRejectedError(CopartClientError):
+    """Raised when Copart rejects the connector login request profile before auth succeeds."""
+
+    def __init__(self, message: str, *, status_code: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class CopartChallengeError(CopartClientError):
     """Raised when the native challenge/bootstrap flow cannot be replayed."""
 

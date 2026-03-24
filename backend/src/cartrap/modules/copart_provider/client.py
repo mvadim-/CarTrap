@@ -23,6 +23,7 @@ from cartrap.modules.copart_provider.errors import (
     CopartGatewayMalformedResponseError,
     CopartGatewayUnavailableError,
     CopartGatewayUpstreamError,
+    CopartLoginRejectedError,
     CopartRateLimitError,
     CopartSessionInvalidError,
 )
@@ -70,6 +71,7 @@ class CopartHeaderProfile:
             "os": self.os,
             "languagecode": self.language_code,
             "clientappversion": self.client_app_version,
+            "Accept-Language": _build_accept_language(self.language_code),
             "User-Agent": self.user_agent,
         }
 
@@ -537,20 +539,38 @@ class DirectCopartTransport(_BaseHttpTransport):
     ) -> CopartConnectorBootstrapResult:
         cid = correlation_id or new_correlation_id("copart-bootstrap")
         profile = self._build_header_profile()
-        device_id = uuid4().hex
+        device_id = str(uuid4()).upper()
+        ins_sess = str(uuid4()).upper()
         bootstrap_headers = profile.to_headers()
         bootstrap_headers["deviceid"] = device_id
+        bootstrap_headers["ins-sess"] = ins_sess
         if self._settings.copart_api_d_token:
             bootstrap_headers["x-d-token"] = self._settings.copart_api_d_token
+        if self._settings.copart_connector_mobile_ip_address:
+            bootstrap_headers["ip_address"] = self._settings.copart_connector_mobile_ip_address
         if self._settings.copart_connector_bootstrap_path:
             self._client.get(self._settings.copart_connector_bootstrap_path, headers=bootstrap_headers)
+        login_payload = {
+            "username": username,
+            "password": password,
+            "keepSession": False,
+            "loginLocationInfo": _build_login_location_info(
+                ip_address=self._settings.copart_connector_mobile_ip_address,
+            ),
+            "anonymousCrmId": str(uuid4()),
+        }
         login_response = self._client.post(
             self._settings.copart_connector_login_path,
-            json={"username": username, "password": password, "deviceId": device_id},
+            json=login_payload,
             headers=bootstrap_headers,
         )
-        if login_response.status_code in {httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN}:
+        if login_response.status_code == httpx.codes.UNAUTHORIZED:
             raise CopartAuthenticationError("Copart rejected credentials.")
+        if login_response.status_code == httpx.codes.FORBIDDEN:
+            raise CopartLoginRejectedError(
+                "Copart rejected connector login profile.",
+                status_code=login_response.status_code,
+            )
         login_response.raise_for_status()
         login_payload = _safe_json(login_response)
         bundle = CopartSessionBundle.from_http_response(
@@ -747,7 +767,7 @@ class DirectCopartTransport(_BaseHttpTransport):
             os=self._settings.copart_connector_mobile_os,
             language_code=self._settings.copart_connector_mobile_language_code,
             client_app_version=self._settings.copart_connector_mobile_client_app_version,
-            user_agent=DEFAULT_HEADERS["User-Agent"],
+            user_agent=self._settings.copart_connector_mobile_user_agent,
         )
 
     def _request_json(
@@ -1365,6 +1385,31 @@ def _safe_json(response: httpx.Response) -> dict[str, Any]:
     except ValueError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _build_accept_language(language_code: str) -> str:
+    normalized = language_code.strip()
+    if not normalized:
+        return "en-US,en;q=0.9"
+    primary = normalized.split("-", 1)[0].strip()
+    if not primary or primary == normalized:
+        return normalized
+    return f"{normalized},{primary};q=0.9"
+
+
+def _build_login_location_info(*, ip_address: Optional[str]) -> dict[str, Any]:
+    return {
+        "cityName": "",
+        "countryCode": "",
+        "countryName": "",
+        "latitude": 0.0,
+        "longitude": 0.0,
+        "registrationSourceCode": "MOBILE",
+        "stateCode": "",
+        "stateName": "",
+        "zipCode": "",
+        "ip": ip_address or "",
+    }
 
 
 def _extract_account_label(payload: dict[str, Any]) -> Optional[str]:

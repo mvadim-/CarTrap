@@ -23,6 +23,7 @@ from cartrap.modules.copart_provider.client import (
 )
 from cartrap.modules.copart_provider.errors import CopartAuthenticationError
 from cartrap.modules.copart_provider.errors import CopartChallengeError
+from cartrap.modules.copart_provider.errors import CopartGatewayUpstreamError
 
 
 class FakeMongoManager:
@@ -47,6 +48,8 @@ class FakeConnectorClient:
             raise CopartAuthenticationError("bad credentials")
         if password == "challenge-password":
             raise CopartChallengeError("challenge failed")
+        if password == "blocked-password":
+            raise CopartGatewayUpstreamError("blocked", upstream_status_code=403)
         bundle = CopartEncryptedSessionBundle(
             encrypted_bundle=f"bundle:{username}",
             key_version="v1",
@@ -190,3 +193,18 @@ def test_provider_connection_router_maps_challenge_failures_to_bad_gateway(clien
 
     assert connect_response.status_code == 502
     assert connect_response.json()["detail"] == "Copart connector bootstrap failed during upstream challenge replay."
+
+
+def test_provider_connection_router_maps_upstream_rejection_to_bad_gateway(client: TestClient) -> None:
+    with client:
+        token = _create_user(client, "blocked@example.com", "BlockedPass123")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        connect_response = client.post(
+            "/api/provider-connections/copart/connect",
+            json={"username": "blocked@example.com", "password": "blocked-password"},
+            headers=headers,
+        )
+
+    assert connect_response.status_code == 502
+    assert connect_response.json()["detail"] == "Copart rejected connector bootstrap request."

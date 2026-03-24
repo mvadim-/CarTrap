@@ -24,7 +24,9 @@ from cartrap.modules.copart_provider.errors import (
     CopartAuthenticationError,
     CopartChallengeError,
     CopartConfigurationError,
+    CopartGatewayUpstreamError,
     CopartGatewayUnavailableError,
+    CopartLoginRejectedError,
     CopartRateLimitError,
     CopartSessionInvalidError,
 )
@@ -242,6 +244,12 @@ class ProviderConnectionService:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Copart connector bootstrap failed during upstream challenge replay.",
+            ) from exc
+        except (CopartLoginRejectedError, CopartGatewayUpstreamError) as exc:
+            self._log_connect_failure(owner_user["id"], correlation_id, started_at, exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Copart rejected connector bootstrap request.",
             ) from exc
         except (CopartGatewayUnavailableError, CopartConfigurationError) as exc:
             self._log_connect_failure(owner_user["id"], correlation_id, started_at, exc)
