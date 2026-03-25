@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 
 
 from cartrap.config import Settings
-from cartrap.modules.iaai_provider.client import IaaiHttpClient, IaaiSessionBundle
+from cartrap.modules.iaai_provider.client import IaaiConnectorBootstrapResult, IaaiHttpClient, IaaiSessionBundle
 from cartrap.modules.iaai_provider.errors import IaaiAuthenticationError, IaaiSessionInvalidError, IaaiWafError
 
 
@@ -86,6 +86,7 @@ def test_iaai_client_bootstrap_replays_oidc_login_flow_with_imperva_preflight() 
     settings = Settings(
         IAAI_OIDC_CONFIGURATION_PATH="https://login.test/.well-known/openid-configuration",
         IAAI_OIDC_TOKEN_PATH="https://login.test/connect/token",
+        IAAI_BROWSER_BOOTSTRAP_ENABLED=False,
     )
     client = IaaiHttpClient(settings=settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
 
@@ -151,12 +152,73 @@ def test_iaai_client_bootstrap_uses_script_body_token_when_cookie_is_missing() -
     settings = Settings(
         IAAI_OIDC_CONFIGURATION_PATH="https://login.test/.well-known/openid-configuration",
         IAAI_OIDC_TOKEN_PATH="https://login.test/connect/token",
+        IAAI_BROWSER_BOOTSTRAP_ENABLED=False,
     )
     client = IaaiHttpClient(settings=settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
 
     result = client.bootstrap_connector_session(username="buyer@example.com", password="secret")
 
     assert result.connection_status == "connected"
+
+
+def test_iaai_client_bootstrap_falls_back_to_browser_flow_when_imperva_cookie_never_appears(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://login.test/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={
+                    "authorization_endpoint": "https://login.test/connect/authorize",
+                    "token_endpoint": "https://login.test/connect/token",
+                },
+            )
+        if str(request.url).startswith("https://login.test/connect/authorize"):
+            return httpx.Response(302, headers={"location": "https://login.test/login"})
+        if str(request.url) == "https://login.test/login" and request.method == "GET":
+            return httpx.Response(
+                200,
+                text=(
+                    '<script src="/A-would-they-here-beathe-and-should-mis-fore-Cas" async></script>'
+                    '<input name="__RequestVerificationToken" type="hidden" value="csrf-123" />'
+                ),
+            )
+        if str(request.url) == "https://login.test/A-would-they-here-beathe-and-should-mis-fore-Cas":
+            return httpx.Response(200, text="window.__imperva = {};", headers={"content-type": "text/javascript"})
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    settings = Settings(
+        IAAI_OIDC_CONFIGURATION_PATH="https://login.test/.well-known/openid-configuration",
+        IAAI_OIDC_TOKEN_PATH="https://login.test/connect/token",
+        IAAI_BROWSER_BOOTSTRAP_ENABLED=True,
+    )
+    client = IaaiHttpClient(settings=settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    def fake_browser_bootstrap(*, username: str, password: str, correlation_id: str, metadata: dict) -> IaaiConnectorBootstrapResult:
+        assert username == "buyer@example.com"
+        assert password == "secret"
+        assert correlation_id.startswith("iaai-bootstrap-")
+        assert metadata["token_endpoint"] == "https://login.test/connect/token"
+        return IaaiConnectorBootstrapResult(
+            bundle=client._serialize_bundle(  # noqa: SLF001 - explicit fallback contract coverage
+                client._build_session_bundle(  # noqa: SLF001
+                    username=username,
+                    token_payload={
+                        "access_token": "header.payload.signature",
+                        "refresh_token": "refresh-1",
+                        "expires_in": 3600,
+                    },
+                )
+            ),
+            account_label=username,
+            connection_status="connected",
+            verified_at=datetime.now(timezone.utc),
+        )
+
+    monkeypatch.setattr(client, "_bootstrap_connector_session_with_browser", fake_browser_bootstrap)
+
+    result = client.bootstrap_connector_session(username="buyer@example.com", password="secret")
+
+    assert result.connection_status == "connected"
+    assert result.account_label == "buyer@example.com"
 
 
 def test_iaai_client_rejects_missing_imperva_state() -> None:
@@ -186,6 +248,7 @@ def test_iaai_client_rejects_missing_imperva_state() -> None:
     settings = Settings(
         IAAI_OIDC_CONFIGURATION_PATH="https://login.test/.well-known/openid-configuration",
         IAAI_OIDC_TOKEN_PATH="https://login.test/connect/token",
+        IAAI_BROWSER_BOOTSTRAP_ENABLED=False,
     )
     client = IaaiHttpClient(settings=settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
 

@@ -55,6 +55,10 @@ AUTHENTICATED_COOKIE_PREFIXES = ("incap_ses_", "visid_incap_", "nlbi_", "ARRAffi
 REQUEST_TIMEOUT_HINT = "timeout"
 WAF_HINT = "imperva_or_waf"
 INVALID_CREDENTIALS_HINT = "missing_authorization_code"
+BROWSER_FALLBACK_HINTS = {
+    "missing_reese84_cookie_after_script_get",
+    "missing_imperva_post_state",
+}
 
 
 logger = logging.getLogger(__name__)
@@ -326,11 +330,45 @@ class IaaiHttpClient:
             # not present in the captured login flow. We keep the parameter for transport symmetry but ignore it.
             del client_ip
         metadata = self._get_oidc_metadata(correlation_id=cid)
+        try:
+            return self._bootstrap_connector_session_with_httpx(
+                username=username,
+                password=password,
+                correlation_id=cid,
+                metadata=metadata,
+            )
+        except IaaiWafError as exc:
+            if self._should_use_browser_fallback(exc):
+                logger.warning(
+                    "iaai_client.bootstrap.browser_fallback",
+                    extra=make_log_extra(
+                        "iaai_client.bootstrap.browser_fallback",
+                        correlation_id=cid,
+                        step=(exc.diagnostics.step if exc.diagnostics else None),
+                        hint=(exc.diagnostics.hint if exc.diagnostics else None),
+                    ),
+                )
+                return self._bootstrap_connector_session_with_browser(
+                    username=username,
+                    password=password,
+                    correlation_id=cid,
+                    metadata=metadata,
+                )
+            raise
+
+    def _bootstrap_connector_session_with_httpx(
+        self,
+        *,
+        username: str,
+        password: str,
+        correlation_id: str,
+        metadata: dict[str, Any],
+    ) -> IaaiConnectorBootstrapResult:
         code_verifier = _generate_code_verifier()
         authorize_params = self._build_authorize_params(code_verifier)
         authorize_response = self._request_browser_step(
             STEP_AUTHORIZE,
-            correlation_id=cid,
+            correlation_id=correlation_id,
             callback=lambda: self._client.get(
                 metadata["authorization_endpoint"],
                 params=authorize_params,
@@ -340,19 +378,19 @@ class IaaiHttpClient:
         login_url = _resolve_location_url(authorize_response, authorize_response.headers.get("location"))
         login_page = self._request_browser_step(
             STEP_LOGIN_PAGE,
-            correlation_id=cid,
+            correlation_id=correlation_id,
             callback=lambda: self._client.get(
                 login_url,
                 headers=self._build_browser_document_headers(referer=None, same_origin=False),
             ),
         )
-        self._run_imperva_preflight(login_page=login_page, correlation_id=cid)
+        self._run_imperva_preflight(login_page=login_page, correlation_id=correlation_id)
         csrf_token = _extract_request_verification_token(login_page.text)
         if not csrf_token:
             raise IaaiConfigurationError(
                 "IAAI login page token is missing.",
                 diagnostics=self._make_diagnostics(
-                    correlation_id=cid,
+                    correlation_id=correlation_id,
                     step=STEP_LOGIN_PAGE,
                     error_code="configuration_error",
                     failure_class="configuration_error",
@@ -361,7 +399,7 @@ class IaaiHttpClient:
             )
         login_response = self._request_browser_step(
             STEP_LOGIN_SUBMIT,
-            correlation_id=cid,
+            correlation_id=correlation_id,
             callback=lambda: self._client.post(
                 str(login_page.request.url),
                 data={
@@ -376,13 +414,13 @@ class IaaiHttpClient:
         code = self._resolve_authorization_code(
             login_response,
             referer=str(login_page.request.url),
-            correlation_id=cid,
+            correlation_id=correlation_id,
         )
         if not code:
             raise IaaiAuthenticationError(
                 "IAAI credentials were rejected.",
                 diagnostics=self._make_diagnostics(
-                    correlation_id=cid,
+                    correlation_id=correlation_id,
                     step=STEP_LOGIN_SUBMIT,
                     error_code="invalid_credentials",
                     failure_class="auth_rejected",
@@ -393,7 +431,112 @@ class IaaiHttpClient:
             metadata["token_endpoint"],
             code=code,
             code_verifier=code_verifier,
-            correlation_id=cid,
+            correlation_id=correlation_id,
+        )
+        session_bundle = self._build_session_bundle(username=username, token_payload=token_payload)
+        encrypted_bundle = self._serialize_bundle(session_bundle)
+        return IaaiConnectorBootstrapResult(
+            bundle=encrypted_bundle,
+            account_label=session_bundle.account_label,
+            connection_status=self._connection_status_for_bundle(session_bundle),
+            verified_at=datetime.now(timezone.utc),
+        )
+
+    def _bootstrap_connector_session_with_browser(
+        self,
+        *,
+        username: str,
+        password: str,
+        correlation_id: str,
+        metadata: dict[str, Any],
+    ) -> IaaiConnectorBootstrapResult:
+        code_verifier = _generate_code_verifier()
+        authorize_params = self._build_authorize_params(code_verifier)
+        authorize_url = str(httpx.URL(metadata["authorization_endpoint"]).copy_merge_params(authorize_params))
+        timeout_ms = int(self._settings.iaai_browser_bootstrap_timeout_seconds * 1000)
+        browser_cookies: list[dict[str, Any]] = []
+        callback_code: str | None = None
+        try:
+            from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+            from playwright.sync_api import sync_playwright
+        except Exception as exc:  # pragma: no cover - exercised only when runtime is missing browser deps
+            raise IaaiConfigurationError(
+                "IAAI browser bootstrap dependencies are unavailable.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=STEP_IMPERVA_PREFLIGHT,
+                    error_code="configuration_error",
+                    failure_class="configuration_error",
+                    hint="playwright_unavailable",
+                ),
+            ) from exc
+
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(headless=self._settings.iaai_browser_bootstrap_headless)
+                context = browser.new_context(
+                    user_agent=_browser_user_agent(),
+                    locale=self._settings.iaai_mobile_language,
+                    extra_http_headers={"Accept-Language": f"{self._settings.iaai_mobile_language},en;q=0.9"},
+                )
+                page = context.new_page()
+
+                def capture_response(response) -> None:
+                    nonlocal callback_code
+                    location = response.headers.get("location") or ""
+                    if callback_code is None:
+                        callback_code = _extract_code_from_callback(location)
+
+                page.on("response", capture_response)
+                page.goto(authorize_url, wait_until="domcontentloaded", timeout=timeout_ms)
+                page.wait_for_selector('input[name="Input.Email"]', timeout=timeout_ms)
+                page.locator('input[name="Input.Email"]').fill(username)
+                page.locator('input[name="Input.Password"]').fill(password)
+                page.locator('button[type="submit"]').click(timeout=timeout_ms)
+                page.wait_for_timeout(4000)
+                if callback_code is None:
+                    callback_code = _extract_code_from_callback(page.url)
+                browser_cookies = context.cookies()
+                browser.close()
+        except PlaywrightTimeoutError as exc:
+            raise IaaiWafError(
+                "IAAI browser bootstrap timed out before authorization callback.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=STEP_AUTHORIZE_CALLBACK,
+                    error_code="upstream_rejected",
+                    failure_class="browser_timeout",
+                    hint="playwright_timeout",
+                ),
+            ) from exc
+
+        if not callback_code:
+            raise IaaiWafError(
+                "IAAI browser bootstrap did not reach the authorization callback.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=STEP_AUTHORIZE_CALLBACK,
+                    error_code="upstream_rejected",
+                    failure_class="browser_callback_missing",
+                    hint="playwright_missing_callback_code",
+                ),
+            )
+
+        self._import_browser_cookies(browser_cookies)
+        logger.info(
+            "iaai_client.bootstrap.browser_success",
+            extra=make_log_extra(
+                "iaai_client.bootstrap.browser_success",
+                correlation_id=correlation_id,
+                step=STEP_AUTHORIZE_CALLBACK,
+                cookie_names=self._cookie_names(),
+            ),
+        )
+        token_payload = self._exchange_code_for_tokens(
+            metadata["token_endpoint"],
+            code=callback_code,
+            code_verifier=code_verifier,
+            correlation_id=correlation_id,
         )
         session_bundle = self._build_session_bundle(username=username, token_payload=token_payload)
         encrypted_bundle = self._serialize_bundle(session_bundle)
@@ -1065,6 +1208,19 @@ class IaaiHttpClient:
         names = {cookie.name for cookie in self._client.cookies.jar}
         return sorted(names)
 
+    def _import_browser_cookies(self, cookies: list[dict[str, Any]]) -> None:
+        for item in cookies:
+            name = str(item.get("name") or "").strip()
+            value = str(item.get("value") or "")
+            if not name:
+                continue
+            self._client.cookies.set(
+                name,
+                value,
+                domain=(str(item.get("domain")) if item.get("domain") else None),
+                path=(str(item.get("path")) if item.get("path") else "/"),
+            )
+
     def _build_browser_document_headers(self, *, referer: str | None, same_origin: bool) -> dict[str, str]:
         headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -1114,6 +1270,16 @@ class IaaiHttpClient:
             "Sec-Fetch-Site": "same-origin",
             "User-Agent": _browser_user_agent(),
         }
+
+    def _should_use_browser_fallback(self, exc: IaaiWafError) -> bool:
+        diagnostics = exc.diagnostics
+        if not self._settings.iaai_browser_bootstrap_enabled:
+            return False
+        if diagnostics is None:
+            return False
+        if diagnostics.step != STEP_IMPERVA_PREFLIGHT:
+            return False
+        return (diagnostics.hint or "") in BROWSER_FALLBACK_HINTS
 
     @staticmethod
     def _make_diagnostics(

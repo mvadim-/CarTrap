@@ -9,7 +9,8 @@ WORKDIR /app
 
 COPY backend /app/backend
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir /app/backend
+    && pip install --no-cache-dir /app/backend \
+    && python -m playwright install --with-deps chromium
 
 ENV PYTHONPATH=/app/backend/src
 

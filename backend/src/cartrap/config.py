@@ -218,6 +218,13 @@ class Settings(BaseSettings):
         alias="IAAI_CONNECTOR_SESSION_EXPIRING_THRESHOLD_MINUTES",
         ge=1,
     )
+    iaai_browser_bootstrap_enabled: bool = Field(default=True, alias="IAAI_BROWSER_BOOTSTRAP_ENABLED")
+    iaai_browser_bootstrap_headless: bool = Field(default=True, alias="IAAI_BROWSER_BOOTSTRAP_HEADLESS")
+    iaai_browser_bootstrap_timeout_seconds: float = Field(
+        default=60.0,
+        alias="IAAI_BROWSER_BOOTSTRAP_TIMEOUT_SECONDS",
+        gt=0,
+    )
     iaai_http_timeout_seconds: float = Field(default=20.0, alias="IAAI_HTTP_TIMEOUT_SECONDS", gt=0)
     iaai_http_connect_timeout_seconds: float = Field(default=5.0, alias="IAAI_HTTP_CONNECT_TIMEOUT_SECONDS", gt=0)
     vapid_public_key: Optional[str] = Field(default=None, alias="VAPID_PUBLIC_KEY")
