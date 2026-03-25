@@ -21,6 +21,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart and IAAI lo
 ## Deployment Model
 - `backend` on AWS remains the primary API for auth, Mongo-backed state, worker polling, notifications, and frontend traffic.
 - `copart-gateway` on NAS is a narrow raw-JSON proxy to Copart. AWS calls NAS over HTTP(S) with bearer auth and keep-alive.
+- `iaai-gateway` on NAS is a separate raw-JSON proxy plus connector executor for IAAI. AWS calls NAS over HTTP(S) with bearer auth and stores only the opaque gateway-issued IAAI session bundle.
 - AWS does not fall back to direct Copart access. If NAS sync is degraded, the app serves cached Mongo-backed data and `/api/system/status` exposes `live_sync.status=degraded`.
 - Live provider execution is user-scoped: each CarTrap user owns encrypted connector bundles per provider, and upstream auth expiry moves only that user/provider pair into `reconnect_required` without masquerading as a global outage.
 - Saved searches and watchlist items expose additive `freshness` and `refresh_state` metadata so the PWA can distinguish `Live`, `Cached`, `Refreshing/repair pending`, and `Outdated` states per resource instead of relying on one global banner.
@@ -54,7 +55,9 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart and IAAI lo
 18. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
 19. If you use backend-driven catalog refresh, `COPART_API_SEARCH_KEYWORDS_PATH` defaults to `/mcs/v2/public/data/search/keywords`.
 20. Configure IAAI connector/runtime settings in `.env` when enabling multi-auction mode: `IAAI_OIDC_*`, `IAAI_MOBILE_*`, `IAAI_CONNECTOR_ENCRYPTION_KEY_VERSION`, and `IAAI_CONNECTOR_SESSION_EXPIRING_THRESHOLD_MINUTES`.
-21. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
+21. On the primary backend, set `IAAI_GATEWAY_BASE_URL` and `IAAI_GATEWAY_TOKEN` to route IAAI traffic through the dedicated NAS gateway. Leave `IAAI_GATEWAY_BASE_URL` empty on the NAS gateway itself.
+22. Set `IAAI_CONNECTOR_ENCRYPTION_KEY` on the IAAI NAS gateway so user-scoped IAAI bundles are encrypted at rest before they are returned to AWS as opaque ciphertext.
+23. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
 
 ## NAS Gateway
 
@@ -63,7 +66,11 @@ Runtime expectations:
 - `COPART_GATEWAY_TOKEN` is required on both AWS and NAS.
 - `COPART_GATEWAY_BASE_URL` is required only on AWS primary backend.
 - `COPART_CONNECTOR_ENCRYPTION_KEY` must match on both AWS and NAS so gateway bootstrap/execute flows can decrypt and re-encrypt user session bundles consistently.
+- `IAAI_GATEWAY_TOKEN` is required on both AWS and the dedicated IAAI NAS gateway.
+- `IAAI_GATEWAY_BASE_URL` is required only on AWS primary backend.
+- `IAAI_CONNECTOR_ENCRYPTION_KEY` is required on the IAAI NAS gateway runtime so connector bundles are encrypted before being stored on AWS as opaque ciphertext.
 - NAS gateway returns raw Copart JSON with standard HTTP `ETag`/`304` behavior and should rely on normal HTTP compression (`gzip`) instead of custom payload wrappers.
+- IAAI gateway returns raw `mobilesearch` / `GetInventoryDetails` JSON with standard HTTP `ETag`/`304` behavior and runs connector bootstrap/verify/execute on the NAS egress path to avoid Imperva blocking the AWS backend directly.
 - For production rollout, put the NAS gateway behind HTTPS and restrict inbound traffic to the AWS static IP or another explicit allowlist.
 - Gateway and client logs now classify failures separately for `timeout`, transport failure, upstream rejection, malformed response, and gateway unavailability so operator review can tell whether the issue is inside NAS proxying or deeper in Copart/upstream traffic.
 
@@ -72,6 +79,13 @@ Local gateway run:
 ```bash
 source .venv/bin/activate
 uvicorn cartrap.gateway_app:app --reload --host 0.0.0.0 --port 8010
+```
+
+Local IAAI gateway run:
+
+```bash
+source .venv/bin/activate
+uvicorn cartrap.iaai_gateway_app:app --reload --host 0.0.0.0 --port 8020
 ```
 
 Docker Compose gateway profile:
@@ -111,6 +125,7 @@ Set the printed `Application Server Key` value as `VAPID_PUBLIC_KEY`, point `VAP
 ## Docker Notes
 - `backend` and `worker` share the same Python image build and differ only by command.
 - `copart-gateway` reuses the same backend image and switches entrypoint via `APP_MODULE=cartrap.gateway_app:app`.
+- `iaai-gateway` can reuse the same backend image and switch entrypoint via `APP_MODULE=cartrap.iaai_gateway_app:app`.
 - `frontend` is built with Vite and served from nginx on port `4173`.
 - `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` seed the first admin user on API startup.
 - `BACKEND_CORS_ORIGINS` controls which browser origins may call the API; local defaults cover `localhost` and `127.0.0.1` on ports `5173` and `4173`, while non-production backend also accepts private LAN IPv4 origins via regex.

@@ -245,4 +245,4 @@
 - Repository implementation is complete; the remaining items are environment-specific validation and rollout decisions.
 - Manual smoke-test a real IAAI account from the deployment environment to confirm Imperva/WAF does not block the chosen transport.
 - Confirm the canonical public IAAI lot URL pattern before finalizing "Open lot" CTAs.
-- Decide after feasibility whether IAAI can stay on the main backend egress path or should move behind a dedicated gateway similar to Copart.
+- Decision on 2026-03-25: route IAAI through a dedicated NAS-hosted `iaai_gateway` instead of AWS direct egress, because production bootstrap hits Imperva/WAF on the main backend path.

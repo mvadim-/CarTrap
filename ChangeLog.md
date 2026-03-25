@@ -1,5 +1,10 @@
 # Change Log
 
+## [2026-03-25 16:27] Add dedicated NAS IAAI gateway path
+- Оновлено `backend/src/cartrap/config.py`, `backend/src/cartrap/modules/iaai_provider/client.py` і додано `backend/src/cartrap/modules/iaai_gateway/{schemas.py,service.py,router.py}` разом із `backend/src/cartrap/iaai_gateway_app.py`: backend тепер має окремий additive `IAAI_GATEWAY_*` transport mode, а для NAS з’явився окремий IAAI gateway app з proxy `search/lot-details` і connector `bootstrap/verify/execute` flow, щоб винести IAAI egress з AWS backend та не чіпати існуючий Copart gateway docker.
+- Додано regression coverage в `backend/tests/iaai/{test_gateway_client_config.py,test_gateway_router.py,test_gateway_connector_flow.py}`: перевірено config switch, bearer-auth gateway routing, encrypted session bundle round-trip і mapping `invalid_credentials` / `auth_invalid` / `upstream_rejected` для IAAI connector flow.
+- Оновлено `.env.example`, `README.md` і `docs/plans/20260325-iaai-multi-auction-support.md`: додано нові `IAAI_GATEWAY_*` / `IAAI_CONNECTOR_ENCRYPTION_KEY` env keys, окремий `cartrap.iaai_gateway_app:app` entrypoint для NAS deploy і зафіксовано рішення вести IAAI через dedicated gateway через Imperva/WAF блокування AWS direct bootstrap.
+
 ## [2026-03-25 16:14] Make watchlist lot-key index rollout safe for legacy Mongo rows
 - Оновлено `backend/src/cartrap/modules/watchlist/repository.py`: перед створенням unique індексу `owner_user_id + lot_key` backend тепер backfill-ить legacy `tracked_lots` поля `provider`, `auction_label`, `provider_lot_id`, `lot_key`, а сам індекс створює як partial для string-valued `lot_key`, щоб старі записи з `null` більше не валили `/api/watchlist`.
 - Додано `backend/tests/watchlist/test_repository.py`: regression coverage перевіряє прод-сценарій із кількома legacy rows `lot_key = null` для одного owner, а також toleration для зовсім зламаних legacy документів без `lot_number/provider_lot_id`.

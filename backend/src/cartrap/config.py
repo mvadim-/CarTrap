@@ -166,6 +166,9 @@ class Settings(BaseSettings):
     copart_gateway_base_url: Optional[str] = Field(default=None, alias="COPART_GATEWAY_BASE_URL")
     copart_gateway_token: Optional[str] = Field(default=None, alias="COPART_GATEWAY_TOKEN")
     copart_gateway_enable_gzip: bool = Field(default=True, alias="COPART_GATEWAY_ENABLE_GZIP")
+    iaai_gateway_base_url: Optional[str] = Field(default=None, alias="IAAI_GATEWAY_BASE_URL")
+    iaai_gateway_token: Optional[str] = Field(default=None, alias="IAAI_GATEWAY_TOKEN")
+    iaai_gateway_enable_gzip: bool = Field(default=True, alias="IAAI_GATEWAY_ENABLE_GZIP")
     iaai_oidc_configuration_path: str = Field(
         default="https://login.iaai.com/.well-known/openid-configuration",
         alias="IAAI_OIDC_CONFIGURATION_PATH",
@@ -204,6 +207,7 @@ class Settings(BaseSettings):
         alias="IAAI_MOBILE_USER_AGENT",
         min_length=1,
     )
+    iaai_connector_encryption_key: Optional[str] = Field(default=None, alias="IAAI_CONNECTOR_ENCRYPTION_KEY")
     iaai_connector_encryption_key_version: str = Field(
         default="v1",
         alias="IAAI_CONNECTOR_ENCRYPTION_KEY_VERSION",
@@ -242,6 +246,10 @@ class Settings(BaseSettings):
     def copart_gateway_enabled(self) -> bool:
         return bool(self.copart_gateway_base_url)
 
+    @property
+    def iaai_gateway_enabled(self) -> bool:
+        return bool(self.iaai_gateway_base_url)
+
     @model_validator(mode="after")
     def validate_copart_settings(self) -> "Settings":
         if self.copart_gateway_base_url:
@@ -250,11 +258,19 @@ class Settings(BaseSettings):
                 raise ValueError("COPART_GATEWAY_BASE_URL must use http or https.")
             if not self.copart_gateway_token:
                 raise ValueError("COPART_GATEWAY_TOKEN is required when COPART_GATEWAY_BASE_URL is set.")
+        if self.iaai_gateway_base_url:
+            parsed_gateway_url = httpx.URL(self.iaai_gateway_base_url)
+            if parsed_gateway_url.scheme not in {"http", "https"}:
+                raise ValueError("IAAI_GATEWAY_BASE_URL must use http or https.")
+            if not self.iaai_gateway_token:
+                raise ValueError("IAAI_GATEWAY_TOKEN is required when IAAI_GATEWAY_BASE_URL is set.")
 
         if self.copart_http_max_keepalive_connections > self.copart_http_max_connections:
             raise ValueError("COPART_HTTP_MAX_KEEPALIVE_CONNECTIONS cannot exceed COPART_HTTP_MAX_CONNECTIONS.")
         if self.copart_connector_encryption_key is not None and not self.copart_connector_encryption_key.strip():
             raise ValueError("COPART_CONNECTOR_ENCRYPTION_KEY cannot be blank when set.")
+        if self.iaai_connector_encryption_key is not None and not self.iaai_connector_encryption_key.strip():
+            raise ValueError("IAAI_CONNECTOR_ENCRYPTION_KEY cannot be blank when set.")
         return self
 
 

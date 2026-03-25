@@ -1,4 +1,4 @@
-"""Direct IAAI connector client with OIDC bootstrap and refresh-token support."""
+"""Transport-aware IAAI client facade for direct and gateway-backed requests."""
 
 from __future__ import annotations
 
@@ -24,6 +24,14 @@ from cartrap.modules.iaai_provider.errors import (
 
 
 OIDC_SCOPE = "openid profile email offline_access BuyerProfileClaims"
+GATEWAY_SEARCH_PATH = "/v1/search"
+GATEWAY_LOT_DETAILS_PATH = "/v1/lot-details"
+GATEWAY_CONNECTOR_BOOTSTRAP_PATH = "/v1/connector/bootstrap"
+GATEWAY_CONNECTOR_VERIFY_PATH = "/v1/connector/verify"
+GATEWAY_CONNECTOR_EXECUTE_SEARCH_PATH = "/v1/connector/execute/search"
+GATEWAY_CONNECTOR_EXECUTE_LOT_DETAILS_PATH = "/v1/connector/execute/lot-details"
+GATEWAY_ERROR_HEADER = "x-iaai-gateway-error"
+GATEWAY_UPSTREAM_STATUS_HEADER = "x-iaai-upstream-status"
 
 
 @dataclass
@@ -172,12 +180,69 @@ class IaaiConnectorExecutionResult:
 
 
 class IaaiHttpClient:
-    def __init__(self, settings: Optional[Settings] = None, client: Optional[httpx.Client] = None) -> None:
-        self._settings = settings or get_settings()
-        self._client = client or httpx.Client(
+    def __init__(
+        self,
+        settings: Optional[Settings] = None,
+        client: Optional[httpx.Client] = None,
+        transport: Optional[httpx.BaseTransport] = None,
+        gateway_base_url: Optional[str] = None,
+        gateway_token: Optional[str] = None,
+        gateway_enable_gzip: Optional[bool] = None,
+    ) -> None:
+        resolved_settings = settings or get_settings()
+        if gateway_base_url is not None or gateway_token is not None:
+            resolved_settings = resolved_settings.model_copy(
+                update={
+                    "iaai_gateway_base_url": gateway_base_url,
+                    "iaai_gateway_token": gateway_token,
+                    "iaai_gateway_enable_gzip": (
+                        resolved_settings.iaai_gateway_enable_gzip
+                        if gateway_enable_gzip is None
+                        else gateway_enable_gzip
+                    ),
+                }
+            )
+        elif gateway_enable_gzip is not None:
+            resolved_settings = resolved_settings.model_copy(update={"iaai_gateway_enable_gzip": gateway_enable_gzip})
+
+        self._settings = resolved_settings
+        self._gateway_enabled = resolved_settings.iaai_gateway_enabled
+        if client is not None:
+            self._client = client
+            return
+
+        if self._gateway_enabled:
+            if not resolved_settings.iaai_gateway_token:
+                raise IaaiConfigurationError("IAAI gateway token is not configured.")
+            headers = {
+                "Authorization": f"Bearer {resolved_settings.iaai_gateway_token}",
+                "Accept": "application/json, text/plain, */*",
+            }
+            if resolved_settings.iaai_gateway_enable_gzip:
+                headers["Accept-Encoding"] = "gzip"
+            self._client = httpx.Client(
+                base_url=resolved_settings.iaai_gateway_base_url,
+                follow_redirects=True,
+                timeout=httpx.Timeout(
+                    resolved_settings.iaai_http_timeout_seconds,
+                    connect=resolved_settings.iaai_http_connect_timeout_seconds,
+                ),
+                headers=headers,
+                transport=transport,
+            )
+            return
+
+        self._client = httpx.Client(
             follow_redirects=False,
-            timeout=httpx.Timeout(self._settings.iaai_http_timeout_seconds, connect=self._settings.iaai_http_connect_timeout_seconds),
-            headers={"Accept-Language": self._settings.iaai_mobile_language, "User-Agent": self._settings.iaai_mobile_user_agent},
+            timeout=httpx.Timeout(
+                resolved_settings.iaai_http_timeout_seconds,
+                connect=resolved_settings.iaai_http_connect_timeout_seconds,
+            ),
+            headers={
+                "Accept-Language": resolved_settings.iaai_mobile_language,
+                "User-Agent": resolved_settings.iaai_mobile_user_agent,
+            },
+            transport=transport,
         )
 
     def bootstrap_connector_session(
@@ -187,6 +252,23 @@ class IaaiHttpClient:
         password: str,
         client_ip: str | None = None,
     ) -> IaaiConnectorBootstrapResult:
+        if self._gateway_enabled:
+            response = self._request_gateway_json(
+                "POST",
+                GATEWAY_CONNECTOR_BOOTSTRAP_PATH,
+                json={
+                    "username": username,
+                    "password": password,
+                    "client_ip": client_ip,
+                },
+            )
+            payload = response.payload or {}
+            return IaaiConnectorBootstrapResult(
+                bundle=IaaiEncryptedSessionBundle.from_payload(payload["session_bundle"]),
+                account_label=(str(payload["account_label"]) if payload.get("account_label") else None),
+                connection_status=str(payload.get("status") or "connected"),
+                verified_at=_parse_optional_datetime(payload.get("verified_at")),
+            )
         del client_ip
         metadata = self._get_oidc_metadata()
         code_verifier = _generate_code_verifier()
@@ -223,6 +305,13 @@ class IaaiHttpClient:
         )
 
     def verify_connector_session(self, bundle: object) -> IaaiConnectorExecutionResult:
+        if self._gateway_enabled:
+            response = self._request_gateway_json(
+                "POST",
+                GATEWAY_CONNECTOR_VERIFY_PATH,
+                json={"session_bundle": _require_encrypted_bundle(bundle).to_payload()},
+            )
+            return _parse_connector_execution_response(response.payload or {}, etag=response.etag, not_modified=response.not_modified)
         session_bundle = self._require_bundle(bundle)
         refreshed_bundle = self._ensure_fresh_access_token(session_bundle)
         return IaaiConnectorExecutionResult(
@@ -242,10 +331,19 @@ class IaaiHttpClient:
         return response.payload
 
     def search_with_metadata(self, payload: dict, etag: str | None = None) -> IaaiHttpPayloadResponse:
+        if self._gateway_enabled:
+            return self._request_gateway_json("POST", GATEWAY_SEARCH_PATH, json=payload, etag=etag)
         response = self._client.post(self._settings.iaai_mobile_search_path, json=payload, headers=self._build_public_headers(etag=etag))
         return self._response_to_payload(response)
 
     def lot_details_with_metadata(self, provider_lot_id: str, etag: str | None = None) -> IaaiHttpPayloadResponse:
+        if self._gateway_enabled:
+            return self._request_gateway_json(
+                "POST",
+                GATEWAY_LOT_DETAILS_PATH,
+                json={"provider_lot_id": provider_lot_id},
+                etag=etag,
+            )
         response = self._client.get(
             self._settings.iaai_mobile_inventory_details_path.format(provider_lot_id=provider_lot_id),
             headers=self._build_public_headers(etag=etag),
@@ -253,6 +351,13 @@ class IaaiHttpClient:
         return self._response_to_payload(response)
 
     def search_with_connector_session(self, payload: dict, bundle: object) -> IaaiConnectorExecutionResult:
+        if self._gateway_enabled:
+            response = self._request_gateway_json(
+                "POST",
+                GATEWAY_CONNECTOR_EXECUTE_SEARCH_PATH,
+                json={"session_bundle": _require_encrypted_bundle(bundle).to_payload(), "search_payload": payload},
+            )
+            return _parse_connector_execution_response(response.payload or {}, etag=response.etag, not_modified=response.not_modified)
         return self._execute_with_connector_bundle(
             bundle,
             lambda session_bundle: self._client.post(
@@ -268,6 +373,17 @@ class IaaiHttpClient:
         bundle: object,
         etag: str | None = None,
     ) -> IaaiConnectorExecutionResult:
+        if self._gateway_enabled:
+            response = self._request_gateway_json(
+                "POST",
+                GATEWAY_CONNECTOR_EXECUTE_LOT_DETAILS_PATH,
+                json={
+                    "session_bundle": _require_encrypted_bundle(bundle).to_payload(),
+                    "provider_lot_id": provider_lot_id,
+                },
+                etag=etag,
+            )
+            return _parse_connector_execution_response(response.payload or {}, etag=response.etag, not_modified=response.not_modified)
         return self._execute_with_connector_bundle(
             bundle,
             lambda session_bundle: self._client.get(
@@ -278,6 +394,48 @@ class IaaiHttpClient:
 
     def close(self) -> None:
         self._client.close()
+
+    def _request_gateway_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Optional[dict] = None,
+        etag: Optional[str] = None,
+    ) -> IaaiHttpPayloadResponse:
+        headers: dict[str, str] = {}
+        if etag:
+            headers["If-None-Match"] = etag
+        try:
+            response = self._client.request(method, path, json=json, headers=headers)
+        except httpx.HTTPError as exc:
+            raise IaaiConfigurationError("IAAI gateway is unavailable.") from exc
+        if response.status_code == httpx.codes.NOT_MODIFIED:
+            return IaaiHttpPayloadResponse(payload=None, etag=response.headers.get("etag") or etag, not_modified=True)
+        if response.is_error:
+            self._raise_gateway_error(response)
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise IaaiConfigurationError("IAAI gateway returned invalid JSON.") from exc
+        if not isinstance(payload, dict):
+            raise IaaiConfigurationError("IAAI gateway response must be a JSON object.")
+        return IaaiHttpPayloadResponse(payload=payload, etag=response.headers.get("etag"), not_modified=False)
+
+    @staticmethod
+    def _raise_gateway_error(response: httpx.Response) -> None:
+        gateway_error = (response.headers.get(GATEWAY_ERROR_HEADER) or "").strip().lower()
+        if gateway_error == "upstream_rejected":
+            raise IaaiWafError("IAAI rejected connector bootstrap request.")
+        if gateway_error == "invalid_credentials":
+            raise IaaiAuthenticationError("IAAI credentials were rejected.")
+        if gateway_error == "auth_invalid":
+            raise IaaiSessionInvalidError("IAAI session is no longer valid.")
+        if gateway_error == "malformed_response":
+            raise IaaiConfigurationError("IAAI gateway returned a malformed upstream response.")
+        raise IaaiConfigurationError(
+            f"IAAI gateway request failed with status {response.status_code}."
+        )
 
     def _execute_with_connector_bundle(self, bundle: object, callback) -> IaaiConnectorExecutionResult:
         session_bundle = self._ensure_fresh_access_token(self._require_bundle(bundle))
@@ -511,6 +669,33 @@ def _extract_code_from_callback(callback_url: str) -> str | None:
 def _looks_like_waf_page(body: str) -> bool:
     lowered = body.lower()
     return "imperva" in lowered or "/a-would-they-here-beathe" in lowered
+
+
+def _require_encrypted_bundle(bundle: object) -> IaaiEncryptedSessionBundle:
+    if isinstance(bundle, IaaiEncryptedSessionBundle):
+        return bundle
+    raise IaaiConfigurationError("IAAI gateway transport requires an encrypted session bundle.")
+
+
+def _parse_connector_execution_response(
+    payload: dict[str, Any],
+    *,
+    etag: str | None,
+    not_modified: bool,
+) -> IaaiConnectorExecutionResult:
+    serialized_bundle = payload.get("session_bundle")
+    bundle = None
+    if isinstance(serialized_bundle, dict):
+        bundle = IaaiEncryptedSessionBundle.from_payload(serialized_bundle)
+    return IaaiConnectorExecutionResult(
+        payload=payload.get("payload") if isinstance(payload.get("payload"), dict) else None,
+        bundle=bundle,
+        etag=etag,
+        not_modified=not_modified,
+        connection_status=str(payload.get("status") or "connected"),
+        verified_at=_parse_optional_datetime(payload.get("verified_at")),
+        used_at=_parse_optional_datetime(payload.get("used_at")),
+    )
 
 
 def _extract_user_id_from_access_token(access_token: str) -> str | None:
