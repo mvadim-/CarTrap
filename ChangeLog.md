@@ -1,5 +1,9 @@
 # Change Log
 
+## [2026-03-25 16:31] Add iaai-gateway Docker Compose service
+- Оновлено `docker-compose.yml`: додано окремий `iaai-gateway` service під profile `gateway`, який використовує той самий backend image, але стартує з `APP_MODULE=cartrap.iaai_gateway_app:app` і слухає `IAAI_GATEWAY_PORT` (за замовчуванням `8020`).
+- Це синхронізує локальний/NAS deployment із уже доданим IAAI gateway code path і дозволяє піднімати `copart-gateway` та `iaai-gateway` незалежно, не змішуючи їх у одному контейнері.
+
 ## [2026-03-25 16:27] Add dedicated NAS IAAI gateway path
 - Оновлено `backend/src/cartrap/config.py`, `backend/src/cartrap/modules/iaai_provider/client.py` і додано `backend/src/cartrap/modules/iaai_gateway/{schemas.py,service.py,router.py}` разом із `backend/src/cartrap/iaai_gateway_app.py`: backend тепер має окремий additive `IAAI_GATEWAY_*` transport mode, а для NAS з’явився окремий IAAI gateway app з proxy `search/lot-details` і connector `bootstrap/verify/execute` flow, щоб винести IAAI egress з AWS backend та не чіпати існуючий Copart gateway docker.
 - Додано regression coverage в `backend/tests/iaai/{test_gateway_client_config.py,test_gateway_router.py,test_gateway_connector_flow.py}`: перевірено config switch, bearer-auth gateway routing, encrypted session bundle round-trip і mapping `invalid_credentials` / `auth_invalid` / `upstream_rejected` для IAAI connector flow.
