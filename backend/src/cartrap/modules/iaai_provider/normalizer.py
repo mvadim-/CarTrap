@@ -93,8 +93,8 @@ def normalize_search_results(payload: list[dict[str, Any]]) -> list[AuctionSearc
 
 
 def normalize_lot_details_payload(payload: dict[str, Any]) -> AuctionLotSnapshot:
-    inventory_result = payload.get("inventoryResult")
-    if not isinstance(inventory_result, dict):
+    inventory_result = resolve_inventory_result(payload)
+    if inventory_result is None:
         raise ValueError("IAAI lot payload is missing 'inventoryResult'.")
     sale_information = inventory_result.get("saleInformation") if isinstance(inventory_result.get("saleInformation"), dict) else {}
     vehicle_information = (
@@ -218,7 +218,7 @@ def first_present(payload: dict[str, Any], *field_names: str) -> Any:
 
 
 def extract_image_urls(payload: dict[str, Any]) -> list[str]:
-    inventory_result = payload.get("inventoryResult") if isinstance(payload.get("inventoryResult"), dict) else {}
+    inventory_result = resolve_inventory_result(payload) or {}
     image_dimensions = inventory_result.get("imageDimensions") if isinstance(inventory_result.get("imageDimensions"), dict) else {}
     raw_keys = image_dimensions.get("keys")
     if not isinstance(raw_keys, list):
@@ -253,3 +253,32 @@ def extract_highlights(attributes: dict[str, Any]) -> list[str]:
         elif isinstance(value, str):
             highlights.extend(part.strip() for part in value.split(",") if part.strip())
     return highlights
+
+
+def resolve_inventory_result(payload: dict[str, Any]) -> dict[str, Any] | None:
+    direct = payload.get("inventoryResult")
+    if isinstance(direct, dict):
+        return direct
+    for field_name in ("result", "data", "payload", "inventory", "inventoryDetails"):
+        candidate = payload.get(field_name)
+        if not isinstance(candidate, dict):
+            continue
+        nested = candidate.get("inventoryResult")
+        if isinstance(nested, dict):
+            return nested
+        if looks_like_inventory_result(candidate):
+            return candidate
+    if looks_like_inventory_result(payload):
+        return payload
+    return None
+
+
+def looks_like_inventory_result(payload: dict[str, Any]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if any(field_name in payload for field_name in ("inventoryId", "itemId", "lotNumber")):
+        return True
+    return any(
+        isinstance(payload.get(field_name), dict)
+        for field_name in ("vehicleInformation", "saleInformation", "attributes", "imageDimensions")
+    )

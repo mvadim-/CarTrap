@@ -77,3 +77,59 @@ def test_normalize_lot_details_extracts_images_and_status() -> None:
         "https://img.iaai.com/99112233/1.jpg",
         "https://img.iaai.com/99112233/2.jpg",
     ]
+
+
+def test_normalize_lot_details_accepts_direct_inventory_shape_without_inventory_result_wrapper() -> None:
+    snapshot = normalize_lot_details_payload(
+        {
+            "inventoryId": 44610371,
+            "vehicleInformation": {
+                "stockNumber": "36475260",
+                "yearMakeModel": "2014 FORD FOCUS SE",
+                "odometer": "124,550",
+                "vin": "1FADP3F28EL000001",
+            },
+            "saleInformation": {
+                "auctionDateTime": "2026-03-30T17:00:00Z",
+                "currentBid": 650,
+                "currency": "USD",
+                "saleStatus": "Pre-Bid",
+            },
+            "attributes": {
+                "Primary Damage": "Rear",
+                "Highlights": "Run and Drive",
+            },
+            "imageDimensions": {
+                "baseUrl": "https://img.iaai.com",
+                "keys": ["44610371/hero.jpg"],
+            },
+        }
+    )
+
+    assert snapshot.provider_lot_id == "44610371"
+    assert snapshot.lot_number == "36475260"
+    assert snapshot.title == "2014 FORD FOCUS SE"
+    assert snapshot.status == "upcoming"
+    assert [str(url) for url in snapshot.image_urls] == ["https://img.iaai.com/44610371/hero.jpg"]
+
+
+def test_normalize_lot_details_accepts_nested_data_wrapper() -> None:
+    snapshot = normalize_lot_details_payload(
+        {
+            "data": {
+                "inventoryId": 99112233,
+                "vehicleInformation": {
+                    "stockNumber": "STK-44",
+                    "yearMakeModel": "2021 TESLA MODEL 3",
+                },
+                "saleInformation": {
+                    "saleStatus": "Sold",
+                    "currency": "USD",
+                },
+            }
+        }
+    )
+
+    assert snapshot.provider_lot_id == "99112233"
+    assert snapshot.lot_number == "STK-44"
+    assert snapshot.status == "sold"
