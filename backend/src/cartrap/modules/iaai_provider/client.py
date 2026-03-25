@@ -7,16 +7,21 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
+import re
 from typing import Any, Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 from uuid import uuid4
 
 import httpx
 
 from cartrap.config import Settings, get_settings
+from cartrap.core.logging import new_correlation_id
 from cartrap.modules.iaai_provider.errors import (
     IaaiAuthenticationError,
     IaaiConfigurationError,
+    IaaiDiagnostics,
+    IaaiGatewayMalformedResponseError,
+    IaaiGatewayUnavailableError,
     IaaiRefreshError,
     IaaiSessionInvalidError,
     IaaiWafError,
@@ -32,6 +37,23 @@ GATEWAY_CONNECTOR_EXECUTE_SEARCH_PATH = "/v1/connector/execute/search"
 GATEWAY_CONNECTOR_EXECUTE_LOT_DETAILS_PATH = "/v1/connector/execute/lot-details"
 GATEWAY_ERROR_HEADER = "x-iaai-gateway-error"
 GATEWAY_UPSTREAM_STATUS_HEADER = "x-iaai-upstream-status"
+GATEWAY_CORRELATION_ID_HEADER = "x-iaai-correlation-id"
+GATEWAY_STEP_HEADER = "x-iaai-bootstrap-step"
+GATEWAY_FAILURE_CLASS_HEADER = "x-iaai-failure-class"
+REQUEST_CORRELATION_ID_HEADER = "x-correlation-id"
+STEP_OIDC_METADATA = "oidc_metadata"
+STEP_AUTHORIZE = "authorize"
+STEP_LOGIN_PAGE = "login_page"
+STEP_IMPERVA_PREFLIGHT = "imperva_preflight"
+STEP_LOGIN_SUBMIT = "login_submit"
+STEP_AUTHORIZE_CALLBACK = "authorize_callback"
+STEP_TOKEN_EXCHANGE = "token_exchange"
+IMPERVA_SCRIPT_DOMAIN_PARAM = "login.iaai.com"
+IMPERVA_COOKIE_NAME = "reese84"
+AUTHENTICATED_COOKIE_PREFIXES = ("incap_ses_", "visid_incap_", "nlbi_", "ARRAffinity")
+REQUEST_TIMEOUT_HINT = "timeout"
+WAF_HINT = "imperva_or_waf"
+INVALID_CREDENTIALS_HINT = "missing_authorization_code"
 
 
 @dataclass
@@ -51,6 +73,10 @@ class IaaiHeaderProfile:
     country: str
     language: str
     user_agent: str
+    device_type: str | None = None
+    os_version: str | None = None
+    model_name: str | None = None
+    session_id: str | None = None
 
     def to_headers(self, *, access_token: str, user_id: str | None, extra_cookies: tuple[tuple[str, str], ...]) -> dict[str, str]:
         headers = {
@@ -60,12 +86,23 @@ class IaaiHeaderProfile:
             "deviceid": self.deviceid,
             "x-request-type": self.request_type,
             "x-app-version": self.app_version,
+            "appversion": self.app_version,
             "x-country": self.country,
-            "x-language": self.language,
+            "x-language": _mobile_language_code(self.language),
             "x-datetime": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "User-Agent": self.user_agent,
             "Accept": "application/json, text/plain, */*",
+            "Accept-Language": f"{self.language},en;q=0.9",
         }
+        if self.session_id:
+            headers["x-session"] = self.session_id
+        if self.device_type:
+            headers["x-device-type"] = self.device_type
+            headers["devicetype"] = self.device_type
+        if self.os_version:
+            headers["x-os-version"] = self.os_version
+        if self.model_name:
+            headers["x-model-name"] = self.model_name
         if user_id:
             headers["x-user-id"] = user_id
         if extra_cookies:
@@ -82,6 +119,10 @@ class IaaiHeaderProfile:
             "country": self.country,
             "language": self.language,
             "user_agent": self.user_agent,
+            "device_type": self.device_type,
+            "os_version": self.os_version,
+            "model_name": self.model_name,
+            "session_id": self.session_id,
         }
 
     @classmethod
@@ -95,6 +136,10 @@ class IaaiHeaderProfile:
             country=str(payload["country"]),
             language=str(payload["language"]),
             user_agent=str(payload["user_agent"]),
+            device_type=(str(payload["device_type"]) if payload.get("device_type") else None),
+            os_version=(str(payload["os_version"]) if payload.get("os_version") else None),
+            model_name=(str(payload["model_name"]) if payload.get("model_name") else None),
+            session_id=(str(payload["session_id"]) if payload.get("session_id") else None),
         )
 
 
@@ -251,7 +296,9 @@ class IaaiHttpClient:
         username: str,
         password: str,
         client_ip: str | None = None,
+        correlation_id: str | None = None,
     ) -> IaaiConnectorBootstrapResult:
+        cid = correlation_id or new_correlation_id("iaai-bootstrap")
         if self._gateway_enabled:
             response = self._request_gateway_json(
                 "POST",
@@ -261,6 +308,7 @@ class IaaiHttpClient:
                     "password": password,
                     "client_ip": client_ip,
                 },
+                correlation_id=cid,
             )
             payload = response.payload or {}
             return IaaiConnectorBootstrapResult(
@@ -269,32 +317,80 @@ class IaaiHttpClient:
                 connection_status=str(payload.get("status") or "connected"),
                 verified_at=_parse_optional_datetime(payload.get("verified_at")),
             )
-        del client_ip
-        metadata = self._get_oidc_metadata()
+        if client_ip:
+            # IAAI sees the NAS gateway IP anyway, so forwarding a synthetic client IP is misleading and was
+            # not present in the captured login flow. We keep the parameter for transport symmetry but ignore it.
+            del client_ip
+        metadata = self._get_oidc_metadata(correlation_id=cid)
         code_verifier = _generate_code_verifier()
         authorize_params = self._build_authorize_params(code_verifier)
-        authorize_response = self._client.get(metadata["authorization_endpoint"], params=authorize_params)
-        login_url = authorize_response.headers.get("location") or str(authorize_response.request.url)
-        login_page = self._client.get(login_url)
-        if _looks_like_waf_page(login_page.text):
-            raise IaaiWafError("IAAI login flow was blocked by Imperva.")
+        authorize_response = self._request_browser_step(
+            STEP_AUTHORIZE,
+            correlation_id=cid,
+            callback=lambda: self._client.get(
+                metadata["authorization_endpoint"],
+                params=authorize_params,
+                headers=self._build_browser_document_headers(referer=None, same_origin=False),
+            ),
+        )
+        login_url = _resolve_location_url(authorize_response, authorize_response.headers.get("location"))
+        login_page = self._request_browser_step(
+            STEP_LOGIN_PAGE,
+            correlation_id=cid,
+            callback=lambda: self._client.get(
+                login_url,
+                headers=self._build_browser_document_headers(referer=None, same_origin=False),
+            ),
+        )
+        self._run_imperva_preflight(login_page=login_page, correlation_id=cid)
         csrf_token = _extract_request_verification_token(login_page.text)
         if not csrf_token:
-            raise IaaiConfigurationError("IAAI login page token is missing.")
-        login_response = self._client.post(
-            str(login_page.request.url),
-            data={
-                "Input.Email": username,
-                "Input.Password": password,
-                "Input.RememberMe": "false",
-                "__RequestVerificationToken": csrf_token,
-            },
+            raise IaaiConfigurationError(
+                "IAAI login page token is missing.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=cid,
+                    step=STEP_LOGIN_PAGE,
+                    error_code="configuration_error",
+                    failure_class="configuration_error",
+                    hint="missing_request_verification_token",
+                ),
+            )
+        login_response = self._request_browser_step(
+            STEP_LOGIN_SUBMIT,
+            correlation_id=cid,
+            callback=lambda: self._client.post(
+                str(login_page.request.url),
+                data={
+                    "Input.Email": username,
+                    "Input.Password": password,
+                    "Input.RememberMe": "false",
+                    "__RequestVerificationToken": csrf_token,
+                },
+                headers=self._build_browser_form_headers(referer=str(login_page.request.url)),
+            ),
         )
-        callback_url = login_response.headers.get("location") or str(login_response.request.url)
-        code = _extract_code_from_callback(callback_url)
+        code = self._resolve_authorization_code(
+            login_response,
+            referer=str(login_page.request.url),
+            correlation_id=cid,
+        )
         if not code:
-            raise IaaiAuthenticationError("IAAI credentials were rejected.")
-        token_payload = self._exchange_code_for_tokens(metadata["token_endpoint"], code=code, code_verifier=code_verifier)
+            raise IaaiAuthenticationError(
+                "IAAI credentials were rejected.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=cid,
+                    step=STEP_LOGIN_SUBMIT,
+                    error_code="invalid_credentials",
+                    failure_class="auth_rejected",
+                    hint=INVALID_CREDENTIALS_HINT,
+                ),
+            )
+        token_payload = self._exchange_code_for_tokens(
+            metadata["token_endpoint"],
+            code=code,
+            code_verifier=code_verifier,
+            correlation_id=cid,
+        )
         session_bundle = self._build_session_bundle(username=username, token_payload=token_payload)
         encrypted_bundle = self._serialize_bundle(session_bundle)
         return IaaiConnectorBootstrapResult(
@@ -402,14 +498,26 @@ class IaaiHttpClient:
         *,
         json: Optional[dict] = None,
         etag: Optional[str] = None,
+        correlation_id: Optional[str] = None,
     ) -> IaaiHttpPayloadResponse:
         headers: dict[str, str] = {}
         if etag:
             headers["If-None-Match"] = etag
+        if correlation_id:
+            headers[REQUEST_CORRELATION_ID_HEADER] = correlation_id
         try:
             response = self._client.request(method, path, json=json, headers=headers)
         except httpx.HTTPError as exc:
-            raise IaaiConfigurationError("IAAI gateway is unavailable.") from exc
+            raise IaaiGatewayUnavailableError(
+                "IAAI gateway is unavailable.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=None,
+                    error_code="unavailable",
+                    failure_class="transport_error",
+                    hint=type(exc).__name__,
+                ),
+            ) from exc
         if response.status_code == httpx.codes.NOT_MODIFIED:
             return IaaiHttpPayloadResponse(payload=None, etag=response.headers.get("etag") or etag, not_modified=True)
         if response.is_error:
@@ -417,24 +525,28 @@ class IaaiHttpClient:
         try:
             payload = response.json()
         except ValueError as exc:
-            raise IaaiConfigurationError("IAAI gateway returned invalid JSON.") from exc
+            raise IaaiGatewayMalformedResponseError("IAAI gateway returned invalid JSON.") from exc
         if not isinstance(payload, dict):
-            raise IaaiConfigurationError("IAAI gateway response must be a JSON object.")
+            raise IaaiGatewayMalformedResponseError("IAAI gateway response must be a JSON object.")
         return IaaiHttpPayloadResponse(payload=payload, etag=response.headers.get("etag"), not_modified=False)
 
     @staticmethod
     def _raise_gateway_error(response: httpx.Response) -> None:
         gateway_error = (response.headers.get(GATEWAY_ERROR_HEADER) or "").strip().lower()
+        diagnostics = _extract_gateway_diagnostics(response)
         if gateway_error == "upstream_rejected":
-            raise IaaiWafError("IAAI rejected connector bootstrap request.")
+            raise IaaiWafError("IAAI rejected connector bootstrap request.", diagnostics=diagnostics)
         if gateway_error == "invalid_credentials":
-            raise IaaiAuthenticationError("IAAI credentials were rejected.")
+            raise IaaiAuthenticationError("IAAI credentials were rejected.", diagnostics=diagnostics)
         if gateway_error == "auth_invalid":
-            raise IaaiSessionInvalidError("IAAI session is no longer valid.")
+            raise IaaiSessionInvalidError("IAAI session is no longer valid.", diagnostics=diagnostics)
         if gateway_error == "malformed_response":
-            raise IaaiConfigurationError("IAAI gateway returned a malformed upstream response.")
+            raise IaaiGatewayMalformedResponseError("IAAI gateway returned a malformed upstream response.", diagnostics=diagnostics)
+        if gateway_error == "unavailable":
+            raise IaaiGatewayUnavailableError("IAAI gateway is unavailable.", diagnostics=diagnostics)
         raise IaaiConfigurationError(
-            f"IAAI gateway request failed with status {response.status_code}."
+            f"IAAI gateway request failed with status {response.status_code}.",
+            diagnostics=diagnostics,
         )
 
     def _execute_with_connector_bundle(self, bundle: object, callback) -> IaaiConnectorExecutionResult:
@@ -460,12 +572,23 @@ class IaaiHttpClient:
             used_at=datetime.now(timezone.utc),
         )
 
-    def _get_oidc_metadata(self) -> dict[str, Any]:
-        response = self._client.get(self._settings.iaai_oidc_configuration_path)
-        response.raise_for_status()
+    def _get_oidc_metadata(self, *, correlation_id: str) -> dict[str, Any]:
+        response = self._request_browser_step(
+            STEP_OIDC_METADATA,
+            correlation_id=correlation_id,
+            callback=lambda: self._client.get(self._settings.iaai_oidc_configuration_path),
+        )
         payload = response.json()
         if not isinstance(payload, dict):
-            raise IaaiConfigurationError("IAAI OIDC metadata is invalid.")
+            raise IaaiConfigurationError(
+                "IAAI OIDC metadata is invalid.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=STEP_OIDC_METADATA,
+                    error_code="malformed_response",
+                    failure_class="malformed_response",
+                ),
+            )
         return payload
 
     def _build_authorize_params(self, code_verifier: str) -> dict[str, str]:
@@ -485,23 +608,56 @@ class IaaiHttpClient:
             "responseType": "id_token",
         }
 
-    def _exchange_code_for_tokens(self, token_endpoint: str, *, code: str, code_verifier: str) -> dict[str, Any]:
-        response = self._client.post(
-            token_endpoint,
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": self._settings.iaai_oidc_redirect_uri,
-                "client_id": self._settings.iaai_oidc_client_id,
-                "code_verifier": code_verifier,
-            },
+    def _exchange_code_for_tokens(
+        self,
+        token_endpoint: str,
+        *,
+        code: str,
+        code_verifier: str,
+        correlation_id: str,
+    ) -> dict[str, Any]:
+        response = self._request_browser_step(
+            STEP_TOKEN_EXCHANGE,
+            correlation_id=correlation_id,
+            callback=lambda: self._client.post(
+                token_endpoint,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": self._settings.iaai_oidc_redirect_uri,
+                    "client_id": self._settings.iaai_oidc_client_id,
+                    "code_verifier": code_verifier,
+                },
+                headers={
+                    "Accept": "*/*",
+                    "Accept-Language": f"{self._settings.iaai_mobile_language},en;q=0.9",
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "User-Agent": self._settings.iaai_mobile_user_agent,
+                },
+            ),
         )
         if response.status_code in {400, 401}:
-            raise IaaiAuthenticationError("IAAI token exchange rejected the provided credentials.")
-        response.raise_for_status()
+            raise IaaiAuthenticationError(
+                "IAAI token exchange rejected the provided credentials.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=STEP_TOKEN_EXCHANGE,
+                    error_code="invalid_credentials",
+                    failure_class="auth_rejected",
+                    upstream_status_code=response.status_code,
+                ),
+            )
         payload = response.json()
         if not isinstance(payload, dict) or not payload.get("access_token"):
-            raise IaaiConfigurationError("IAAI token response is invalid.")
+            raise IaaiConfigurationError(
+                "IAAI token response is invalid.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=STEP_TOKEN_EXCHANGE,
+                    error_code="malformed_response",
+                    failure_class="malformed_response",
+                ),
+            )
         return payload
 
     def _refresh_token(self, refresh_token: str) -> dict[str, Any]:
@@ -532,12 +688,16 @@ class IaaiHttpClient:
         header_profile = IaaiHeaderProfile(
             tenant=self._settings.iaai_mobile_tenant,
             apikey=self._settings.iaai_mobile_apikey,
-            deviceid=uuid4().hex,
+            deviceid=str(uuid4()).upper(),
             request_type=self._settings.iaai_mobile_request_type,
             app_version=self._settings.iaai_mobile_app_version,
             country=self._settings.iaai_mobile_country,
             language=self._settings.iaai_mobile_language,
             user_agent=self._settings.iaai_mobile_user_agent,
+            device_type="IOS",
+            os_version="26.4",
+            model_name="iPhone 15 Plus",
+            session_id=_new_mobile_session_id(),
         )
         user_id = _extract_user_id_from_access_token(str(token_payload["access_token"]))
         return IaaiSessionBundle(
@@ -552,6 +712,7 @@ class IaaiHttpClient:
         )
 
     def _ensure_fresh_access_token(self, bundle: IaaiSessionBundle) -> IaaiSessionBundle:
+        self._validate_session_bundle(bundle)
         if bundle.expires_at is None or bundle.expires_at > datetime.now(timezone.utc) + timedelta(minutes=1):
             return bundle
         if not bundle.refresh_token:
@@ -577,6 +738,10 @@ class IaaiHttpClient:
                 country=bundle.header_profile.country,
                 language=bundle.header_profile.language,
                 user_agent=bundle.header_profile.user_agent,
+                device_type=bundle.header_profile.device_type,
+                os_version=bundle.header_profile.os_version,
+                model_name=bundle.header_profile.model_name,
+                session_id=bundle.header_profile.session_id,
             ),
             captured_at=datetime.now(timezone.utc),
         )
@@ -625,10 +790,268 @@ class IaaiHttpClient:
     def _require_bundle(self, bundle: object) -> IaaiSessionBundle:
         if isinstance(bundle, IaaiEncryptedSessionBundle):
             raw = base64.urlsafe_b64decode(bundle.encrypted_bundle.encode("ascii")).decode("utf-8")
-            return IaaiSessionBundle.from_payload(json.loads(raw))
+            resolved = IaaiSessionBundle.from_payload(json.loads(raw))
+            self._validate_session_bundle(resolved)
+            return resolved
         if isinstance(bundle, IaaiSessionBundle):
+            self._validate_session_bundle(bundle)
             return bundle
         raise IaaiConfigurationError("IAAI connector execution requires a serialized session bundle.")
+
+    def _request_browser_step(
+        self,
+        step: str,
+        *,
+        correlation_id: str,
+        callback,
+    ) -> httpx.Response:
+        try:
+            response = callback()
+        except httpx.TimeoutException as exc:
+            raise IaaiGatewayUnavailableError(
+                "IAAI upstream timed out.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=step,
+                    error_code="unavailable",
+                    failure_class="timeout",
+                    hint=REQUEST_TIMEOUT_HINT,
+                ),
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise IaaiGatewayUnavailableError(
+                "IAAI upstream is unavailable.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=step,
+                    error_code="unavailable",
+                    failure_class="transport_error",
+                    hint=type(exc).__name__,
+                ),
+            ) from exc
+        if response.status_code in {401, 403} and _looks_like_waf_page(response.text):
+            raise IaaiWafError(
+                "IAAI login flow was blocked by Imperva.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=step,
+                    error_code="upstream_rejected",
+                    failure_class="upstream_rejected",
+                    upstream_status_code=response.status_code,
+                    hint=WAF_HINT,
+                ),
+            )
+        if response.status_code >= 500:
+            raise IaaiGatewayUnavailableError(
+                "IAAI upstream is unavailable.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=step,
+                    error_code="unavailable",
+                    failure_class="upstream_error",
+                    upstream_status_code=response.status_code,
+                ),
+            )
+        return response
+
+    def _run_imperva_preflight(self, *, login_page: httpx.Response, correlation_id: str) -> None:
+        script_path = _extract_imperva_script_path(login_page.text)
+        if not script_path:
+            raise IaaiWafError(
+                "IAAI login page is missing the Imperva preflight script.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=STEP_IMPERVA_PREFLIGHT,
+                    error_code="upstream_rejected",
+                    failure_class="bootstrap_incomplete",
+                    hint="missing_imperva_script",
+                ),
+            )
+        self._request_browser_step(
+            STEP_IMPERVA_PREFLIGHT,
+            correlation_id=correlation_id,
+            callback=lambda: self._client.get(
+                urljoin(str(login_page.request.url), script_path),
+                headers=self._build_browser_script_headers(referer=str(login_page.request.url)),
+            ),
+        )
+        imperva_token = self._cookie_value(IMPERVA_COOKIE_NAME)
+        if not imperva_token:
+            raise IaaiWafError(
+                "IAAI Imperva preflight state is incomplete.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=STEP_IMPERVA_PREFLIGHT,
+                    error_code="upstream_rejected",
+                    failure_class="bootstrap_incomplete",
+                    hint="missing_reese84_cookie",
+                ),
+            )
+        preflight_response = self._request_browser_step(
+            STEP_IMPERVA_PREFLIGHT,
+            correlation_id=correlation_id,
+            callback=lambda: self._client.post(
+                urljoin(str(login_page.request.url), f"{script_path}?d={IMPERVA_SCRIPT_DOMAIN_PARAM}"),
+                content=json.dumps(imperva_token).encode("utf-8"),
+                headers=self._build_browser_preflight_headers(referer=str(login_page.request.url)),
+            ),
+        )
+        if preflight_response.is_error:
+            raise IaaiWafError(
+                "IAAI Imperva preflight was rejected.",
+                diagnostics=self._make_diagnostics(
+                    correlation_id=correlation_id,
+                    step=STEP_IMPERVA_PREFLIGHT,
+                    error_code="upstream_rejected",
+                    failure_class="upstream_rejected",
+                    upstream_status_code=preflight_response.status_code,
+                    hint=WAF_HINT,
+                ),
+            )
+        if not self._cookie_value("nlbi_2831003_2147483392"):
+            # Imperva rotates additional load-balancer cookies after the POST. Absence usually means the challenge
+            # did not finish even if the endpoint returned 200.
+            payload = _safe_json_dict(preflight_response)
+            if not payload.get("token"):
+                raise IaaiWafError(
+                    "IAAI Imperva preflight did not return the expected anti-bot state.",
+                    diagnostics=self._make_diagnostics(
+                        correlation_id=correlation_id,
+                        step=STEP_IMPERVA_PREFLIGHT,
+                        error_code="upstream_rejected",
+                        failure_class="bootstrap_incomplete",
+                        hint="missing_imperva_post_state",
+                    ),
+                )
+
+    def _resolve_authorization_code(
+        self,
+        response: httpx.Response,
+        *,
+        referer: str,
+        correlation_id: str,
+    ) -> str | None:
+        direct_code = _extract_code_from_callback(response.headers.get("location") or str(response.request.url))
+        if direct_code:
+            return direct_code
+        callback_url = response.headers.get("location")
+        if callback_url:
+            resolved_callback_url = _resolve_location_url(response, callback_url)
+            if "/connect/authorize/callback" in resolved_callback_url:
+                callback_response = self._request_browser_step(
+                    STEP_AUTHORIZE_CALLBACK,
+                    correlation_id=correlation_id,
+                    callback=lambda: self._client.get(
+                        resolved_callback_url,
+                        headers=self._build_browser_document_headers(referer=referer, same_origin=True),
+                    ),
+                )
+                for candidate in (
+                    callback_response.headers.get("location"),
+                    str(callback_response.request.url),
+                    str(callback_response.url),
+                ):
+                    callback_code = _extract_code_from_callback(candidate or "")
+                    if callback_code:
+                        return callback_code
+                hidden_code = _extract_hidden_input_value(callback_response.text, "code")
+                if hidden_code:
+                    return hidden_code
+                form_action = _extract_form_action(callback_response.text)
+                if form_action:
+                    return _extract_code_from_callback(form_action)
+        hidden_code = _extract_hidden_input_value(response.text, "code")
+        if hidden_code:
+            return hidden_code
+        form_action = _extract_form_action(response.text)
+        if form_action:
+            return _extract_code_from_callback(form_action)
+        return None
+
+    def _validate_session_bundle(self, bundle: IaaiSessionBundle) -> None:
+        if not bundle.access_token:
+            raise IaaiSessionInvalidError("IAAI session bundle is missing the access token.")
+        if not bundle.header_profile.deviceid:
+            raise IaaiSessionInvalidError("IAAI session bundle is missing the mobile device identifier.")
+        if not bundle.cookies:
+            raise IaaiSessionInvalidError("IAAI session bundle is missing anti-bot cookies.")
+        if not any(name.startswith(AUTHENTICATED_COOKIE_PREFIXES) for name, _ in bundle.cookies):
+            raise IaaiSessionInvalidError("IAAI session bundle is missing required Imperva cookies.")
+
+    def _cookie_value(self, name: str) -> str | None:
+        for cookie in self._client.cookies.jar:
+            if cookie.name == name:
+                return cookie.value
+        return None
+
+    def _build_browser_document_headers(self, *, referer: str | None, same_origin: bool) -> dict[str, str]:
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": f"{self._settings.iaai_mobile_language},en;q=0.9",
+            "User-Agent": _browser_user_agent(),
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin" if same_origin else "none",
+        }
+        if referer:
+            headers["Referer"] = referer
+        return headers
+
+    def _build_browser_script_headers(self, *, referer: str) -> dict[str, str]:
+        return {
+            "Accept": "*/*",
+            "Accept-Language": f"{self._settings.iaai_mobile_language},en;q=0.9",
+            "Referer": referer,
+            "Sec-Fetch-Dest": "script",
+            "Sec-Fetch-Mode": "no-cors",
+            "Sec-Fetch-Site": "same-origin",
+            "User-Agent": _browser_user_agent(),
+        }
+
+    def _build_browser_preflight_headers(self, *, referer: str) -> dict[str, str]:
+        return {
+            "Accept": "application/json; charset=utf-8",
+            "Accept-Language": f"{self._settings.iaai_mobile_language},en;q=0.9",
+            "Content-Type": "text/plain; charset=utf-8",
+            "Origin": "https://login.iaai.com",
+            "Referer": referer,
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "User-Agent": _browser_user_agent(),
+        }
+
+    def _build_browser_form_headers(self, *, referer: str) -> dict[str, str]:
+        return {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": f"{self._settings.iaai_mobile_language},en;q=0.9",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://login.iaai.com",
+            "Referer": referer,
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "User-Agent": _browser_user_agent(),
+        }
+
+    @staticmethod
+    def _make_diagnostics(
+        *,
+        correlation_id: str | None,
+        step: str | None,
+        error_code: str | None,
+        failure_class: str | None,
+        upstream_status_code: int | None = None,
+        hint: str | None = None,
+    ) -> IaaiDiagnostics:
+        return IaaiDiagnostics(
+            correlation_id=correlation_id,
+            step=step,
+            error_code=error_code,
+            failure_class=failure_class,
+            upstream_status_code=upstream_status_code,
+            hint=hint,
+        )
 
 
 def _parse_optional_datetime(value: Any) -> datetime | None:
@@ -659,16 +1082,74 @@ def _extract_request_verification_token(html: str) -> str | None:
     return html.split(marker, 1)[1].split('"', 1)[0]
 
 
+def _extract_imperva_script_path(html: str) -> str | None:
+    match = re.search(r'<script[^>]+src="([^"]*A-would-they-here-beathe-and-should-mis-fore-Cas[^"]*)"', html)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _extract_hidden_input_value(html: str, name: str) -> str | None:
+    pattern = rf'<input[^>]+name="{re.escape(name)}"[^>]+value="([^"]*)"'
+    match = re.search(pattern, html)
+    if match:
+        return match.group(1)
+    reverse_pattern = rf'<input[^>]+value="([^"]*)"[^>]+name="{re.escape(name)}"'
+    reverse_match = re.search(reverse_pattern, html)
+    if reverse_match:
+        return reverse_match.group(1)
+    return None
+
+
+def _extract_form_action(html: str) -> str | None:
+    match = re.search(r"<form[^>]+action=\"([^\"]+)\"", html)
+    if not match:
+        return None
+    return match.group(1)
+
+
 def _extract_code_from_callback(callback_url: str) -> str | None:
     parsed = urlparse(callback_url)
     query = parse_qs(parsed.query)
     values = query.get("code")
-    return values[0] if values else None
+    if values:
+        return values[0]
+    if "code=" not in callback_url:
+        return None
+    trailing_query = callback_url.split("?", 1)[-1]
+    fallback_values = parse_qs(trailing_query).get("code")
+    return fallback_values[0] if fallback_values else None
 
 
 def _looks_like_waf_page(body: str) -> bool:
     lowered = body.lower()
     return "imperva" in lowered or "/a-would-they-here-beathe" in lowered
+
+
+def _extract_gateway_diagnostics(response: httpx.Response) -> IaaiDiagnostics | None:
+    payload_diagnostics: IaaiDiagnostics | None = None
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        payload_diagnostics = IaaiDiagnostics.from_payload(payload.get("diagnostics"))
+    upstream_status = response.headers.get(GATEWAY_UPSTREAM_STATUS_HEADER)
+    parsed_upstream_status: int | None = None
+    if upstream_status:
+        try:
+            parsed_upstream_status = int(upstream_status)
+        except (TypeError, ValueError):
+            parsed_upstream_status = None
+    base = payload_diagnostics or IaaiDiagnostics()
+    return IaaiDiagnostics(
+        correlation_id=base.correlation_id or response.headers.get(GATEWAY_CORRELATION_ID_HEADER),
+        step=base.step or response.headers.get(GATEWAY_STEP_HEADER),
+        error_code=base.error_code or response.headers.get(GATEWAY_ERROR_HEADER),
+        failure_class=base.failure_class or response.headers.get(GATEWAY_FAILURE_CLASS_HEADER),
+        upstream_status_code=base.upstream_status_code if base.upstream_status_code is not None else parsed_upstream_status,
+        hint=base.hint,
+    )
 
 
 def _require_encrypted_bundle(bundle: object) -> IaaiEncryptedSessionBundle:
@@ -712,3 +1193,32 @@ def _extract_user_id_from_access_token(access_token: str) -> str | None:
         if value:
             return str(value)
     return None
+
+
+def _resolve_location_url(response: httpx.Response, location: str | None) -> str:
+    if not location:
+        return str(response.request.url)
+    return str(response.request.url.join(location))
+
+
+def _browser_user_agent() -> str:
+    return (
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1"
+    )
+
+
+def _mobile_language_code(value: str) -> str:
+    return value.split("-", 1)[0]
+
+
+def _new_mobile_session_id() -> str:
+    return str(int(datetime.now(timezone.utc).timestamp() * 1000))
+
+
+def _safe_json_dict(response: httpx.Response) -> dict[str, Any]:
+    try:
+        payload = response.json()
+    except ValueError:
+        return {}
+    return payload if isinstance(payload, dict) else {}

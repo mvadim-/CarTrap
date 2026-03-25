@@ -24,6 +24,9 @@ from cartrap.modules.iaai_gateway.service import GatewayProxyResponse, IaaiGatew
 from cartrap.modules.iaai_provider.errors import (
     IaaiAuthenticationError,
     IaaiConfigurationError,
+    IaaiDiagnostics,
+    IaaiGatewayMalformedResponseError,
+    IaaiGatewayUnavailableError,
     IaaiRefreshError,
     IaaiSessionInvalidError,
     IaaiWafError,
@@ -34,6 +37,10 @@ router = APIRouter()
 bearer_scheme = HTTPBearer(auto_error=False)
 GATEWAY_ERROR_HEADER = "x-iaai-gateway-error"
 GATEWAY_UPSTREAM_STATUS_HEADER = "x-iaai-upstream-status"
+GATEWAY_CORRELATION_ID_HEADER = "x-iaai-correlation-id"
+GATEWAY_STEP_HEADER = "x-iaai-bootstrap-step"
+GATEWAY_FAILURE_CLASS_HEADER = "x-iaai-failure-class"
+REQUEST_CORRELATION_ID_HEADER = "x-correlation-id"
 
 
 def get_gateway_service(request: Request) -> IaaiGatewayService:
@@ -89,12 +96,14 @@ def proxy_lot_details(
 def bootstrap_connector(
     payload: GatewayConnectorBootstrapRequest,
     service: IaaiGatewayService = Depends(get_gateway_service),
+    correlation_id: Optional[str] = Header(default=None, alias=REQUEST_CORRELATION_ID_HEADER),
 ):
     return _invoke_connector(
         lambda: service.bootstrap_connector(
             username=payload.username,
             password=payload.password,
             client_ip=payload.client_ip,
+            correlation_id=correlation_id,
         )
     )
 
@@ -182,38 +191,73 @@ def _invoke_proxy(operation) -> Response:
 def _invoke_connector(operation):
     try:
         return operation()
-    except IaaiWafError:
+    except IaaiWafError as exc:
         return JSONResponse(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            content={"detail": "IAAI rejected connector bootstrap request."},
-            headers={
-                GATEWAY_ERROR_HEADER: "upstream_rejected",
-                GATEWAY_UPSTREAM_STATUS_HEADER: str(status.HTTP_403_FORBIDDEN),
-            },
+            content=_error_content("IAAI rejected connector bootstrap request.", exc.diagnostics),
+            headers=_error_headers(
+                "upstream_rejected",
+                exc.diagnostics,
+                fallback_upstream_status=status.HTTP_403_FORBIDDEN,
+            ),
         )
-    except IaaiAuthenticationError:
+    except IaaiAuthenticationError as exc:
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            content={"detail": "IAAI credentials were rejected."},
-            headers={GATEWAY_ERROR_HEADER: "invalid_credentials"},
+            content=_error_content("IAAI credentials were rejected.", exc.diagnostics),
+            headers=_error_headers("invalid_credentials", exc.diagnostics),
         )
-    except (IaaiSessionInvalidError, IaaiRefreshError):
+    except (IaaiSessionInvalidError, IaaiRefreshError) as exc:
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
-            content={"detail": "IAAI session is no longer valid."},
-            headers={GATEWAY_ERROR_HEADER: "auth_invalid"},
+            content=_error_content("IAAI session is no longer valid.", getattr(exc, "diagnostics", None)),
+            headers=_error_headers("auth_invalid", getattr(exc, "diagnostics", None)),
         )
-    except httpx.HTTPError:
+    except (IaaiGatewayUnavailableError, httpx.HTTPError) as exc:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"detail": "IAAI upstream is unavailable."},
-            headers={GATEWAY_ERROR_HEADER: "unavailable"},
+            content=_error_content("IAAI upstream is unavailable.", getattr(exc, "diagnostics", None)),
+            headers=_error_headers("unavailable", getattr(exc, "diagnostics", None)),
         )
-    except ValueError:
+    except (IaaiGatewayMalformedResponseError, ValueError) as exc:
         return JSONResponse(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            content={"detail": "IAAI upstream returned malformed JSON."},
-            headers={GATEWAY_ERROR_HEADER: "malformed_response"},
+            content=_error_content("IAAI upstream returned malformed JSON.", getattr(exc, "diagnostics", None)),
+            headers=_error_headers("malformed_response", getattr(exc, "diagnostics", None)),
         )
     except IaaiConfigurationError as exc:
-        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": str(exc)})
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=_error_content(str(exc), exc.diagnostics),
+            headers=_error_headers("configuration_error", exc.diagnostics),
+        )
+
+
+def _error_content(detail: str, diagnostics: IaaiDiagnostics | None) -> dict[str, object]:
+    content: dict[str, object] = {"detail": detail}
+    if diagnostics:
+        content["diagnostics"] = diagnostics.to_payload()
+    return content
+
+
+def _error_headers(
+    error_code: str,
+    diagnostics: IaaiDiagnostics | None,
+    *,
+    fallback_upstream_status: int | None = None,
+) -> dict[str, str]:
+    headers = {GATEWAY_ERROR_HEADER: error_code}
+    resolved_upstream_status = (
+        diagnostics.upstream_status_code
+        if diagnostics and diagnostics.upstream_status_code is not None
+        else fallback_upstream_status
+    )
+    if diagnostics and diagnostics.correlation_id:
+        headers[GATEWAY_CORRELATION_ID_HEADER] = diagnostics.correlation_id
+    if diagnostics and diagnostics.step:
+        headers[GATEWAY_STEP_HEADER] = diagnostics.step
+    if diagnostics and diagnostics.failure_class:
+        headers[GATEWAY_FAILURE_CLASS_HEADER] = diagnostics.failure_class
+    if resolved_upstream_status is not None:
+        headers[GATEWAY_UPSTREAM_STATUS_HEADER] = str(resolved_upstream_status)
+    return headers

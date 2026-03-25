@@ -57,7 +57,8 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart and IAAI lo
 20. Configure IAAI connector/runtime settings in `.env` when enabling multi-auction mode: `IAAI_OIDC_*`, `IAAI_MOBILE_*`, `IAAI_CONNECTOR_ENCRYPTION_KEY_VERSION`, and `IAAI_CONNECTOR_SESSION_EXPIRING_THRESHOLD_MINUTES`.
 21. On the primary backend, set `IAAI_GATEWAY_BASE_URL` and `IAAI_GATEWAY_TOKEN` to route IAAI traffic through the dedicated NAS gateway. Leave `IAAI_GATEWAY_BASE_URL` empty on the NAS gateway itself.
 22. Set `IAAI_CONNECTOR_ENCRYPTION_KEY` on the IAAI NAS gateway so user-scoped IAAI bundles are encrypted at rest before they are returned to AWS as opaque ciphertext.
-23. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
+23. Current IAAI defaults now match the captured native iOS profile more closely: `IAAI_MOBILE_REQUEST_TYPE=IAA-Buyer-App-iOS` and `IAAI_MOBILE_APP_VERSION=295` unless you override them explicitly.
+24. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
 
 ## NAS Gateway
 
@@ -71,6 +72,9 @@ Runtime expectations:
 - `IAAI_CONNECTOR_ENCRYPTION_KEY` is required on the IAAI NAS gateway runtime so connector bundles are encrypted before being stored on AWS as opaque ciphertext.
 - NAS gateway returns raw Copart JSON with standard HTTP `ETag`/`304` behavior and should rely on normal HTTP compression (`gzip`) instead of custom payload wrappers.
 - IAAI gateway returns raw `mobilesearch` / `GetInventoryDetails` JSON with standard HTTP `ETag`/`304` behavior and runs connector bootstrap/verify/execute on the NAS egress path to avoid Imperva blocking the AWS backend directly.
+- IAAI connector bootstrap now replays the captured Imperva/browser sequence: OIDC authorize, login page fetch, `/A-would-they-here-beathe-and-should-mis-fore-Cas` GET+POST preflight, login submit, authorize callback, and token exchange.
+- Failed IAAI connector bootstrap attempts surface sanitized diagnostics via `x-iaai-correlation-id`, `x-iaai-bootstrap-step`, `x-iaai-failure-class`, and optional `x-iaai-upstream-status`; these are safe to log and correlate across AWS and NAS.
+- `client_ip` is intentionally ignored for IAAI bootstrap replay because upstream ultimately sees the NAS egress IP, and spoofing a browser/mobile IP header here would be misleading.
 - For production rollout, put the NAS gateway behind HTTPS and restrict inbound traffic to the AWS static IP or another explicit allowlist.
 - Gateway and client logs now classify failures separately for `timeout`, transport failure, upstream rejection, malformed response, and gateway unavailability so operator review can tell whether the issue is inside NAS proxying or deeper in Copart/upstream traffic.
 

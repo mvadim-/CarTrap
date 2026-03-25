@@ -6,11 +6,13 @@ import base64
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import logging
 from typing import Callable, Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 
 from cartrap.config import Settings, get_settings
+from cartrap.core.logging import make_log_extra, new_correlation_id
 from cartrap.modules.iaai_provider.client import (
     IaaiConnectorBootstrapResult,
     IaaiConnectorExecutionResult,
@@ -19,7 +21,7 @@ from cartrap.modules.iaai_provider.client import (
     IaaiHttpPayloadResponse,
     IaaiSessionBundle,
 )
-from cartrap.modules.iaai_provider.errors import IaaiConfigurationError
+from cartrap.modules.iaai_provider.errors import IaaiConfigurationError, IaaiError
 
 
 @dataclass
@@ -39,6 +41,9 @@ class GatewayConnectorResponse:
     etag: Optional[str] = None
     not_modified: bool = False
     used_at: Optional[datetime] = None
+
+
+logger = logging.getLogger(__name__)
 
 
 class IaaiGatewayService:
@@ -66,13 +71,54 @@ class IaaiGatewayService:
             client.close()
         return self._to_gateway_response(response)
 
-    def bootstrap_connector(self, *, username: str, password: str, client_ip: Optional[str] = None) -> GatewayConnectorResponse:
+    def bootstrap_connector(
+        self,
+        *,
+        username: str,
+        password: str,
+        client_ip: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+    ) -> GatewayConnectorResponse:
+        cid = correlation_id or new_correlation_id("iaai-gateway-bootstrap")
+        logger.info(
+            "iaai_gateway.bootstrap.start",
+            extra=make_log_extra("iaai_gateway.bootstrap.start", correlation_id=cid),
+        )
         client = self._client_factory()
         try:
-            result = client.bootstrap_connector_session(username=username, password=password, client_ip=client_ip)
+            result = self._bootstrap_connector_session(
+                client,
+                username=username,
+                password=password,
+                client_ip=client_ip,
+                correlation_id=cid,
+            )
+        except Exception as exc:
+            diagnostics = exc.diagnostics if isinstance(exc, IaaiError) else None
+            logger.warning(
+                "iaai_gateway.bootstrap.failed",
+                extra=make_log_extra(
+                    "iaai_gateway.bootstrap.failed",
+                    correlation_id=(diagnostics.correlation_id if diagnostics else None) or cid,
+                    step=(diagnostics.step if diagnostics else None),
+                    error_code=(diagnostics.error_code if diagnostics else None),
+                    failure_class=(diagnostics.failure_class if diagnostics else None),
+                    upstream_status_code=(diagnostics.upstream_status_code if diagnostics else None),
+                    error_type=type(exc).__name__,
+                ),
+            )
+            raise
         finally:
             client.close()
         raw_bundle = self._require_raw_bundle(result.bundle)
+        logger.info(
+            "iaai_gateway.bootstrap.success",
+            extra=make_log_extra(
+                "iaai_gateway.bootstrap.success",
+                correlation_id=cid,
+                status=result.connection_status,
+            ),
+        )
         return GatewayConnectorResponse(
             session_bundle=self._encrypt_session_bundle(raw_bundle),
             status=result.connection_status,
@@ -120,6 +166,25 @@ class IaaiGatewayService:
 
     def _build_default_client(self) -> IaaiHttpClient:
         return IaaiHttpClient(settings=self._settings.model_copy(update={"iaai_gateway_base_url": None}))
+
+    @staticmethod
+    def _bootstrap_connector_session(client, *, username: str, password: str, client_ip: str | None, correlation_id: str):
+        try:
+            return client.bootstrap_connector_session(
+                username=username,
+                password=password,
+                client_ip=client_ip,
+                correlation_id=correlation_id,
+            )
+        except TypeError as exc:
+            message = str(exc)
+            if "correlation_id" in message and "client_ip" in message:
+                return client.bootstrap_connector_session(username=username, password=password)
+            if "correlation_id" in message:
+                return client.bootstrap_connector_session(username=username, password=password, client_ip=client_ip)
+            if "client_ip" in message:
+                return client.bootstrap_connector_session(username=username, password=password, correlation_id=correlation_id)
+            raise
 
     @staticmethod
     def _to_gateway_response(response: IaaiHttpPayloadResponse) -> GatewayProxyResponse:

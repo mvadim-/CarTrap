@@ -198,8 +198,8 @@ class Settings(BaseSettings):
     )
     iaai_mobile_tenant: str = Field(default="US", alias="IAAI_MOBILE_TENANT", min_length=1)
     iaai_mobile_apikey: str = Field(default="mobile-app", alias="IAAI_MOBILE_APIKEY", min_length=1)
-    iaai_mobile_request_type: str = Field(default="mobile", alias="IAAI_MOBILE_REQUEST_TYPE", min_length=1)
-    iaai_mobile_app_version: str = Field(default="1.0.0", alias="IAAI_MOBILE_APP_VERSION", min_length=1)
+    iaai_mobile_request_type: str = Field(default="IAA-Buyer-App-iOS", alias="IAAI_MOBILE_REQUEST_TYPE", min_length=1)
+    iaai_mobile_app_version: str = Field(default="295", alias="IAAI_MOBILE_APP_VERSION", min_length=1)
     iaai_mobile_country: str = Field(default="US", alias="IAAI_MOBILE_COUNTRY", min_length=1)
     iaai_mobile_language: str = Field(default="en-US", alias="IAAI_MOBILE_LANGUAGE", min_length=1)
     iaai_mobile_user_agent: str = Field(

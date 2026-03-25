@@ -22,6 +22,15 @@ class GatewayConnectorBootstrapRequest(BaseModel):
     client_ip: Optional[str] = None
 
 
+class GatewayFailureDiagnostics(BaseModel):
+    correlation_id: Optional[str] = None
+    step: Optional[str] = None
+    error_code: Optional[str] = None
+    failure_class: Optional[str] = None
+    upstream_status_code: Optional[int] = None
+    hint: Optional[str] = None
+
+
 class GatewayEncryptedSessionBundlePayload(BaseModel):
     encrypted_bundle: str
     key_version: str

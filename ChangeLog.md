@@ -1,5 +1,15 @@
 # Change Log
 
+## [2026-03-25 17:30] Tighten IAAI bootstrap hardening plan after review
+- Переглянуто `docs/plans/20260325-iaai-gateway-bootstrap-hardening.md` проти поточного `iaai_provider`, `iaai_gateway` і `provider_connections` stack.
+- Додано в план два пропущені напрями: end-to-end correlation між AWS backend і NAS gateway для step-level діагностики та явне рішення щодо використання `client_ip` у IAAI replay flow.
+- Розширено task scope файлами `backend/src/cartrap/modules/iaai_gateway/schemas.py` і `backend/src/cartrap/modules/provider_connections/router.py`, а також тестовою стратегією для correlation-id propagation і `client_ip` behavior.
+
+## [2026-03-25 17:19] Add follow-up plan for IAAI gateway bootstrap hardening
+- Додано `docs/plans/20260325-iaai-gateway-bootstrap-hardening.md`: окремий follow-up план під production blocker після успішного ввімкнення `iaai-gateway`.
+- Зафіксовано поточний стан: `AWS backend -> iaai-gateway` transport уже працює, а незакритий ризик зводиться до Imperva/browser replay після `GET /Identity/Account/Login`.
+- План розбиває роботу на step-level diagnostics, Imperva preflight replay, browser-like login/callback hardening, post-bootstrap lifecycle verification і rollout docs.
+
 ## [2026-03-25 16:31] Add iaai-gateway Docker Compose service
 - Оновлено `docker-compose.yml`: додано окремий `iaai-gateway` service під profile `gateway`, який використовує той самий backend image, але стартує з `APP_MODULE=cartrap.iaai_gateway_app:app` і слухає `IAAI_GATEWAY_PORT` (за замовчуванням `8020`).
 - Це синхронізує локальний/NAS deployment із уже доданим IAAI gateway code path і дозволяє піднімати `copart-gateway` та `iaai-gateway` незалежно, не змішуючи їх у одному контейнері.
@@ -795,3 +805,14 @@
 - Це зберігає поточний frontend API без змін форми, але дає Copart реальніший login context замість порожнього `ip_address`, що було одним із головних кандидатів на `403 Forbidden` з native login replay.
 - Оновлено `backend/tests/{copart/test_http_client.py,copart/test_gateway_connector_flow.py,provider_connections/test_router.py}`: додано regression coverage для прокидування `client_ip` у gateway payload, direct bootstrap headers/body і extraction з proxy headers у connect router.
 - Verification: `./.venv/bin/pytest backend/tests/copart/test_http_client.py backend/tests/copart/test_gateway_connector_flow.py backend/tests/provider_connections/test_router.py backend/tests/test_config.py` -> `23 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime).
+
+## [2026-03-25 17:58] Harden IAAI gateway bootstrap with Imperva replay and step diagnostics
+- Оновлено `backend/src/cartrap/modules/iaai_provider/{client.py,errors.py}` і `backend/src/cartrap/config.py`: IAAI bootstrap тепер має explicit step taxonomy (`oidc_metadata`, `authorize`, `login_page`, `imperva_preflight`, `login_submit`, `authorize_callback`, `token_exchange`), реплеїть captured Imperva `/A-would-they-here-beathe-and-should-mis-fore-Cas` GET+POST flow, зберігає anti-bot cookies у session bundle, жорсткіше валідовує bundle completeness перед execute і вирівнює mobile header defaults ближче до native iOS профілю (`IAA-Buyer-App-iOS`, `295`).
+- Оновлено `backend/src/cartrap/modules/iaai_gateway/{router.py,schemas.py,service.py}` і `backend/src/cartrap/modules/provider_connections/service.py`: AWS тепер прокидає correlation id у `iaai-gateway`, NAS логує той самий trace id і повертає safe diagnostics (`x-iaai-correlation-id`, `x-iaai-bootstrap-step`, `x-iaai-failure-class`, `x-iaai-upstream-status`), а provider-connections мапить їх у керований backend error без витоку секретів.
+- `client_ip` для IAAI bootstrap свідомо не використовується в upstream replay: IAAI все одно бачить NAS egress IP, тому synthetic forwarding не дає реалістичнішого browser/mobile context і лише розмиває діагностику.
+- Оновлено `backend/tests/{iaai/test_http_client.py,iaai/test_gateway_client_config.py,iaai/test_gateway_connector_flow.py,provider_connections/test_iaai_router.py}` та `README.md`, `docs/plans/{20260325-iaai-multi-auction-support.md,20260325-iaai-gateway-bootstrap-hardening.md}`: додано regression coverage для Imperva preflight carry-over, callback follow-up, gateway diagnostics propagation, stale/incomplete bundle rejection і синхронізовано операторську документацію/план hardening.
+- Verification: `./.venv/bin/pytest backend/tests/iaai/test_http_client.py backend/tests/iaai/test_gateway_router.py backend/tests/iaai/test_gateway_client_config.py backend/tests/iaai/test_gateway_connector_flow.py backend/tests/provider_connections/test_iaai_router.py` -> `19 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime).
+
+## [2026-03-25 18:01] Archive completed IAAI gateway hardening plan
+- Переміщено `docs/plans/20260325-iaai-gateway-bootstrap-hardening.md` у `docs/plans/completed/20260325-iaai-gateway-bootstrap-hardening.md` після фактичного завершення всіх задач і verification.
+- Поточний активний planning context залишився в `docs/plans/20260325-iaai-multi-auction-support.md`, а hardening-план зафіксовано як completed artifact для подальшого rollout/smoke-test follow-up.

@@ -39,6 +39,9 @@ from cartrap.modules.iaai_provider.client import (
 from cartrap.modules.iaai_provider.errors import (
     IaaiAuthenticationError,
     IaaiConfigurationError,
+    IaaiDiagnostics,
+    IaaiGatewayMalformedResponseError,
+    IaaiGatewayUnavailableError,
     IaaiRefreshError,
     IaaiSessionInvalidError,
     IaaiWafError,
@@ -338,12 +341,13 @@ class ProviderConnectionService:
         started_at = perf_counter()
         client = self._connector_client_factories[provider]()
         try:
-            try:
-                result = client.bootstrap_connector_session(username=username, password=password, client_ip=client_ip)
-            except TypeError as exc:
-                if "client_ip" not in str(exc):
-                    raise
-                result = client.bootstrap_connector_session(username=username, password=password)
+            result = self._bootstrap_client_session(
+                client,
+                username=username,
+                password=password,
+                client_ip=client_ip,
+                correlation_id=correlation_id,
+            )
         except Exception as exc:
             self._log_connect_failure(provider, owner_user["id"], correlation_id, started_at, exc)
             self._raise_connect_exception(provider, exc)
@@ -430,7 +434,15 @@ class ProviderConnectionService:
     def _raise_connect_exception(self, provider: str, exc: Exception) -> None:
         provider_label = self._provider_label(provider)
         if isinstance(exc, (CopartAuthenticationError, IaaiAuthenticationError)):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"{provider_label} credentials were rejected.") from exc
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=self._build_iaai_connect_detail(
+                    provider,
+                    exc,
+                    default_message=f"{provider_label} credentials were rejected.",
+                ),
+                headers=self._build_iaai_connect_headers(exc),
+            ) from exc
         if isinstance(exc, CopartRateLimitError):
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=f"{provider_label} connect rate limit reached.") from exc
         if isinstance(exc, CopartChallengeError):
@@ -441,12 +453,31 @@ class ProviderConnectionService:
         if isinstance(exc, (CopartLoginRejectedError, CopartGatewayUpstreamError, IaaiWafError)):
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"{provider_label} rejected connector bootstrap request.",
+                detail=self._build_iaai_connect_detail(
+                    provider,
+                    exc,
+                    default_message=f"{provider_label} rejected connector bootstrap request.",
+                ),
+                headers=self._build_iaai_connect_headers(exc),
             ) from exc
-        if isinstance(exc, (CopartGatewayUnavailableError, CopartConfigurationError, IaaiConfigurationError)):
+        if isinstance(
+            exc,
+            (
+                CopartGatewayUnavailableError,
+                CopartConfigurationError,
+                IaaiConfigurationError,
+                IaaiGatewayUnavailableError,
+                IaaiGatewayMalformedResponseError,
+            ),
+        ):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"{provider_label} gateway is unavailable.",
+                detail=self._build_iaai_connect_detail(
+                    provider,
+                    exc,
+                    default_message=f"{provider_label} gateway is unavailable.",
+                ),
+                headers=self._build_iaai_connect_headers(exc),
             ) from exc
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"{provider_label} connector bootstrap failed.") from exc
 
@@ -470,6 +501,60 @@ class ProviderConnectionService:
     @staticmethod
     def _now() -> datetime:
         return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _bootstrap_client_session(
+        client: object,
+        *,
+        username: str,
+        password: str,
+        client_ip: str | None,
+        correlation_id: str,
+    ):
+        try:
+            return client.bootstrap_connector_session(
+                username=username,
+                password=password,
+                client_ip=client_ip,
+                correlation_id=correlation_id,
+            )
+        except TypeError as exc:
+            message = str(exc)
+            if "correlation_id" in message and "client_ip" in message:
+                return client.bootstrap_connector_session(username=username, password=password)
+            if "correlation_id" in message:
+                return client.bootstrap_connector_session(username=username, password=password, client_ip=client_ip)
+            if "client_ip" in message:
+                return client.bootstrap_connector_session(username=username, password=password, correlation_id=correlation_id)
+            raise
+
+    @staticmethod
+    def _build_iaai_connect_headers(exc: Exception) -> dict[str, str] | None:
+        diagnostics = ProviderConnectionService._extract_iaai_diagnostics(exc)
+        if not diagnostics:
+            return None
+        headers: dict[str, str] = {}
+        if diagnostics.correlation_id:
+            headers["x-iaai-correlation-id"] = diagnostics.correlation_id
+        if diagnostics.step:
+            headers["x-iaai-bootstrap-step"] = diagnostics.step
+        if diagnostics.failure_class:
+            headers["x-iaai-failure-class"] = diagnostics.failure_class
+        return headers or None
+
+    @staticmethod
+    def _build_iaai_connect_detail(provider: str, exc: Exception, *, default_message: str) -> str:
+        if provider != PROVIDER_IAAI:
+            return default_message
+        diagnostics = ProviderConnectionService._extract_iaai_diagnostics(exc)
+        if not diagnostics or not diagnostics.step:
+            return default_message
+        return f"{default_message} Bootstrap step: {diagnostics.step}."
+
+    @staticmethod
+    def _extract_iaai_diagnostics(exc: Exception) -> IaaiDiagnostics | None:
+        diagnostics = getattr(exc, "diagnostics", None)
+        return diagnostics if isinstance(diagnostics, IaaiDiagnostics) else None
 
 
 class _ProviderConnectionCopartClient:

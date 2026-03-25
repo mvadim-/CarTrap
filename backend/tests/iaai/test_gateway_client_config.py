@@ -13,7 +13,13 @@ if str(ROOT) not in sys.path:
 
 from cartrap.config import Settings
 from cartrap.modules.iaai_provider.client import IaaiHttpClient
-from cartrap.modules.iaai_provider.errors import IaaiAuthenticationError, IaaiConfigurationError, IaaiSessionInvalidError, IaaiWafError
+from cartrap.modules.iaai_provider.errors import (
+    IaaiAuthenticationError,
+    IaaiConfigurationError,
+    IaaiGatewayMalformedResponseError,
+    IaaiSessionInvalidError,
+    IaaiWafError,
+)
 
 
 def make_base_settings(**overrides: object) -> Settings:
@@ -89,4 +95,4 @@ def test_gateway_maps_explicit_connector_errors() -> None:
     run_with_headers({"x-iaai-gateway-error": "upstream_rejected"}, IaaiWafError)
     run_with_headers({"x-iaai-gateway-error": "invalid_credentials"}, IaaiAuthenticationError)
     run_with_headers({"x-iaai-gateway-error": "auth_invalid"}, IaaiSessionInvalidError)
-    run_with_headers({"x-iaai-gateway-error": "malformed_response"}, IaaiConfigurationError)
+    run_with_headers({"x-iaai-gateway-error": "malformed_response"}, IaaiGatewayMalformedResponseError)

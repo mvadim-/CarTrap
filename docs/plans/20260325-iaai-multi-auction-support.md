@@ -246,3 +246,4 @@
 - Manual smoke-test a real IAAI account from the deployment environment to confirm Imperva/WAF does not block the chosen transport.
 - Confirm the canonical public IAAI lot URL pattern before finalizing "Open lot" CTAs.
 - Decision on 2026-03-25: route IAAI through a dedicated NAS-hosted `iaai_gateway` instead of AWS direct egress, because production bootstrap hits Imperva/WAF on the main backend path.
+- Follow-up completed on 2026-03-25: `iaai_gateway` bootstrap now replays Imperva preflight + browser callback continuity, emits correlation-aware step diagnostics, and intentionally ignores caller `client_ip` because IAAI observes NAS egress rather than the AWS/frontend source address.

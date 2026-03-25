@@ -20,7 +20,7 @@ from cartrap.modules.iaai_provider.client import (
     IaaiConnectorBootstrapResult,
     IaaiEncryptedSessionBundle,
 )
-from cartrap.modules.iaai_provider.errors import IaaiAuthenticationError, IaaiWafError
+from cartrap.modules.iaai_provider.errors import IaaiAuthenticationError, IaaiDiagnostics, IaaiWafError
 
 
 class FakeMongoManager:
@@ -45,7 +45,17 @@ class FakeIaaiConnectorClient:
         if password == "bad-password":
             raise IaaiAuthenticationError("bad credentials")
         if password == "blocked-password":
-            raise IaaiWafError("blocked")
+            raise IaaiWafError(
+                "blocked",
+                diagnostics=IaaiDiagnostics(
+                    correlation_id="cid-iaai-test",
+                    step="imperva_preflight",
+                    error_code="upstream_rejected",
+                    failure_class="upstream_rejected",
+                    upstream_status_code=403,
+                    hint="imperva_or_waf",
+                ),
+            )
         bundle = IaaiEncryptedSessionBundle(
             encrypted_bundle=f"iaai:{username}",
             key_version="v1",
@@ -162,7 +172,9 @@ def test_iaai_router_maps_auth_and_waf_errors(client: TestClient) -> None:
     assert bad.status_code == 401
     assert bad.json()["detail"] == "IAAI credentials were rejected."
     assert blocked.status_code == 502
-    assert blocked.json()["detail"] == "IAAI rejected connector bootstrap request."
+    assert blocked.json()["detail"] == "IAAI rejected connector bootstrap request. Bootstrap step: imperva_preflight."
+    assert blocked.headers["x-iaai-correlation-id"] == "cid-iaai-test"
+    assert blocked.headers["x-iaai-bootstrap-step"] == "imperva_preflight"
 
 
 def test_iaai_router_returns_missing_connection_errors(client: TestClient) -> None:

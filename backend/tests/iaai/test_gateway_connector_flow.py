@@ -22,22 +22,36 @@ from cartrap.modules.iaai_provider.client import (
     IaaiHeaderProfile,
     IaaiSessionBundle,
 )
-from cartrap.modules.iaai_provider.errors import IaaiAuthenticationError, IaaiSessionInvalidError, IaaiWafError
+from cartrap.modules.iaai_provider.errors import IaaiAuthenticationError, IaaiDiagnostics, IaaiSessionInvalidError, IaaiWafError
 
 
 class FakeDirectConnectorClient:
+    last_correlation_id: str | None = None
+
     def bootstrap_connector_session(
         self,
         *,
         username: str,
         password: str,
         client_ip: str | None = None,
+        correlation_id: str | None = None,
     ) -> IaaiConnectorBootstrapResult:
         del client_ip
+        type(self).last_correlation_id = correlation_id
         if password == "bad":
             raise IaaiAuthenticationError("bad credentials")
         if password == "blocked":
-            raise IaaiWafError("blocked")
+            raise IaaiWafError(
+                "blocked",
+                diagnostics=IaaiDiagnostics(
+                    correlation_id=correlation_id,
+                    step="imperva_preflight",
+                    error_code="upstream_rejected",
+                    failure_class="upstream_rejected",
+                    upstream_status_code=403,
+                    hint="imperva_or_waf",
+                ),
+            )
         return IaaiConnectorBootstrapResult(
             bundle=_make_raw_bundle(username=username),
             account_label=username,
@@ -124,6 +138,7 @@ def client() -> TestClient:
 
 
 def test_gateway_connector_bootstrap_and_execute_flow_round_trips_encrypted_bundle(client: TestClient) -> None:
+    FakeDirectConnectorClient.last_correlation_id = None
     with client:
         client.app.state.gateway_service_factory = lambda: IaaiGatewayService(
             settings=client.app.state.settings,
@@ -132,7 +147,7 @@ def test_gateway_connector_bootstrap_and_execute_flow_round_trips_encrypted_bund
         bootstrap = client.post(
             "/v1/connector/bootstrap",
             json={"username": "user@example.com", "password": "secret"},
-            headers={"Authorization": "Bearer gateway-secret"},
+            headers={"Authorization": "Bearer gateway-secret", "X-Correlation-Id": "cid-123"},
         )
         encrypted_bundle = bootstrap.json()["session_bundle"]
         verify = client.post(
@@ -153,6 +168,7 @@ def test_gateway_connector_bootstrap_and_execute_flow_round_trips_encrypted_bund
 
     assert bootstrap.status_code == 200
     assert bootstrap.json()["session_bundle"]["encrypted_bundle"]
+    assert FakeDirectConnectorClient.last_correlation_id == "cid-123"
     assert verify.status_code == 200
     assert verify.json()["payload"] == {"profile": {"email": "user@example.com"}}
     assert search.status_code == 200
@@ -185,6 +201,7 @@ def test_gateway_connector_maps_invalid_credentials_and_auth_invalid(client: Tes
 
     assert invalid_credentials.status_code == 401
     assert invalid_credentials.headers["x-iaai-gateway-error"] == "invalid_credentials"
+    assert invalid_credentials.json()["detail"] == "IAAI credentials were rejected."
     assert auth_invalid.status_code == 409
     assert auth_invalid.headers["x-iaai-gateway-error"] == "auth_invalid"
 
@@ -204,4 +221,7 @@ def test_gateway_connector_maps_waf_to_upstream_rejected(client: TestClient) -> 
     assert blocked.status_code == 502
     assert blocked.headers["x-iaai-gateway-error"] == "upstream_rejected"
     assert blocked.headers["x-iaai-upstream-status"] == "403"
+    assert blocked.headers["x-iaai-bootstrap-step"] == "imperva_preflight"
+    assert blocked.headers["x-iaai-failure-class"] == "upstream_rejected"
+    assert blocked.json()["diagnostics"]["step"] == "imperva_preflight"
     assert blocked.json()["detail"] == "IAAI rejected connector bootstrap request."
