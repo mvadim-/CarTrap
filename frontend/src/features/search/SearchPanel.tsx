@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import type {
+  AuctionProvider,
   FreshnessEnvelope,
   LiveSyncStatus,
   ProviderConnectionDiagnostic,
@@ -20,6 +21,7 @@ import { SearchResultsModal } from "./SearchResultsModal";
 import { getSearchFilterLabels } from "./searchFilters";
 
 type SearchPayload = {
+  providers: AuctionProvider[];
   make?: string;
   model?: string;
   makeFilter?: string;
@@ -44,13 +46,14 @@ type Props = {
   savedSearchesError: string | null;
   onRetrySavedSearches: () => Promise<void>;
   copartConnectionDiagnostic: ProviderConnectionDiagnostic | null;
+  iaaiConnectionDiagnostic: ProviderConnectionDiagnostic | null;
   isSearching: boolean;
   isSavingSearch: boolean;
   openingSavedSearchId: string | null;
   refreshingSavedSearchId: string | null;
   deletingSavedSearchId: string | null;
   addingFromSearchLotUrl: string | null;
-  trackedLotUrls: string[];
+  trackedLotKeys: string[];
   isBrowserOffline: boolean;
   liveSyncStatus: LiveSyncStatus | null;
   isManualSearchOpen: boolean;
@@ -61,7 +64,13 @@ type Props = {
   onViewSavedSearch: (id: string) => Promise<SavedSearchResultsResponse>;
   onRefreshSavedSearch: (id: string) => Promise<SavedSearchResultsResponse>;
   onDeleteSavedSearch: (id: string) => Promise<void>;
-  onAddFromSearch: (lotUrl: string) => Promise<void>;
+  onAddFromSearch: (payload: {
+    provider: AuctionProvider;
+    provider_lot_id?: string;
+    lot_url?: string | null;
+    lot_number?: string;
+    lot_key?: string;
+  }) => Promise<void>;
 };
 
 type SearchModalState = {
@@ -75,12 +84,30 @@ type SearchModalState = {
   lastSyncedAt: string | null;
   freshness: FreshnessEnvelope | null;
   refreshState: RefreshState | null;
-  connectionDiagnostic: ProviderConnectionDiagnostic | null;
+  connectionDiagnostics: ProviderConnectionDiagnostic[];
   refreshError: string | null;
   statusMessage: string | null;
 };
 
 type SavedSearchQuickFilter = "all" | "new" | "needs-refresh";
+const PROVIDER_OPTIONS: Array<{ value: AuctionProvider; label: string }> = [
+  { value: "copart", label: "Copart" },
+  { value: "iaai", label: "IAAI" },
+];
+
+function formatProviderLabels(providers: AuctionProvider[]): string {
+  return PROVIDER_OPTIONS.filter((option) => providers.includes(option.value))
+    .map((option) => option.label)
+    .join(" + ");
+}
+
+function getDiagnosticForProvider(
+  provider: AuctionProvider,
+  copartConnectionDiagnostic: ProviderConnectionDiagnostic | null,
+  iaaiConnectionDiagnostic: ProviderConnectionDiagnostic | null,
+): ProviderConnectionDiagnostic | null {
+  return provider === "iaai" ? iaaiConnectionDiagnostic : copartConnectionDiagnostic;
+}
 
 function normalizeSearchValue(value: string): string {
   return value.trim().toUpperCase();
@@ -165,9 +192,12 @@ function formatSavedSearchYears(item: SavedSearch): string {
 }
 
 function formatSavedSearchCriteriaSummary(item: SavedSearch): string {
-  return [item.criteria.make ?? "Any make", item.criteria.model ?? "Any model", formatSavedSearchYears(item)].join(
-    " / ",
-  );
+  return [
+    formatProviderLabels(item.criteria.providers ?? ["copart"]),
+    item.criteria.make ?? "Any make",
+    item.criteria.model ?? "Any model",
+    formatSavedSearchYears(item),
+  ].join(" / ");
 }
 
 function formatSavedSearchFilterSummary(item: SavedSearch): string {
@@ -208,6 +238,20 @@ function buildSavedSearchTitleButtonLabel(item: SavedSearch): string {
   return `${item.label} ${formatSavedSearchCriteriaSummary(item)}`;
 }
 
+function getSavedSearchConnectionDiagnostics(item: SavedSearch): ProviderConnectionDiagnostic[] {
+  if (item.connection_diagnostics && item.connection_diagnostics.length > 0) {
+    return item.connection_diagnostics;
+  }
+  return item.connection_diagnostic ? [item.connection_diagnostic] : [];
+}
+
+function getBlockedSavedSearchActionLabel(diagnostics: ProviderConnectionDiagnostic[]): string {
+  if (diagnostics.length === 1) {
+    return diagnostics[0].provider === "iaai" ? "IAAI action blocked" : "Copart action blocked";
+  }
+  return "Providers unavailable";
+}
+
 export function SearchPanel({
   catalog,
   isLoadingCatalog,
@@ -218,13 +262,14 @@ export function SearchPanel({
   savedSearchesError,
   onRetrySavedSearches,
   copartConnectionDiagnostic,
+  iaaiConnectionDiagnostic,
   isSearching,
   isSavingSearch,
   openingSavedSearchId,
   refreshingSavedSearchId,
   deletingSavedSearchId,
   addingFromSearchLotUrl,
-  trackedLotUrls,
+  trackedLotKeys,
   isBrowserOffline,
   liveSyncStatus,
   isManualSearchOpen,
@@ -237,6 +282,7 @@ export function SearchPanel({
   onDeleteSavedSearch,
   onAddFromSearch,
 }: Props) {
+  const [selectedProviders, setSelectedProviders] = useState<AuctionProvider[]>(["copart"]);
   const [selectedMakeSlug, setSelectedMakeSlug] = useState("");
   const [selectedModelSlug, setSelectedModelSlug] = useState("");
   const [makeQuery, setMakeQuery] = useState("");
@@ -269,11 +315,21 @@ export function SearchPanel({
     lastSyncedAt: null,
     freshness: null,
     refreshState: null,
-    connectionDiagnostic: null,
+    connectionDiagnostics: [],
     refreshError: null,
     statusMessage: null,
   });
-  const isCopartActionBlocked = Boolean(copartConnectionDiagnostic && copartConnectionDiagnostic.status !== "ready");
+  const selectedProviderDiagnostics = selectedProviders
+    .map((provider) => getDiagnosticForProvider(provider, copartConnectionDiagnostic, iaaiConnectionDiagnostic))
+    .filter(Boolean) as ProviderConnectionDiagnostic[];
+  const areSelectedProvidersBlocked =
+    selectedProviderDiagnostics.length > 0 &&
+    selectedProviderDiagnostics.every((diagnostic) => diagnostic.status !== "ready");
+  const searchDisabledReason = areSelectedProvidersBlocked
+    ? selectedProviders.length === 1
+      ? selectedProviderDiagnostics[0]?.message ?? "Selected provider is unavailable."
+      : "Selected providers are unavailable. Reconnect at least one provider from Account."
+    : null;
 
   const filteredMakes = catalog?.makes.filter((item) => matchesMakeQuery(item.name, makeQuery)) ?? [];
   const selectedMake: SearchCatalogMake | null = catalog?.makes.find((item) => item.slug === selectedMakeSlug) ?? null;
@@ -379,7 +435,12 @@ export function SearchPanel({
             lastSyncedAt: activeSavedSearch.last_synced_at,
             freshness: activeSavedSearch.freshness,
             refreshState: activeSavedSearch.refresh_state,
-            connectionDiagnostic: activeSavedSearch.connection_diagnostic ?? null,
+            connectionDiagnostics:
+              activeSavedSearch.connection_diagnostics && activeSavedSearch.connection_diagnostics.length > 0
+                ? activeSavedSearch.connection_diagnostics
+                : activeSavedSearch.connection_diagnostic
+                  ? [activeSavedSearch.connection_diagnostic]
+                  : [],
           }
         : current,
     );
@@ -389,6 +450,7 @@ export function SearchPanel({
     const resolvedMake = makeOverride ?? selectedMake;
     const resolvedModel = modelOverride ?? selectedModel;
     return {
+      providers: selectedProviders,
       make: resolvedMake?.name,
       model: resolvedModel?.name,
       makeFilter: resolvedMake?.search_filter,
@@ -416,7 +478,12 @@ export function SearchPanel({
       lastSyncedAt: response.last_synced_at,
       freshness: response.saved_search.freshness,
       refreshState: response.saved_search.refresh_state,
-      connectionDiagnostic: response.saved_search.connection_diagnostic ?? null,
+      connectionDiagnostics:
+        response.saved_search.connection_diagnostics && response.saved_search.connection_diagnostics.length > 0
+          ? response.saved_search.connection_diagnostics
+          : response.saved_search.connection_diagnostic
+            ? [response.saved_search.connection_diagnostic]
+            : [],
       refreshError: null,
       statusMessage,
     });
@@ -429,7 +496,7 @@ export function SearchPanel({
     setSearchModal({
       isOpen: true,
       mode: "manual",
-      title: "Copart Search Results",
+      title: `${formatProviderLabels(payload.providers)} Search Results`,
       results: response.results,
       totalResults: response.total_results,
       canSave: true,
@@ -437,7 +504,7 @@ export function SearchPanel({
       lastSyncedAt: null,
       freshness: null,
       refreshState: null,
-      connectionDiagnostic: null,
+      connectionDiagnostics: selectedProviderDiagnostics.filter((item) => item.status !== "ready"),
       refreshError: null,
       statusMessage: null,
     });
@@ -446,7 +513,7 @@ export function SearchPanel({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedMake || isSearching) {
+    if (!selectedMake || isSearching || areSelectedProvidersBlocked) {
       return;
     }
     setManualSearchError(null);
@@ -472,6 +539,7 @@ export function SearchPanel({
     setModelQuery("");
     setYearFrom(savedSearch.criteria.year_from?.toString() ?? "");
     setYearTo(savedSearch.criteria.year_to?.toString() ?? "");
+    setSelectedProviders(savedSearch.criteria.providers ?? ["copart"]);
     setDriveType(savedSearch.criteria.drive_type);
     setPrimaryDamage(savedSearch.criteria.primary_damage);
     setTitleType(savedSearch.criteria.title_type);
@@ -605,14 +673,31 @@ export function SearchPanel({
   const makeOptions: SearchableOption[] = filteredMakes.map((item) => ({ slug: item.slug, name: item.name }));
   const modelOptions: SearchableOption[] = filteredModels.map((item) => ({ slug: item.slug, name: item.name }));
 
-  async function handleAddCurrentResultToWatchlist(lotUrl: string) {
-    await onAddFromSearch(lotUrl);
-    const addedResult = searchModal.results.find((item) => item.url === lotUrl);
+  async function handleAddCurrentResultToWatchlist(result: SearchResult) {
+    await onAddFromSearch({
+      provider: result.provider,
+      provider_lot_id: result.provider_lot_id,
+      lot_url: result.url,
+      lot_number: result.lot_number,
+      lot_key: result.lot_key,
+    });
     setSearchModal((current) => ({
       ...current,
-      statusMessage: addedResult ? `Added ${addedResult.title} to watchlist.` : "Lot added to watchlist.",
+      statusMessage: `Added ${result.title} to watchlist.`,
       refreshError: null,
     }));
+  }
+
+  function handleToggleProvider(provider: AuctionProvider) {
+    setSelectedProviders((current) => {
+      if (current.includes(provider)) {
+        if (current.length === 1) {
+          return current;
+        }
+        return current.filter((item) => item !== provider);
+      }
+      return [...current, provider];
+    });
   }
 
   return (
@@ -631,14 +716,14 @@ export function SearchPanel({
             type="button"
             className="ghost-button search-panel__new-search-button"
             onClick={onOpenManualSearch}
-            disabled={isCopartActionBlocked}
+            disabled={areSelectedProvidersBlocked}
           >
             New Search
           </button>
         </div>
 
-        {isCopartActionBlocked && copartConnectionDiagnostic ? (
-          <AsyncStatus tone="neutral" compact message={copartConnectionDiagnostic.message} className="panel-status" />
+        {areSelectedProvidersBlocked && searchDisabledReason ? (
+          <AsyncStatus tone="neutral" compact message={searchDisabledReason} className="panel-status" />
         ) : null}
 
         {savedSearchNotice ? (
@@ -708,7 +793,7 @@ export function SearchPanel({
               <p className="muted">
                 Start with a manual search, then save the result set you want this inbox to monitor.
               </p>
-              <button type="button" onClick={onOpenManualSearch} disabled={isCopartActionBlocked}>
+              <button type="button" onClick={onOpenManualSearch} disabled={areSelectedProvidersBlocked}>
                 New Search
               </button>
             </div>
@@ -722,7 +807,7 @@ export function SearchPanel({
                 <button type="button" className="ghost-button" onClick={() => setQuickFilter("all")}>
                   Show all
                 </button>
-                <button type="button" onClick={onOpenManualSearch} disabled={isCopartActionBlocked}>
+                <button type="button" onClick={onOpenManualSearch} disabled={areSelectedProvidersBlocked}>
                   New Search
                 </button>
               </div>
@@ -733,6 +818,10 @@ export function SearchPanel({
             const isMenuOpen = openSavedSearchMenuId === item.id;
             const isHighlighted = highlightedSavedSearchId === item.id;
             const reliability = getSavedSearchReliability(item, refreshingSavedSearchId);
+            const savedSearchDiagnostics = getSavedSearchConnectionDiagnostics(item);
+            const blockedSavedSearchDiagnostics = savedSearchDiagnostics.filter((diagnostic) => diagnostic.status !== "ready");
+            const allSavedSearchDiagnosticsBlocked =
+              savedSearchDiagnostics.length > 0 && savedSearchDiagnostics.every((diagnostic) => diagnostic.status !== "ready");
 
             return (
               <article
@@ -769,9 +858,15 @@ export function SearchPanel({
                     <span className={`status-pill status-pill--${reliability.tone}`}>{reliability.label}</span>
                     <p className="saved-search-card__reliability-copy">{reliability.detail}</p>
                   </div>
-                  {item.connection_diagnostic && item.connection_diagnostic.status !== "ready" ? (
-                    <AsyncStatus tone="neutral" compact message={item.connection_diagnostic.message} className="panel-status" />
-                  ) : null}
+                  {blockedSavedSearchDiagnostics.map((diagnostic) => (
+                      <AsyncStatus
+                        key={`${item.id}-${diagnostic.provider}`}
+                        tone="neutral"
+                        compact
+                        message={diagnostic.message}
+                        className="panel-status"
+                      />
+                    ))}
 
                   <dl className="saved-search-card__metrics">
                     <div className="saved-search-card__metric">
@@ -805,27 +900,27 @@ export function SearchPanel({
                         role="menuitem"
                         className="saved-search-actions-menu__item"
                         onClick={() => void handleRefreshSavedSearchFromList(item)}
-                        disabled={
-                          refreshingSavedSearchId === item.id ||
-                          Boolean(item.connection_diagnostic && item.connection_diagnostic.status !== "ready")
-                        }
+                        disabled={refreshingSavedSearchId === item.id || allSavedSearchDiagnosticsBlocked}
                       >
                         {refreshingSavedSearchId === item.id
                           ? "Refreshing..."
-                          : item.connection_diagnostic && item.connection_diagnostic.status !== "ready"
-                            ? "Copart action blocked"
+                          : allSavedSearchDiagnosticsBlocked
+                            ? getBlockedSavedSearchActionLabel(blockedSavedSearchDiagnostics)
                             : "Refresh Live"}
                       </button>
-                      <a
-                        role="menuitem"
-                        className="saved-search-actions-menu__item"
-                        href={item.external_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={() => setOpenSavedSearchMenuId(null)}
-                      >
-                        Open URL
-                      </a>
+                      {(item.external_links.length > 0 ? item.external_links : item.external_url ? [{ provider: "copart", label: "Open URL", url: item.external_url }] : []).map((link) => (
+                        <a
+                          key={`${item.id}-${link.provider}-${link.url}`}
+                          role="menuitem"
+                          className="saved-search-actions-menu__item"
+                          href={link.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => setOpenSavedSearchMenuId(null)}
+                        >
+                          {item.external_links.length > 0 ? `Open ${link.label}` : String(link.label)}
+                        </a>
+                      ))}
                       <button
                         type="button"
                         role="menuitem"
@@ -848,9 +943,9 @@ export function SearchPanel({
             type="button"
             className="search-panel__sticky-button"
             onClick={onOpenManualSearch}
-            disabled={isCopartActionBlocked}
+            disabled={areSelectedProvidersBlocked}
           >
-            {isCopartActionBlocked ? "Copart required" : "New Search"}
+            {areSelectedProvidersBlocked ? "Reconnect provider" : "New Search"}
           </button>
         </div>
       </section>
@@ -889,13 +984,15 @@ export function SearchPanel({
         yearTo={yearTo}
         onYearFromChange={setYearFrom}
         onYearToChange={setYearTo}
+        selectedProviders={selectedProviders}
+        onToggleProvider={handleToggleProvider}
         activeFilterLabels={activeFilterLabels}
         summaryLabel={summaryLabel}
         onOpenFilters={() => setIsFiltersOpen(true)}
         onClose={onCloseManualSearch}
         onSubmit={handleSubmit}
-        isSearchingDisabled={isCopartActionBlocked}
-        disabledReason={copartConnectionDiagnostic?.message ?? null}
+        isSearchingDisabled={areSelectedProvidersBlocked}
+        disabledReason={searchDisabledReason}
       />
 
       <SearchResultsModal
@@ -917,7 +1014,7 @@ export function SearchPanel({
         canSave={searchModal.canSave && lastSubmittedPayload !== null}
         isSavingSearch={isSavingSearch}
         addingFromSearchLotUrl={addingFromSearchLotUrl}
-        trackedLotUrls={trackedLotUrls}
+        trackedLotKeys={trackedLotKeys}
         canRefreshLive={searchModal.mode === "saved" && searchModal.savedSearchId !== null}
         onRefreshLive={handleRefreshCurrentSavedSearch}
         isRefreshingLive={
@@ -926,7 +1023,7 @@ export function SearchPanel({
         lastSyncedAt={searchModal.lastSyncedAt}
         freshness={searchModal.freshness}
         refreshState={searchModal.refreshState}
-        connectionDiagnostic={searchModal.connectionDiagnostic}
+        connectionDiagnostics={searchModal.connectionDiagnostics}
         refreshError={searchModal.refreshError}
         statusMessage={searchModal.statusMessage}
         mobileFullscreen={searchModal.mode === "saved"}

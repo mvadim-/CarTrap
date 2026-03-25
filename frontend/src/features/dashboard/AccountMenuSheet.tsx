@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import type { LiveSyncStatus, ProviderConnection, ReliabilityDiagnostics, User } from "../../types";
 import { CopartConnectionCard } from "../integrations/CopartConnectionCard";
+import { ProviderConnectionCard } from "../integrations/ProviderConnectionCard";
 import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 type Props = {
@@ -11,12 +12,17 @@ type Props = {
   liveSyncStatus: LiveSyncStatus | null;
   diagnostics: ReliabilityDiagnostics;
   copartConnection: ProviderConnection | null;
+  iaaiConnection: ProviderConnection | null;
   copartConnectionError: string | null;
   isLoadingCopartConnection: boolean;
+  isLoadingIaaiConnection: boolean;
   isBrowserOffline: boolean;
   onConnectCopart: (payload: { username: string; password: string }) => Promise<void>;
   onReconnectCopart: (payload: { username: string; password: string }) => Promise<void>;
   onDisconnectCopart: () => Promise<void>;
+  onConnectIaai: (payload: { username: string; password: string }) => Promise<void>;
+  onReconnectIaai: (payload: { username: string; password: string }) => Promise<void>;
+  onDisconnectIaai: () => Promise<void>;
   onClose: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
@@ -40,12 +46,17 @@ export function AccountMenuSheet({
   liveSyncStatus,
   diagnostics,
   copartConnection,
+  iaaiConnection,
   copartConnectionError,
   isLoadingCopartConnection,
+  isLoadingIaaiConnection,
   isBrowserOffline,
   onConnectCopart,
   onReconnectCopart,
   onDisconnectCopart,
+  onConnectIaai,
+  onReconnectIaai,
+  onDisconnectIaai,
   onClose,
   onOpenSettings,
   onLogout,
@@ -109,6 +120,18 @@ export function AccountMenuSheet({
             onConnect={onConnectCopart}
             onReconnect={onReconnectCopart}
             onDisconnect={onDisconnectCopart}
+          />
+
+          <ProviderConnectionCard
+            providerLabel="IAAI"
+            credentialLabel="IAAI email"
+            connection={iaaiConnection}
+            isLoading={isLoadingIaaiConnection}
+            loadError={copartConnectionError}
+            isBrowserOffline={isBrowserOffline}
+            onConnect={onConnectIaai}
+            onReconnect={onReconnectIaai}
+            onDisconnect={onDisconnectIaai}
           />
 
           {isAdmin ? (

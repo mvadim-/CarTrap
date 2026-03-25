@@ -7,27 +7,35 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
+from cartrap.modules.auction_domain.models import PROVIDER_COPART, normalize_provider
 from cartrap.modules.provider_connections.schemas import ProviderConnectionDiagnosticResponse
 from cartrap.modules.system_status.schemas import FreshnessEnvelopeResponse, RefreshStateResponse
 
 
 class WatchlistCreateRequest(BaseModel):
+    provider: str = Field(default=PROVIDER_COPART)
+    provider_lot_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
     lot_url: Optional[HttpUrl] = None
     lot_number: Optional[str] = Field(default=None, min_length=1, max_length=32)
 
     @model_validator(mode="after")
     def validate_identifier(self) -> "WatchlistCreateRequest":
-        if not self.lot_url and not self.lot_number:
-            raise ValueError("Provide lot_url or lot_number.")
+        self.provider = normalize_provider(self.provider)
+        if not self.lot_url and not self.lot_number and not self.provider_lot_id:
+            raise ValueError("Provide provider_lot_id, lot_url, or lot_number.")
         if self.lot_number and not any(char.isdigit() for char in self.lot_number):
             raise ValueError("Lot number must contain digits.")
+        if not self.provider_lot_id:
+            if self.provider == PROVIDER_COPART and self.lot_number:
+                self.provider_lot_id = "".join(char for char in self.lot_number if char.isdigit())
+            elif self.lot_number:
+                self.provider_lot_id = self.lot_number.strip()
         return self
 
-    def to_lot_url(self) -> str:
+    def to_lot_reference(self) -> str:
         if self.lot_url:
             return str(self.lot_url)
-        normalized = "".join(char for char in str(self.lot_number) if char.isdigit())
-        return f"https://www.copart.com/lot/{normalized}"
+        return str(self.provider_lot_id or self.lot_number or "")
 
 
 class LotChangeValueResponse(BaseModel):
@@ -37,8 +45,12 @@ class LotChangeValueResponse(BaseModel):
 
 class WatchlistItemResponse(BaseModel):
     id: str
+    provider: str
+    auction_label: str
+    provider_lot_id: str
+    lot_key: str
     lot_number: str
-    url: HttpUrl
+    url: Optional[HttpUrl] = None
     title: str
     thumbnail_url: Optional[HttpUrl] = None
     image_urls: list[HttpUrl] = []
@@ -68,6 +80,9 @@ class WatchlistItemResponse(BaseModel):
 class LotSnapshotResponse(BaseModel):
     id: str
     tracked_lot_id: str
+    provider: str
+    provider_lot_id: str
+    lot_key: str
     lot_number: str
     status: str
     raw_status: str

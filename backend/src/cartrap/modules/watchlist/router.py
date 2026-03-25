@@ -19,16 +19,29 @@ router = APIRouter(prefix="/watchlist", tags=["watchlist"])
 
 
 def get_watchlist_service(request: Request) -> WatchlistService:
+    provider_factories: dict[str, object] = {}
+    connector_client_factories: dict[str, object] = {}
     provider_factory = getattr(request.app.state, "copart_provider_factory", None)
+    iaai_provider_factory = getattr(request.app.state, "iaai_provider_factory", None)
     connector_client_factory = getattr(request.app.state, "copart_connector_client_factory", None)
+    iaai_connector_client_factory = getattr(request.app.state, "iaai_connector_client_factory", None)
+    if provider_factory is not None:
+        provider_factories["copart"] = provider_factory
+    if iaai_provider_factory is not None:
+        provider_factories["iaai"] = iaai_provider_factory
+    if connector_client_factory is not None:
+        connector_client_factories["copart"] = connector_client_factory
+    if iaai_connector_client_factory is not None:
+        connector_client_factories["iaai"] = iaai_connector_client_factory
     settings = request.app.state.settings
     return WatchlistService(
         request.app.state.mongo.database,
         provider_factory=provider_factory,
+        provider_factories=provider_factories,
         provider_connection_service=ProviderConnectionService(
             request.app.state.mongo.database,
             settings=settings,
-            connector_client_factory=connector_client_factory,
+            connector_client_factories=connector_client_factories,
         ),
         default_poll_interval_minutes=settings.watchlist_default_poll_interval_minutes,
     )
@@ -48,7 +61,12 @@ def add_to_watchlist(
     current_user: dict = Depends(get_current_user),
     watchlist_service: WatchlistService = Depends(get_watchlist_service),
 ) -> dict:
-    return watchlist_service.add_tracked_lot(current_user, payload.to_lot_url())
+    return watchlist_service.add_tracked_lot(
+        current_user,
+        provider=payload.provider,
+        provider_lot_id=payload.provider_lot_id,
+        lot_reference=payload.to_lot_reference(),
+    )
 
 
 @router.post("/{tracked_lot_id}/refresh-live", response_model=WatchlistRefreshResponse)

@@ -42,14 +42,14 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 | `410` | Expired invite |
 | `429` | Rate limit exceeded |
 | `422` | FastAPI/Pydantic validation error |
-| `502` | Upstream Copart failure or failed catalog refresh |
+| `502` | Upstream Copart/IAAI failure, connector bootstrap failure, or failed catalog refresh |
 | `503` | Search catalog is unavailable |
 
 ## Reliability Contract
 
 - `/api/system/status.live_sync` is the global backend-plus-gateway availability surface. It stays separate from per-resource freshness.
 - Saved searches and watchlist items now include `freshness` and `refresh_state` alongside legacy timestamps.
-- Saved searches and watchlist items may also include additive `connection_diagnostic` with `ready`, `connection_missing`, or `reconnect_required` when a user-scoped Copart connector blocks live actions.
+- Saved searches and watchlist items may also include additive `connection_diagnostic` / `connection_diagnostics` with `ready`, `connection_missing`, or `reconnect_required` when one or more user-scoped provider connectors block live actions.
 - Ordinary dashboard reads stay cache-backed even if a live refresh fails. Use explicit `refresh-live` endpoints when the client needs an immediate upstream refresh attempt.
 - `freshness.status` values:
   - `live`: snapshot is inside its freshness window and live sync is healthy
@@ -79,16 +79,19 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 | `POST` | `/provider-connections/copart/connect` | user/admin | Create or replace current user's Copart connection |
 | `POST` | `/provider-connections/copart/reconnect` | user/admin | Re-bootstrap an existing Copart connection |
 | `DELETE` | `/provider-connections/copart` | user/admin | Disconnect current user's Copart connection |
-| `POST` | `/search` | user/admin | Manual Copart search |
+| `POST` | `/provider-connections/iaai/connect` | user/admin | Create or replace current user's IAAI connection |
+| `POST` | `/provider-connections/iaai/reconnect` | user/admin | Re-bootstrap an existing IAAI connection |
+| `DELETE` | `/provider-connections/iaai` | user/admin | Disconnect current user's IAAI connection |
+| `POST` | `/search` | user/admin | Manual multi-provider auction search |
 | `GET` | `/search/saved` | user/admin | List saved searches |
 | `POST` | `/search/saved` | user/admin | Save current search |
 | `POST` | `/search/saved/{saved_search_id}/view` | user/admin | View cached saved-search results |
 | `POST` | `/search/saved/{saved_search_id}/refresh-live` | user/admin | Force live refresh for a saved search |
 | `DELETE` | `/search/saved/{saved_search_id}` | user/admin | Delete saved search |
 | `GET` | `/search/catalog` | user/admin | Read make/model/year catalog |
-| `POST` | `/search/watchlist` | user/admin | Add search result to watchlist |
+| `POST` | `/search/watchlist` | user/admin | Add provider-aware search result to watchlist |
 | `GET` | `/watchlist` | user/admin | List tracked lots |
-| `POST` | `/watchlist` | user/admin | Add tracked lot by URL or lot number |
+| `POST` | `/watchlist` | user/admin | Add tracked lot by provider-aware identifier |
 | `POST` | `/watchlist/{tracked_lot_id}/refresh-live` | user/admin | Force live refresh for one tracked lot |
 | `DELETE` | `/watchlist/{tracked_lot_id}` | user/admin | Remove tracked lot |
 | `GET` | `/notifications/subscription-config` | user/admin | Read browser push/VAPID config |
@@ -264,6 +267,7 @@ Response:
     {
       "id": "mongo-object-id",
       "provider": "copart",
+      "provider_label": "Copart",
       "status": "connected",
       "account_label": "buyer@example.com",
       "connected_at": "2026-03-24T09:30:00Z",
@@ -289,7 +293,7 @@ Response:
 
 Connection status values:
 
-- `connected`: live Copart actions are available
+- `connected`: live provider actions are available
 - `expiring`: live actions still work, but bundle expiry is near
 - `reconnect_required`: stored session became invalid and the user must re-enter credentials
 - `disconnected`: connection exists historically, but live bundle is cleared
@@ -352,16 +356,38 @@ Response:
 }
 ```
 
+#### `POST /api/provider-connections/iaai/connect`
+
+Creates or replaces the authenticated user's IAAI connection. Request/response shapes match Copart, but the stored bundle is refresh-token capable and provider-specific.
+
+Additional error semantics:
+
+- `401`: IAAI credentials were rejected
+- `502`: IAAI rejected connector bootstrap request or WAF/auth bootstrap failed
+
+#### `POST /api/provider-connections/iaai/reconnect`
+
+Re-bootstrap an existing IAAI connection after `reconnect_required`.
+
+Additional error semantics:
+
+- `404`: current user does not have an existing IAAI connection to reconnect
+
+#### `DELETE /api/provider-connections/iaai`
+
+Disconnects the authenticated user's IAAI connection and clears the stored encrypted session bundle.
+
 ### Search
 
 #### `POST /api/search`
 
-Runs manual Copart search and fetches all result pages based on `numFound`.
+Runs manual auction search across one or more selected providers and merges normalized results by `lot_key`.
 
 Accepted request fields:
 
 | Field | Type | Notes |
 | --- | --- | --- |
+| `providers` | `string[]` | Optional; defaults to `["copart"]`; allowed values: `copart`, `iaai` |
 | `make` | `string` | Optional if `make_filter` is used |
 | `model` | `string` | Optional if `model_filter` is used |
 | `make_filter` | `string` | Catalog-derived Copart filter query |
@@ -378,6 +404,10 @@ Response:
 {
   "results": [
     {
+      "provider": "copart",
+      "auction_label": "Copart",
+      "provider_lot_id": "12345678",
+      "lot_key": "copart:12345678",
       "lot_number": "12345678",
       "title": "2025 FORD MUSTANG MACH-E PREMIUM",
       "url": "https://www.copart.com/lot/12345678",
@@ -390,6 +420,15 @@ Response:
     }
   ],
   "total_results": 42,
+  "provider_diagnostics": [
+    {
+      "provider": "copart",
+      "status": "ready",
+      "message": "Copart live actions are available.",
+      "connection_id": "mongo-object-id",
+      "reconnect_required": false
+    }
+  ],
   "source_request": {
     "MISC": ["..."],
     "sort": ["..."],
@@ -415,6 +454,7 @@ Response:
       "id": "mongo-object-id",
       "label": "FORD MUSTANG MACH-E 2025-2027",
       "criteria": {
+        "providers": ["copart", "iaai"],
         "make": "FORD",
         "model": "MUSTANG MACH-E",
         "make_filter": null,
@@ -426,6 +466,11 @@ Response:
       "result_count": 42,
       "cached_result_count": 42,
       "new_count": 3,
+      "external_url": "https://www.copart.com/lotSearchResults?...",
+      "external_links": [
+        { "provider": "copart", "label": "Copart", "url": "https://www.copart.com/lotSearchResults?..." },
+        { "provider": "iaai", "label": "IAAI", "url": "https://www.iaai.com/Search?..." }
+      ],
       "last_synced_at": "2026-03-21T16:20:00Z",
       "freshness": {
         "status": "cached",
@@ -447,13 +492,22 @@ Response:
           "cached_new_count": 3
         }
       },
+      "connection_diagnostics": [
+        {
+          "provider": "copart",
+          "status": "ready",
+          "message": "Copart live actions are available.",
+          "connection_id": "mongo-object-id",
+          "reconnect_required": false
+        }
+      ],
       "created_at": "2026-03-13T10:00:00Z"
     }
   ]
 }
 ```
 
-`items[].connection_diagnostic` is optional and appears when the saved search is readable from cache but its live Copart action is blocked by `connection_missing` or `reconnect_required`.
+`items[].connection_diagnostic` remains for backward compatibility. New multi-provider payloads should prefer `items[].connection_diagnostics[]` and `items[].external_links[]`.
 
 #### `POST /api/search/saved`
 
@@ -513,8 +567,8 @@ Forces an immediate live refresh attempt for one saved search and returns the up
 
 Error semantics:
 
-- `409`: current user has no usable Copart connection (`connection_required`, `reconnect_required`, or bundle unavailable)
-- `502`: NAS gateway / upstream Copart execution failed after a valid connector lookup
+- `409`: current user has no usable connection for any selected provider
+- `502`: upstream provider execution failed after a valid connector lookup
 
 #### `DELETE /api/search/saved/{saved_search_id}`
 
@@ -555,6 +609,8 @@ Request:
 
 ```json
 {
+  "provider": "copart",
+  "provider_lot_id": "12345678",
   "lot_url": "https://www.copart.com/lot/12345678"
 }
 ```
@@ -576,6 +632,10 @@ Response:
   "items": [
     {
       "id": "mongo-object-id",
+      "provider": "copart",
+      "auction_label": "Copart",
+      "provider_lot_id": "12345678",
+      "lot_key": "copart:12345678",
       "lot_number": "12345678",
       "url": "https://www.copart.com/lot/12345678",
       "title": "2025 FORD MUSTANG MACH-E PREMIUM",
@@ -620,23 +680,26 @@ Response:
 }
 ```
 
-`items[].connection_diagnostic` is optional and appears when the tracked lot remains readable from cache but the owning user's live Copart connector is missing or requires re-login.
+`items[].connection_diagnostic` is optional and appears when the tracked lot remains readable from cache but the owning user's live provider connector is missing or requires re-login.
 
 #### `POST /api/watchlist`
 
-Adds a lot either by direct Copart URL or by raw lot number.
+Adds a lot by provider-aware identifier. Legacy Copart `lot_url` / `lot_number` requests remain supported.
 
 Request variants:
 
 ```json
 {
+  "provider": "copart",
   "lot_url": "https://www.copart.com/lot/12345678"
 }
 ```
 
 ```json
 {
-  "lot_number": "12345678"
+  "provider": "iaai",
+  "provider_lot_id": "99112233",
+  "lot_number": "STK-44"
 }
 ```
 
@@ -644,9 +707,13 @@ Response:
 
 ```json
 {
-  "tracked_lot": {
-    "id": "mongo-object-id",
-    "lot_number": "12345678",
+    "tracked_lot": {
+      "id": "mongo-object-id",
+      "provider": "copart",
+      "auction_label": "Copart",
+      "provider_lot_id": "12345678",
+      "lot_key": "copart:12345678",
+      "lot_number": "12345678",
     "url": "https://www.copart.com/lot/12345678",
     "title": "2025 FORD MUSTANG MACH-E PREMIUM",
     "thumbnail_url": "https://img.copart.com/12345678.jpg",
@@ -681,10 +748,13 @@ Response:
     "latest_change_at": null,
     "latest_changes": {}
   },
-  "initial_snapshot": {
-    "id": "mongo-object-id",
-    "tracked_lot_id": "mongo-object-id",
-    "lot_number": "12345678",
+    "initial_snapshot": {
+      "id": "mongo-object-id",
+      "tracked_lot_id": "mongo-object-id",
+      "provider": "copart",
+      "provider_lot_id": "12345678",
+      "lot_key": "copart:12345678",
+      "lot_number": "12345678",
     "status": "upcoming",
     "raw_status": "Upcoming",
     "current_bid": 0.0,
@@ -702,8 +772,8 @@ Forces an immediate live refresh attempt for one tracked lot and returns the upd
 
 Error semantics:
 
-- `409`: current user has no usable Copart connection (`connection_required`, `reconnect_required`, or bundle unavailable)
-- `502`: NAS gateway / upstream Copart execution failed after a valid connector lookup
+- `409`: current user has no usable connection for the tracked lot's provider
+- `502`: upstream provider execution failed after a valid connector lookup
 
 #### `DELETE /api/watchlist/{tracked_lot_id}`
 

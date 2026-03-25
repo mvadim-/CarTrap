@@ -1,4 +1,5 @@
 import type {
+  AuctionProvider,
   FreshnessEnvelope,
   Invite,
   ProviderConnection,
@@ -148,6 +149,10 @@ function normalizeSavedSearch(item: SavedSearch): SavedSearch {
     freshness: normalizeFreshness(item.freshness, item.last_synced_at, DEFAULT_SAVED_SEARCH_STALE_AFTER_SECONDS),
     refresh_state: normalizeRefreshState(item.refresh_state, item.last_synced_at),
     connection_diagnostic: normalizeConnectionDiagnostic(item.connection_diagnostic),
+    connection_diagnostics: Array.isArray(item.connection_diagnostics)
+      ? item.connection_diagnostics.map(normalizeConnectionDiagnostic).filter(Boolean) as ProviderConnectionDiagnostic[]
+      : [],
+    external_links: Array.isArray(item.external_links) ? item.external_links : [],
   };
 }
 
@@ -291,6 +296,7 @@ export async function createInvite(email: string, token: string): Promise<Invite
 
 export async function searchLots(
   payload: {
+    providers?: AuctionProvider[];
     make?: string;
     model?: string;
     make_filter?: string;
@@ -355,6 +361,38 @@ export async function disconnectCopartConnection(token: string): Promise<Provide
   return response.connection;
 }
 
+export async function connectIaaiConnection(
+  payload: { username: string; password: string },
+  token: string,
+): Promise<ProviderConnection> {
+  const response = await request<{ connection: ProviderConnection }>("/provider-connections/iaai/connect", {
+    method: "POST",
+    body: payload,
+    token,
+  });
+  return response.connection;
+}
+
+export async function reconnectIaaiConnection(
+  payload: { username: string; password: string },
+  token: string,
+): Promise<ProviderConnection> {
+  const response = await request<{ connection: ProviderConnection }>("/provider-connections/iaai/reconnect", {
+    method: "POST",
+    body: payload,
+    token,
+  });
+  return response.connection;
+}
+
+export async function disconnectIaaiConnection(token: string): Promise<ProviderConnection> {
+  const response = await request<{ connection: ProviderConnection }>("/provider-connections/iaai", {
+    method: "DELETE",
+    token,
+  });
+  return response.connection;
+}
+
 export async function listSavedSearches(token: string): Promise<SavedSearch[]> {
   const response = await request<{ items: SavedSearch[] }>("/search/saved", { token });
   return response.items.map(normalizeSavedSearch);
@@ -362,6 +400,7 @@ export async function listSavedSearches(token: string): Promise<SavedSearch[]> {
 
 export async function saveSearch(
   payload: {
+    providers?: AuctionProvider[];
     make?: string;
     model?: string;
     make_filter?: string;
@@ -409,28 +448,29 @@ export async function refreshSearchCatalog(token: string): Promise<SearchCatalog
   return request<SearchCatalog>("/admin/search-catalog/refresh", { method: "POST", token });
 }
 
-export async function addToWatchlist(lotUrl: string, token: string): Promise<WatchlistItem> {
+export async function addToWatchlist(
+  payload: { provider?: AuctionProvider; provider_lot_id?: string; lot_url?: string; lot_number?: string },
+  token: string,
+): Promise<WatchlistItem> {
   const response = await request<{ tracked_lot: WatchlistItem }>("/watchlist", {
     method: "POST",
-    body: { lot_url: lotUrl },
+    body: payload,
     token,
   });
   return normalizeWatchlistItem(response.tracked_lot);
 }
 
 export async function addLotNumberToWatchlist(lotNumber: string, token: string): Promise<WatchlistItem> {
-  const response = await request<{ tracked_lot: WatchlistItem }>("/watchlist", {
-    method: "POST",
-    body: { lot_number: lotNumber },
-    token,
-  });
-  return normalizeWatchlistItem(response.tracked_lot);
+  return addToWatchlist({ provider: "copart", lot_number: lotNumber }, token);
 }
 
-export async function addFromSearch(lotUrl: string, token: string): Promise<WatchlistItem> {
+export async function addFromSearch(
+  payload: { provider: AuctionProvider; provider_lot_id?: string; lot_url?: string | null; lot_number?: string },
+  token: string,
+): Promise<WatchlistItem> {
   const response = await request<{ tracked_lot: WatchlistItem }>("/search/watchlist", {
     method: "POST",
-    body: { lot_url: lotUrl },
+    body: payload,
     token,
   });
   return normalizeWatchlistItem(response.tracked_lot);

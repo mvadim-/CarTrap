@@ -12,6 +12,10 @@ function buildToken(payload: Record<string, unknown>) {
 function buildTrackedLot(overrides: Record<string, unknown> = {}) {
   return {
     id: "tracked-1",
+    provider: "copart",
+    auction_label: "Copart",
+    provider_lot_id: "12345678",
+    lot_key: "copart:12345678",
     lot_number: "12345678",
     url: "https://www.copart.com/lot/12345678",
     title: "2020 TOYOTA CAMRY SE",
@@ -78,6 +82,7 @@ function buildSavedSearch(overrides: Record<string, unknown> = {}) {
     id: "saved-1",
     label: "FORD MUSTANG MACH-E 2025-2027",
     criteria: {
+      providers: ["copart"],
       make: "FORD",
       model: "MUSTANG MACH-E",
       year_from: 2025,
@@ -85,6 +90,14 @@ function buildSavedSearch(overrides: Record<string, unknown> = {}) {
     },
     external_url:
       "https://www.copart.com/lotSearchResults?free=true&displayStr=FORD%20MUSTANG%20MACH-E%202025-2027&from=%2FvehicleFinder&fromSource=widget&qId=test-qid-1&searchCriteria=%7B%22query%22%3A%5B%22FORD%20MUSTANG%20MACH-E%202025-2027%22%5D%2C%22filter%22%3A%7B%22YEAR%22%3A%5B%22lot_year%3A%5B2025%20TO%202027%5D%22%5D%2C%22MAKE%22%3A%5B%22lot_make_desc%3A%5C%22FORD%5C%22%22%5D%2C%22MODL%22%3A%5B%22lot_model_desc%3A%5C%22MUSTANG%20MACH-E%5C%22%22%5D%2C%22DRIV%22%3A%5B%22drive%3A%5C%22ALL%20WHEEL%20DRIVE%5C%22%22%5D%7D%2C%22searchName%22%3A%22%22%2C%22watchListOnly%22%3Afalse%2C%22freeFormSearch%22%3Atrue%7D",
+    external_links: [
+      {
+        provider: "copart",
+        label: "Copart",
+        url:
+          "https://www.copart.com/lotSearchResults?free=true&displayStr=FORD%20MUSTANG%20MACH-E%202025-2027&from=%2FvehicleFinder&fromSource=widget&qId=test-qid-1&searchCriteria=%7B%22query%22%3A%5B%22FORD%20MUSTANG%20MACH-E%202025-2027%22%5D%2C%22filter%22%3A%7B%22YEAR%22%3A%5B%22lot_year%3A%5B2025%20TO%202027%5D%22%5D%2C%22MAKE%22%3A%5B%22lot_make_desc%3A%5C%22FORD%5C%22%22%5D%2C%22MODL%22%3A%5B%22lot_model_desc%3A%5C%22MUSTANG%20MACH-E%5C%22%22%5D%2C%22DRIV%22%3A%5B%22drive%3A%5C%22ALL%20WHEEL%20DRIVE%5C%22%22%5D%7D%2C%22searchName%22%3A%22%22%2C%22watchListOnly%22%3Afalse%2C%22freeFormSearch%22%3Atrue%7D",
+      },
+    ],
     result_count: 1,
     cached_result_count: 1,
     new_count: 0,
@@ -104,6 +117,10 @@ function buildSavedSearch(overrides: Record<string, unknown> = {}) {
 
 function buildSearchResult(overrides: Record<string, unknown> = {}) {
   return {
+    provider: "copart",
+    auction_label: "Copart",
+    provider_lot_id: "12345678",
+    lot_key: "copart:12345678",
     lot_number: "12345678",
     title: "2020 TOYOTA CAMRY SE",
     url: "https://www.copart.com/lot/12345678",
@@ -682,6 +699,8 @@ describe("CarTrap app", () => {
           const refreshedResults = [
             buildSearchResult(),
             buildSearchResult({
+              provider_lot_id: "87654321",
+              lot_key: "copart:87654321",
               lot_number: "87654321",
               title: "2018 HONDA CIVIC EX",
               url: "https://www.copart.com/lot/87654321",
@@ -747,6 +766,7 @@ describe("CarTrap app", () => {
               (item) =>
                 JSON.stringify(item.criteria) ===
                 JSON.stringify({
+                  providers: body.providers,
                   make: body.make,
                   model: body.model,
                   make_filter: body.make_filter,
@@ -769,6 +789,7 @@ describe("CarTrap app", () => {
               id: `saved-${savedSearches.length + 1}`,
               label: body.label ?? `${body.make ?? ""} ${body.model ?? ""} ${body.year_from ?? ""}-${body.year_to ?? ""}`.trim(),
               criteria: {
+                providers: body.providers ?? ["copart"],
                 make: body.make,
                 model: body.model,
                 make_filter: body.make_filter,
@@ -873,19 +894,63 @@ describe("CarTrap app", () => {
           if (searchShouldFail) {
             return new Response(JSON.stringify({ detail: "Failed to fetch search results from Copart." }), { status: 502 });
           }
+          const requestedProviders = Array.isArray(body.providers) && body.providers.length > 0 ? body.providers : ["copart"];
+          const buildIaaiSearchResult = () =>
+            buildSearchResult({
+              provider: "iaai",
+              auction_label: "IAAI",
+              provider_lot_id: "99112233",
+              lot_key: "iaai:99112233",
+              lot_number: "STK-44",
+              title: "2025 FORD MUSTANG MACH-E PREMIUM",
+              url: "https://www.iaai.com/VehicleDetail/99112233~US",
+              thumbnail_url: "https://img.iaai.com/99112233.jpg",
+              location: "Phoenix, AZ",
+              odometer: "44,210",
+              current_bid: 9100,
+              buy_now_price: null,
+              status: "live",
+              raw_status: "Live",
+            });
           if (body.make !== "FORD" || body.model !== "MUSTANG MACH-E") {
             return new Response(JSON.stringify({ total_results: 0, results: [] }), { status: 200 });
           }
+          if (requestedProviders.length === 1 && requestedProviders[0] === "iaai") {
+            return new Response(
+              JSON.stringify({
+                total_results: 1,
+                results: [buildIaaiSearchResult()],
+              }),
+              { status: 200 },
+            );
+          }
           return new Response(
             JSON.stringify({
-              total_results: 1,
-              results: [buildSearchResult()],
+              total_results: requestedProviders.includes("iaai") ? 2 : 1,
+              results: requestedProviders.includes("iaai") ? [buildSearchResult(), buildIaaiSearchResult()] : [buildSearchResult()],
             }),
             { status: 200 },
           );
         }
         if (url.includes("/search/watchlist")) {
-          const trackedLot = buildTrackedLot();
+          const body = init?.body ? JSON.parse(String(init.body)) : {};
+          const trackedLot =
+            body.provider === "iaai"
+              ? buildTrackedLot({
+                  id: "tracked-iaai-1",
+                  provider: "iaai",
+                  auction_label: "IAAI",
+                  provider_lot_id: body.provider_lot_id ?? "99112233",
+                  lot_key: `iaai:${body.provider_lot_id ?? "99112233"}`,
+                  lot_number: body.lot_number ?? "STK-44",
+                  url: "https://www.iaai.com/VehicleDetail/99112233~US",
+                  title: "2025 FORD MUSTANG MACH-E PREMIUM",
+                  thumbnail_url: "https://img.iaai.com/99112233.jpg",
+                  image_urls: ["https://img.iaai.com/99112233.jpg"],
+                  odometer: "44,210",
+                  current_bid: 9100,
+                })
+              : buildTrackedLot();
           watchlistItems = [trackedLot, ...watchlistItems.filter((item) => item.id !== trackedLot.id)];
           return new Response(JSON.stringify({ tracked_lot: trackedLot }), { status: 201 });
         }
@@ -1005,6 +1070,44 @@ describe("CarTrap app", () => {
     expect(screen.getByText(/Lot#: 12345678/i)).toBeTruthy();
     expect(screen.getByText(/Odo: 12,345 ACTUAL/i)).toBeTruthy();
     expect(screen.getAllByAltText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);
+  });
+
+  it("supports IAAI-only manual search and adds IAAI result to watchlist", async () => {
+    providerConnections = [
+      buildProviderConnection(),
+      buildProviderConnection({
+        id: "provider-connection-iaai-1",
+        provider: "iaai",
+        provider_label: "IAAI",
+        account_label: "iaai-user@example.com",
+      }),
+    ];
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    await openManualSearch();
+
+    fireEvent.click(screen.getByRole("button", { name: /^iaai$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^copart$/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /providers unavailable/i })).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+
+    const resultsDialog = await screen.findByRole("dialog", { name: /search results/i });
+    expect(lastSearchPayload?.providers).toEqual(["iaai"]);
+    expect(within(resultsDialog).getAllByText(/IAAI/i).length).toBeGreaterThan(0);
+    expect(within(resultsDialog).getByRole("link", { name: /open iaai lot stk-44/i })).toBeTruthy();
+
+    fireEvent.click(within(resultsDialog).getByRole("button", { name: /add to watchlist: 2025 ford mustang mach-e premium/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/2025 FORD MUSTANG MACH-E PREMIUM/i).length).toBeGreaterThan(1);
+    });
+    expect(screen.getByText(/Lot STK-44/i)).toBeTruthy();
   });
 
   it("filters make and model lists while typing", async () => {
@@ -1314,7 +1417,7 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /save search/i }));
 
     fireEvent.click(await screen.findByRole("button", { name: /more actions for ford mustang mach-e 2025-2027/i }));
-    const link = await screen.findByRole("menuitem", { name: /open url/i });
+    const link = await screen.findByRole("menuitem", { name: /open copart/i });
     expect(link.getAttribute("href")).toContain("https://www.copart.com/lotSearchResults?free=true&displayStr=FORD%20MUSTANG%20MACH-E%202025-2027");
     expect(link.getAttribute("href")).toContain("qId=test-qid-1");
     expect(link.getAttribute("href")).toContain("DRIV");
@@ -2042,7 +2145,7 @@ describe("CarTrap app", () => {
     render(<App />);
     submitLoginForm();
 
-    expect(await screen.findByText(/copart reconnect required/i)).toBeTruthy();
+    expect(await screen.findByText(/connector reconnect required/i)).toBeTruthy();
 
     openAccountMenu();
     const connectionCard = await screen.findByLabelText(/copart connection/i);
@@ -2054,7 +2157,7 @@ describe("CarTrap app", () => {
 
     expect(await within(connectionCard).findByText(/copart connection restored\./i)).toBeTruthy();
     await waitFor(() => {
-      expect(screen.queryByText(/copart reconnect required/i)).toBeNull();
+      expect(screen.queryByText(/connector reconnect required/i)).toBeNull();
     });
     expect(within(connectionCard).getByText(/^Connected$/i)).toBeTruthy();
   });
@@ -2104,7 +2207,7 @@ describe("CarTrap app", () => {
     const refreshSavedSearchButton = await screen.findByRole("menuitem", { name: /copart action blocked/i });
     expect((refreshSavedSearchButton as HTMLButtonElement).disabled).toBe(true);
 
-    const refreshWatchlistButton = screen.getAllByRole("button", { name: /copart action blocked/i }).find((button) =>
+    const refreshWatchlistButton = screen.getAllByRole("button", { name: /copart unavailable/i }).find((button) =>
       button.className.includes("ghost-button--quiet"),
     );
     expect(refreshWatchlistButton).toBeTruthy();

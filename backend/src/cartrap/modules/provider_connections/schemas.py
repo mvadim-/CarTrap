@@ -24,6 +24,7 @@ class ProviderConnectionBundleResponse(BaseModel):
 class ProviderConnectionResponse(BaseModel):
     id: str
     provider: str
+    provider_label: Optional[str] = None
     status: str
     account_label: Optional[str] = None
     connected_at: Optional[datetime] = None
@@ -44,7 +45,7 @@ class ProviderConnectionListResponse(BaseModel):
     items: list[ProviderConnectionResponse] = Field(default_factory=list)
 
 
-class CopartConnectionRequest(BaseModel):
+class ProviderConnectionCredentialsRequest(BaseModel):
     username: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=1, max_length=255)
 

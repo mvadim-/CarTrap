@@ -14,13 +14,15 @@ import { AsyncStatus } from "./features/shared/AsyncStatus";
 import { WatchlistPanel } from "./features/watchlist/WatchlistPanel";
 import {
   acceptInvite,
+  addToWatchlist,
   addFromSearch,
-  addLotNumberToWatchlist,
   connectCopartConnection,
+  connectIaaiConnection,
   configureAuthLifecycle,
   createInvite,
   deleteSavedSearch,
   disconnectCopartConnection,
+  disconnectIaaiConnection,
   getPushSubscriptionConfig,
   getSearchCatalog,
   getSystemStatus,
@@ -30,6 +32,7 @@ import {
   listWatchlist,
   login,
   reconnectCopartConnection,
+  reconnectIaaiConnection,
   refreshWatchlistLotLive,
   refreshSavedSearchLive,
   refreshSearchCatalog,
@@ -42,6 +45,7 @@ import {
   viewSavedSearch,
 } from "./lib/api";
 import type {
+  AuctionProvider,
   Invite,
   LiveSyncStatus,
   ProviderConnection,
@@ -59,6 +63,7 @@ import type {
 } from "./types";
 
 type SearchPayload = {
+  providers: AuctionProvider[];
   make?: string;
   model?: string;
   makeFilter?: string;
@@ -349,6 +354,38 @@ function buildReliabilityDiagnostics(savedSearches: SavedSearch[], watchlist: Wa
   };
 }
 
+function buildProviderDiagnostic(
+  provider: AuctionProvider,
+  connection: ProviderConnection | null,
+  label: string,
+): ProviderConnectionDiagnostic {
+  if (connection === null || connection.status === "disconnected") {
+    return {
+      provider,
+      status: "connection_missing",
+      message: `Connect ${label} to enable live search and watchlist refreshes.`,
+      connection_id: null,
+      reconnect_required: false,
+    };
+  }
+  if (connection.status === "reconnect_required") {
+    return {
+      provider,
+      status: "reconnect_required",
+      message: `Reconnect ${label} from Account to restore live search and refresh actions.`,
+      connection_id: connection.id,
+      reconnect_required: true,
+    };
+  }
+  return {
+    provider,
+    status: "ready",
+    message: `${label} live actions are available.`,
+    connection_id: connection.id,
+    reconnect_required: false,
+  };
+}
+
 function buildTabAttentionMessage(
   previousWatchlist: WatchlistItem[],
   nextWatchlist: WatchlistItem[] | null,
@@ -488,30 +525,9 @@ export function App() {
   } as CSSProperties;
   const reliabilityDiagnostics = buildReliabilityDiagnostics(savedSearches, watchlist);
   const copartConnection = providerConnections.find((item) => item.provider === "copart") ?? null;
-  const copartConnectionDiagnostic: ProviderConnectionDiagnostic =
-    copartConnection === null || copartConnection.status === "disconnected"
-      ? {
-          provider: "copart",
-          status: "connection_missing",
-          message: "Connect Copart to enable live search and watchlist refreshes.",
-          connection_id: null,
-          reconnect_required: false,
-        }
-      : copartConnection.status === "reconnect_required"
-        ? {
-            provider: "copart",
-            status: "reconnect_required",
-            message: "Reconnect Copart from Account to restore live search and refresh actions.",
-            connection_id: copartConnection.id,
-            reconnect_required: true,
-          }
-        : {
-            provider: "copart",
-            status: "ready",
-            message: "Copart live actions are available.",
-            connection_id: copartConnection.id,
-            reconnect_required: false,
-          };
+  const iaaiConnection = providerConnections.find((item) => item.provider === "iaai") ?? null;
+  const copartConnectionDiagnostic = buildProviderDiagnostic("copart", copartConnection, "Copart");
+  const iaaiConnectionDiagnostic = buildProviderDiagnostic("iaai", iaaiConnection, "IAAI");
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -1099,6 +1115,7 @@ export function App() {
     try {
       const response = await searchLots(
         {
+          providers: payload.providers,
           make: payload.make,
           model: payload.model,
           make_filter: payload.makeFilter,
@@ -1137,6 +1154,7 @@ export function App() {
     try {
       const saved = await saveSearch(
         {
+          providers: payload.providers,
           make: payload.make,
           model: payload.model,
           make_filter: payload.makeFilter,
@@ -1234,13 +1252,20 @@ export function App() {
     }
   }
 
-  async function handleAddFromSearch(lotUrl: string) {
+  async function handleAddFromSearch(payload: {
+    provider: AuctionProvider;
+    provider_lot_id?: string;
+    lot_url?: string | null;
+    lot_number?: string;
+    lot_key?: string;
+  }) {
     if (!session.accessToken) {
       throw new Error("Missing session");
     }
-    setActionState((current) => ({ ...current, addingFromSearchLotUrl: lotUrl }));
+    const actionKey = payload.lot_key ?? payload.provider_lot_id ?? payload.lot_url ?? payload.lot_number ?? payload.provider;
+    setActionState((current) => ({ ...current, addingFromSearchLotUrl: actionKey }));
     try {
-      const trackedLot = await addFromSearch(lotUrl, session.accessToken);
+      const trackedLot = await addFromSearch(payload, session.accessToken);
       await refreshLiveSyncStatus(session.accessToken);
       setWatchlist((current) => sortWatchlistItems([trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]));
       return trackedLot;
@@ -1255,7 +1280,7 @@ export function App() {
       );
     } finally {
       setActionState((current) =>
-        current.addingFromSearchLotUrl === lotUrl ? { ...current, addingFromSearchLotUrl: null } : current,
+        current.addingFromSearchLotUrl === actionKey ? { ...current, addingFromSearchLotUrl: null } : current,
       );
     }
   }
@@ -1294,13 +1319,20 @@ export function App() {
     }
   }
 
-  async function handleAddByLotNumber(lotNumber: string) {
+  async function handleAddByIdentifier(provider: AuctionProvider, lotNumber: string) {
     if (!session.accessToken) {
       throw new Error("Missing session");
     }
     setActionState((current) => ({ ...current, isAddingWatchlistLot: true }));
     try {
-      const trackedLot = await addLotNumberToWatchlist(lotNumber, session.accessToken);
+      const trackedLot = await addToWatchlist(
+        {
+          provider,
+          lot_number: lotNumber,
+          provider_lot_id: lotNumber,
+        },
+        session.accessToken,
+      );
       await refreshLiveSyncStatus(session.accessToken);
       setWatchlist((current) => sortWatchlistItems([trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]));
       return trackedLot;
@@ -1381,6 +1413,30 @@ export function App() {
       throw new Error("Missing session");
     }
     await disconnectCopartConnection(session.accessToken);
+    await refreshConnectorAwareResources(session.accessToken);
+  }
+
+  async function handleConnectIaai(payload: { username: string; password: string }) {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    await connectIaaiConnection(payload, session.accessToken);
+    await refreshConnectorAwareResources(session.accessToken);
+  }
+
+  async function handleReconnectIaai(payload: { username: string; password: string }) {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    await reconnectIaaiConnection(payload, session.accessToken);
+    await refreshConnectorAwareResources(session.accessToken);
+  }
+
+  async function handleDisconnectIaai() {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    await disconnectIaaiConnection(session.accessToken);
     await refreshConnectorAwareResources(session.accessToken);
   }
 
@@ -1532,11 +1588,11 @@ export function App() {
             className="dashboard-status dashboard-grid__status"
           />
         ) : null}
-        {copartConnection?.status === "reconnect_required" ? (
+        {copartConnection?.status === "reconnect_required" || iaaiConnection?.status === "reconnect_required" ? (
           <AsyncStatus
             tone="neutral"
-            title="Copart reconnect required"
-            message="Live search and refresh actions are blocked until you reconnect Copart from Account."
+            title="Connector reconnect required"
+            message="Some live search and refresh actions are blocked until you reconnect the affected provider from Account."
             className="dashboard-status dashboard-grid__status"
           />
         ) : null}
@@ -1552,13 +1608,14 @@ export function App() {
             session.accessToken ? loadSavedSearchesResource(session.accessToken) : Promise.resolve()
           }
           copartConnectionDiagnostic={copartConnectionDiagnostic}
+          iaaiConnectionDiagnostic={iaaiConnectionDiagnostic}
           isSearching={actionState.isSearching}
           isSavingSearch={actionState.isSavingSearch}
           openingSavedSearchId={actionState.openingSavedSearchId}
           refreshingSavedSearchId={actionState.refreshingSavedSearchId}
           deletingSavedSearchId={actionState.deletingSavedSearchId}
           addingFromSearchLotUrl={actionState.addingFromSearchLotUrl}
-          trackedLotUrls={watchlist.map((item) => item.url)}
+          trackedLotKeys={watchlist.map((item) => item.lot_key)}
           isBrowserOffline={isBrowserOffline}
           liveSyncStatus={liveSyncStatus}
           isManualSearchOpen={isManualSearchOpen}
@@ -1581,8 +1638,9 @@ export function App() {
           isBrowserOffline={isBrowserOffline}
           liveSyncStatus={liveSyncStatus}
           copartConnectionDiagnostic={copartConnectionDiagnostic}
+          iaaiConnectionDiagnostic={iaaiConnectionDiagnostic}
           onRetry={() => (session.accessToken ? loadWatchlistResource(session.accessToken) : Promise.resolve())}
-          onAddByLotNumber={handleAddByLotNumber}
+          onAddByIdentifier={handleAddByIdentifier}
           onRefreshItem={handleRefreshWatchlistLot}
           onRemove={handleRemoveWatchlistItem}
         />
@@ -1611,12 +1669,17 @@ export function App() {
         liveSyncStatus={liveSyncStatus}
         diagnostics={reliabilityDiagnostics}
         copartConnection={copartConnection}
+        iaaiConnection={iaaiConnection}
         copartConnectionError={providerConnectionsError}
         isLoadingCopartConnection={isLoadingProviderConnections}
+        isLoadingIaaiConnection={isLoadingProviderConnections}
         isBrowserOffline={isBrowserOffline}
         onConnectCopart={handleConnectCopart}
         onReconnectCopart={handleReconnectCopart}
         onDisconnectCopart={handleDisconnectCopart}
+        onConnectIaai={handleConnectIaai}
+        onReconnectIaai={handleReconnectIaai}
+        onDisconnectIaai={handleDisconnectIaai}
         onClose={() => setIsAccountMenuOpen(false)}
         onOpenSettings={handleOpenSettings}
         onLogout={handleLogout}

@@ -1,10 +1,9 @@
-"""Search service built on top of the Copart provider."""
+"""Search service built on top of provider-aware auction contracts."""
 
 from __future__ import annotations
 
 import json
 import logging
-import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import perf_counter
@@ -14,8 +13,9 @@ from fastapi import HTTPException, status
 from pymongo.database import Database
 
 from cartrap.core.logging import make_log_extra, new_correlation_id
-from cartrap.modules.copart_provider.models import CopartSearchResult
+from cartrap.modules.auction_domain.models import PROVIDER_COPART, PROVIDER_IAAI, build_lot_key
 from cartrap.modules.copart_provider.service import CopartProvider
+from cartrap.modules.iaai_provider.service import IaaiProvider
 from cartrap.modules.notifications.service import NotificationService
 from cartrap.modules.monitoring.job_runtime import JobRuntimeService
 from cartrap.modules.provider_connections.service import ProviderConnectionService
@@ -39,6 +39,7 @@ class SearchService:
         self,
         database: Database,
         provider_factory: Optional[Callable[[], CopartProvider]] = None,
+        provider_factories: Optional[dict[str, Callable[[], object]]] = None,
         watchlist_service_factory: Optional[Callable[[], WatchlistService]] = None,
         catalog_refresh_factory: Optional[Callable[[], SearchCatalogRefreshJob]] = None,
         catalog_seed_path: Optional[Path] = None,
@@ -48,8 +49,15 @@ class SearchService:
         provider_connection_service: ProviderConnectionService | None = None,
     ) -> None:
         self._database = database
-        self._provider_factory = provider_factory or CopartProvider
-        self._watchlist_service_factory = watchlist_service_factory or (lambda: WatchlistService(database, provider_factory=provider_factory))
+        self._provider_factories: dict[str, Callable[[], object]] = {
+            PROVIDER_COPART: provider_factory or CopartProvider,
+            PROVIDER_IAAI: IaaiProvider,
+        }
+        if provider_factories:
+            self._provider_factories.update(provider_factories)
+        self._watchlist_service_factory = watchlist_service_factory or (
+            lambda: WatchlistService(database, provider_factories=self._provider_factories)
+        )
         self._catalog_seed_path = catalog_seed_path or CATALOG_JSON_PATH
         self._catalog_repository = SearchCatalogRepository(database)
         self._saved_search_repository = SavedSearchRepository(database)
@@ -60,7 +68,7 @@ class SearchService:
         self._refresh_job_runtime = refresh_job_runtime or JobRuntimeService(database)
         self._provider_connection_service = provider_connection_service
         self._catalog_refresh_factory = catalog_refresh_factory or (
-            lambda: SearchCatalogRefreshJob(provider_factory=self._provider_factory, overrides_path=CATALOG_OVERRIDES_PATH)
+            lambda: SearchCatalogRefreshJob(provider_factory=self._provider_factories[PROVIDER_COPART], overrides_path=CATALOG_OVERRIDES_PATH)
         )
 
     def search(self, owner_user: dict, payload: SearchRequest) -> dict:
@@ -69,51 +77,78 @@ class SearchService:
     def _execute_search(self, payload: SearchRequest, *, live_sync_source: str, owner_user_id: str | None = None) -> dict:
         correlation_id = new_correlation_id(live_sync_source)
         started_at = perf_counter()
-        source_request = payload.to_api_request().to_payload()
+        source_request: dict[str, dict] = {}
+        results_by_lot_key: dict[str, dict] = {}
+        provider_diagnostics = self._build_provider_diagnostics(owner_user_id, payload.providers)
+        successful_providers = 0
+        reported_total_results = 0
         logger.info(
             "search.execute.start",
             extra=make_log_extra(
                 "search.execute.start",
                 correlation_id=correlation_id,
                 source=live_sync_source,
+                providers=payload.providers,
                 lot_number=payload.lot_number,
                 make=payload.make,
                 model=payload.model,
             ),
         )
-        provider = self._build_live_provider(owner_user_id)
-        try:
-            first_page = provider.search_lots(source_request)
-            self._system_status_service.mark_live_sync_available(live_sync_source)
-            total_results = first_page.num_found
-            results_by_lot_number = {item.lot_number: item for item in first_page.results}
-            total_pages = max(1, math.ceil(total_results / SEARCH_PAGE_SIZE)) if total_results else 1
-
-            for page_number in range(2, total_pages + 1):
-                page_request = dict(source_request)
-                page_request["pageNumber"] = page_number
-                page = provider.search_lots(page_request)
-                for item in page.results:
-                    results_by_lot_number[item.lot_number] = item
-        except Exception as exc:
-            self._system_status_service.mark_live_sync_degraded(live_sync_source, exc)
-            logger.exception(
-                "search.execute.failed",
-                extra=make_log_extra(
-                    "search.execute.failed",
-                    correlation_id=correlation_id,
-                    source=live_sync_source,
-                    duration_ms=round((perf_counter() - started_at) * 1000, 2),
-                    error_type=type(exc).__name__,
-                    source_request=source_request,
-                ),
-            )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to fetch search results from Copart.",
-            ) from exc
-        finally:
-            provider.close()
+        last_exception: Exception | None = None
+        for provider in payload.providers:
+            diagnostic = provider_diagnostics.get(provider)
+            if diagnostic is not None and diagnostic.get("status") != "ready":
+                continue
+            provider_request = payload.to_provider_payload(provider)
+            source_request[provider] = provider_request
+            provider_client = self._build_live_provider(owner_user_id, provider)
+            try:
+                page = provider_client.search_lots(provider_request)
+                provider_results = list(page.results)
+                if provider == PROVIDER_COPART and len(payload.providers) == 1 and page.num_found > len(provider_results):
+                    total_pages = max(1, (page.num_found + SEARCH_PAGE_SIZE - 1) // SEARCH_PAGE_SIZE)
+                    for page_number in range(2, total_pages + 1):
+                        page_request = dict(provider_request)
+                        page_request["pageNumber"] = page_number
+                        next_page = provider_client.search_lots(page_request)
+                        provider_results.extend(next_page.results)
+                reported_total_results = max(reported_total_results, int(getattr(page, "num_found", len(provider_results)) or 0))
+                for item in provider_results:
+                    serialized = self.serialize_result(item)
+                    results_by_lot_key[serialized["lot_key"]] = serialized
+                successful_providers += 1
+                self._system_status_service.mark_live_sync_available(live_sync_source)
+            except Exception as exc:
+                last_exception = exc
+                self._system_status_service.mark_live_sync_degraded(live_sync_source, exc)
+                provider_diagnostics[provider] = {
+                    "provider": provider,
+                    "status": "degraded",
+                    "message": str(exc).strip() or f"Failed to fetch {provider} results.",
+                    "connection_id": None,
+                    "reconnect_required": False,
+                }
+                logger.exception(
+                    "search.execute.provider_failed",
+                    extra=make_log_extra(
+                        "search.execute.provider_failed",
+                        correlation_id=correlation_id,
+                        source=live_sync_source,
+                        provider=provider,
+                        duration_ms=round((perf_counter() - started_at) * 1000, 2),
+                        error_type=type(exc).__name__,
+                        source_request=provider_request,
+                    ),
+                )
+            finally:
+                provider_client.close()
+        if successful_providers == 0:
+            detail = "Failed to fetch search results."
+            if len(payload.providers) == 1:
+                detail = self._default_provider_failure_message(payload.providers[0])
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+        results = list(results_by_lot_key.values())
+        results.sort(key=self._search_sort_key)
         logger.info(
             "search.execute.success",
             extra=make_log_extra(
@@ -121,19 +156,34 @@ class SearchService:
                 correlation_id=correlation_id,
                 source=live_sync_source,
                 duration_ms=round((perf_counter() - started_at) * 1000, 2),
-                total_results=total_results,
-                page_count=total_pages,
+                total_results=len(results),
+                providers=len(payload.providers),
+                successful_providers=successful_providers,
             ),
         )
         return {
-            "results": [self.serialize_result(item) for item in results_by_lot_number.values()],
-            "total_results": total_results,
-            "source_request": source_request,
+            "results": results,
+            "total_results": reported_total_results or len(results),
+            "source_request": source_request[payload.providers[0]] if len(payload.providers) == 1 else source_request,
+            "provider_diagnostics": [provider_diagnostics[provider] for provider in payload.providers if provider in provider_diagnostics],
         }
 
-    def add_from_search(self, owner_user: dict, lot_url: str) -> dict:
+    def add_from_search(
+        self,
+        owner_user: dict,
+        *,
+        provider: str,
+        provider_lot_id: str | None = None,
+        lot_url: str | None = None,
+        lot_number: str | None = None,
+    ) -> dict:
         watchlist_service = self._watchlist_service_factory()
-        return watchlist_service.add_tracked_lot(owner_user, lot_url)
+        return watchlist_service.add_tracked_lot(
+            owner_user,
+            provider=provider,
+            provider_lot_id=provider_lot_id,
+            lot_reference=lot_url or provider_lot_id or lot_number or "",
+        )
 
     def save_search(self, owner_user: dict, payload: SavedSearchCreateRequest) -> dict:
         criteria = payload.normalized_criteria()
@@ -173,7 +223,7 @@ class SearchService:
                 owner_user["id"],
                 results=[item.model_dump(mode="json") for item in payload.seed_results],
                 result_count=stored_result_count,
-                new_lot_numbers=[],
+                new_lot_keys=[],
                 last_synced_at=now,
                 seen_at=now,
                 updated_at=now,
@@ -226,6 +276,7 @@ class SearchService:
         )
         if viewed_cache is not None:
             cleared_cache = dict(viewed_cache)
+            cleared_cache["new_lot_keys"] = []
             cleared_cache["new_lot_numbers"] = []
             cleared_cache["seen_at"] = viewed_at
             response["saved_search"] = self.serialize_saved_search(
@@ -288,7 +339,7 @@ class SearchService:
             owner_user["id"],
             results=search_response["results"],
             result_count=search_response["total_results"],
-            new_lot_numbers=[],
+            new_lot_keys=[],
             last_synced_at=refreshed_at,
             seen_at=refreshed_at,
             updated_at=refreshed_at,
@@ -307,6 +358,7 @@ class SearchService:
                 "last_refresh_priority_class": "manual",
                 "last_refresh_new_matches": 0,
                 "last_refresh_cached_new_count": 0,
+                "last_provider_diagnostics": search_response.get("provider_diagnostics", []),
             },
         )
         if updated_saved_search is None:
@@ -407,6 +459,7 @@ class SearchService:
 
         for saved_search in due_saved_searches:
             saved_search_id = str(saved_search["_id"])
+            criteria = SearchRequest(**saved_search["criteria"])
             priority_class = self._saved_search_priority_class(saved_search)
             correlation_id = new_correlation_id("saved-search-poll")
             started_at = perf_counter()
@@ -427,15 +480,17 @@ class SearchService:
                 )
                 continue
 
-            diagnostic = self._get_connection_diagnostic(saved_search["owner_user_id"])
-            if diagnostic is not None and diagnostic["status"] != "ready":
+            provider_diagnostics = self._build_provider_diagnostics(saved_search["owner_user_id"], criteria.providers)
+            unavailable = [item for item in provider_diagnostics.values() if item.get("status") != "ready"]
+            if unavailable and len(unavailable) == len(criteria.providers):
+                combined_message = "; ".join(item["message"] for item in unavailable)
                 skipped += 1
                 jobs.append(
                     self._refresh_job_runtime.fail_non_retryable(
                         runtime,
                         now=current_time,
-                        outcome=diagnostic["status"],
-                        error_message=diagnostic["message"],
+                        outcome="connection_missing",
+                        error_message=combined_message,
                         metadata={"owner_user_id": saved_search["owner_user_id"], "priority_class": priority_class},
                     )
                 )
@@ -444,10 +499,11 @@ class SearchService:
                     {
                         **self._build_refresh_failure_payload(
                             current_time,
-                            error_message=diagnostic["message"],
+                            error_message=combined_message,
                             retryable=False,
                         ),
                         "last_refresh_priority_class": priority_class,
+                        "last_provider_diagnostics": list(provider_diagnostics.values()),
                     },
                 )
                 continue
@@ -487,6 +543,7 @@ class SearchService:
                             retryable=retryable,
                         ),
                         "last_refresh_priority_class": priority_class,
+                        "last_provider_diagnostics": list(provider_diagnostics.values()),
                     },
                 )
                 jobs.append(
@@ -624,7 +681,7 @@ class SearchService:
             str(saved_search["_id"]),
             saved_search["owner_user_id"],
         )
-        if cache_document is not None and cache_document.get("new_lot_numbers"):
+        if cache_document is not None and self._get_cached_new_lot_keys(cache_document):
             return "recently_changed"
         if saved_search.get("last_checked_at") is None:
             return "normal"
@@ -669,17 +726,17 @@ class SearchService:
         )
         next_result_count = search_response["total_results"]
         previous_result_count = saved_search.get("result_count")
-        current_lot_numbers = self._ordered_unique_lot_numbers(search_response["results"])
-        merged_new_lot_numbers, truly_new_lot_numbers = self._compute_saved_search_new_lot_numbers(
+        current_lot_keys = self._ordered_unique_lot_keys(search_response["results"])
+        merged_new_lot_keys, truly_new_lot_keys = self._compute_saved_search_new_lot_keys(
             cache_document,
-            current_lot_numbers=current_lot_numbers,
+            current_lot_keys=current_lot_keys,
         )
         refreshed_cache = self._saved_search_repository.upsert_saved_search_cache(
             saved_search_id,
             saved_search["owner_user_id"],
             results=search_response["results"],
             result_count=next_result_count,
-            new_lot_numbers=merged_new_lot_numbers,
+            new_lot_keys=merged_new_lot_keys,
             last_synced_at=now,
             seen_at=cache_document.get("seen_at") if cache_document is not None else None,
             updated_at=now,
@@ -693,7 +750,10 @@ class SearchService:
         )
         self._saved_search_repository.update_saved_search_refresh_state(
             saved_search_id,
-            self._build_refresh_success_payload(now),
+            {
+                **self._build_refresh_success_payload(now),
+                "last_provider_diagnostics": search_response.get("provider_diagnostics", []),
+            },
         )
 
         display_title = criteria.display_title() or saved_search.get("label") or "Saved Search"
@@ -704,9 +764,14 @@ class SearchService:
             "search_title": display_title,
             "previous_result_count": previous_result_count,
             "result_count": next_result_count,
-            "new_matches": len(truly_new_lot_numbers),
-            "new_lot_numbers": truly_new_lot_numbers,
-            "cached_new_count": len(refreshed_cache.get("new_lot_numbers", [])),
+            "new_matches": len(truly_new_lot_keys),
+            "new_lot_keys": truly_new_lot_keys,
+            "new_lot_numbers": [
+                item.get("lot_number")
+                for item in search_response["results"]
+                if item.get("lot_key") in set(truly_new_lot_keys) and item.get("lot_number")
+            ],
+            "cached_new_count": len(self._get_cached_new_lot_keys(refreshed_cache)),
         }
 
     def fetch_result_count(
@@ -716,8 +781,11 @@ class SearchService:
         checked_at: datetime | None = None,
         owner_user_id: str | None = None,
     ) -> dict:
-        source_request = payload.to_api_request().to_payload()
-        provider = self._build_live_provider(owner_user_id)
+        if len(payload.providers) != 1:
+            return {"result_count": None, "etag": None, "not_modified": False}
+        provider_name = payload.providers[0]
+        source_request = payload.to_provider_payload(provider_name)
+        provider = self._build_live_provider(owner_user_id, provider_name)
         try:
             if hasattr(provider, "fetch_search_count_conditional"):
                 result = provider.fetch_search_count_conditional(source_request, etag=etag)
@@ -733,10 +801,10 @@ class SearchService:
             self._system_status_service.mark_live_sync_available("saved_search_poll", checked_at=checked_at)
         except Exception as exc:
             self._system_status_service.mark_live_sync_degraded("saved_search_poll", exc, checked_at=checked_at)
-            logger.exception("Copart result-count fetch failed for source_request=%s", source_request)
+            logger.exception("Search result-count fetch failed for source_request=%s", source_request)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to fetch search results from Copart.",
+                detail="Failed to fetch search results.",
             ) from exc
         finally:
             provider.close()
@@ -749,38 +817,59 @@ class SearchService:
         return saved_search
 
     @staticmethod
-    def _ordered_unique_lot_numbers(results: list[dict]) -> list[str]:
+    def _ordered_unique_lot_keys(results: list[dict]) -> list[str]:
         ordered: list[str] = []
         for item in results:
-            lot_number = item.get("lot_number")
-            if not lot_number or lot_number in ordered:
+            lot_key = item.get("lot_key") or build_lot_key(item.get("provider"), item.get("provider_lot_id"), item.get("lot_number"))
+            if lot_key in ordered:
                 continue
-            ordered.append(lot_number)
+            ordered.append(lot_key)
         return ordered
 
     @staticmethod
-    def _compute_saved_search_new_lot_numbers(
+    def _compute_saved_search_new_lot_keys(
         cache_document: dict | None,
         *,
-        current_lot_numbers: list[str],
+        current_lot_keys: list[str],
     ) -> tuple[list[str], list[str]]:
         if cache_document is None:
             return [], []
 
-        previous_lot_numbers = SearchService._ordered_unique_lot_numbers(cache_document.get("results", []))
-        previous_lot_numbers_set = set(previous_lot_numbers)
-        unseen_lot_numbers_set = set(cache_document.get("new_lot_numbers", []))
-        truly_new_lot_numbers = [lot_number for lot_number in current_lot_numbers if lot_number not in previous_lot_numbers_set]
-        merged_new_lot_numbers = [
-            lot_number
-            for lot_number in current_lot_numbers
-            if lot_number in unseen_lot_numbers_set or lot_number in truly_new_lot_numbers
+        previous_lot_keys = SearchService._ordered_unique_lot_keys(cache_document.get("results", []))
+        previous_lot_keys_set = set(previous_lot_keys)
+        unseen_lot_keys_set = set(SearchService._get_cached_new_lot_keys(cache_document))
+        truly_new_lot_keys = [lot_key for lot_key in current_lot_keys if lot_key not in previous_lot_keys_set]
+        merged_new_lot_keys = [
+            lot_key
+            for lot_key in current_lot_keys
+            if lot_key in unseen_lot_keys_set or lot_key in truly_new_lot_keys
         ]
-        return merged_new_lot_numbers, truly_new_lot_numbers
+        return merged_new_lot_keys, truly_new_lot_keys
 
     @staticmethod
-    def serialize_result(item: CopartSearchResult) -> dict:
-        return item.model_dump(mode="json")
+    def _get_cached_new_lot_keys(cache_document: dict | None) -> list[str]:
+        if cache_document is None:
+            return []
+        cached = cache_document.get("new_lot_keys")
+        if isinstance(cached, list) and cached:
+            return [str(item) for item in cached if item]
+        legacy_numbers = cache_document.get("new_lot_numbers")
+        if not isinstance(legacy_numbers, list):
+            return [str(item) for item in cached if item] if isinstance(cached, list) else []
+        results = cache_document.get("results", [])
+        mapped: list[str] = []
+        for item in results:
+            lot_number = item.get("lot_number")
+            if lot_number not in legacy_numbers:
+                continue
+            mapped.append(item.get("lot_key") or build_lot_key(item.get("provider"), item.get("provider_lot_id"), lot_number))
+        return mapped
+
+    @staticmethod
+    def serialize_result(item) -> dict:
+        if hasattr(item, "model_dump"):
+            return item.model_dump(mode="json")
+        return dict(item)
 
     def serialize_saved_search(
         self,
@@ -800,6 +889,7 @@ class SearchService:
             "id": str(document["_id"]),
             "label": document["label"],
             "criteria": {
+                "providers": criteria.get("providers", [PROVIDER_COPART]),
                 "make": criteria.get("make"),
                 "model": criteria.get("model"),
                 "make_filter": criteria.get("make_filter"),
@@ -814,14 +904,23 @@ class SearchService:
                 "year_to": criteria.get("year_to"),
                 "lot_number": criteria.get("lot_number"),
             },
-            "external_url": search_request.to_external_url(),
+            "external_url": (search_request.build_external_links()[0]["url"] if search_request.build_external_links() else None),
+            "external_links": search_request.build_external_links(),
             "result_count": document.get("result_count"),
             "cached_result_count": cache_metadata["cached_result_count"],
             "new_count": cache_metadata["new_count"],
             "last_synced_at": cache_metadata["last_synced_at"],
             "freshness": freshness,
             "refresh_state": self.serialize_refresh_state(document),
-            "connection_diagnostic": self._get_connection_diagnostic(document.get("owner_user_id")),
+            "connection_diagnostic": self._get_connection_diagnostic(
+                document.get("owner_user_id"),
+                provider=search_request.providers[0] if search_request.providers else PROVIDER_COPART,
+            ),
+            "connection_diagnostics": self._serialize_connection_diagnostics(
+                document.get("owner_user_id"),
+                search_request.providers,
+                document,
+            ),
             "created_at": document["created_at"],
         }
 
@@ -835,7 +934,7 @@ class SearchService:
             }
         return {
             "cached_result_count": cache_document.get("result_count"),
-            "new_count": len(cache_document.get("new_lot_numbers", [])),
+            "new_count": len(SearchService._get_cached_new_lot_keys(cache_document)),
             "last_synced_at": cache_document.get("last_synced_at"),
         }
 
@@ -860,18 +959,18 @@ class SearchService:
                 "seen_at": None,
             }
 
-        new_lot_numbers = set(cache_document.get("new_lot_numbers", []))
+        new_lot_keys = set(self._get_cached_new_lot_keys(cache_document))
         return {
             "saved_search": serialized_saved_search,
             "results": [
                 {
                     **item,
-                    "is_new": item.get("lot_number") in new_lot_numbers,
+                    "is_new": (item.get("lot_key") or build_lot_key(item.get("provider"), item.get("provider_lot_id"), item.get("lot_number"))) in new_lot_keys,
                 }
                 for item in cache_document.get("results", [])
             ],
             "cached_result_count": int(cache_document.get("result_count") or 0),
-            "new_count": len(new_lot_numbers),
+            "new_count": len(new_lot_keys),
             "last_synced_at": cache_document.get("last_synced_at"),
             "seen_at": cache_document.get("seen_at"),
         }
@@ -965,12 +1064,55 @@ class SearchService:
             "updated_at": now,
         }
 
-    def _build_live_provider(self, owner_user_id: str | None) -> CopartProvider:
-        if self._provider_connection_service is not None and owner_user_id is not None:
-            return self._provider_connection_service.build_provider_for_owner(owner_user_id)
-        return self._provider_factory()
+    @staticmethod
+    def _search_sort_key(item: dict) -> tuple[float, str, str]:
+        sale_date = item.get("sale_date")
+        if isinstance(sale_date, str):
+            try:
+                sale_timestamp = datetime.fromisoformat(sale_date.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                sale_timestamp = float("inf")
+        elif isinstance(sale_date, datetime):
+            sale_timestamp = sale_date.timestamp()
+        else:
+            sale_timestamp = float("inf")
+        return (sale_timestamp, str(item.get("provider")), str(item.get("lot_number")))
 
-    def _get_connection_diagnostic(self, owner_user_id: str | None) -> dict | None:
+    def _build_live_provider(self, owner_user_id: str | None, provider: str = PROVIDER_COPART):
+        if self._provider_connection_service is not None and owner_user_id is not None:
+            return self._provider_connection_service.build_provider_for_owner(owner_user_id, provider=provider)
+        return self._provider_factories[provider]()
+
+    def _get_connection_diagnostic(self, owner_user_id: str | None, provider: str = PROVIDER_COPART) -> dict | None:
         if self._provider_connection_service is None or not owner_user_id:
             return None
-        return self._provider_connection_service.get_connection_diagnostic(owner_user_id)
+        return self._provider_connection_service.get_connection_diagnostic(owner_user_id, provider=provider)
+
+    def _build_provider_diagnostics(self, owner_user_id: str | None, providers: list[str]) -> dict[str, dict]:
+        diagnostics: dict[str, dict] = {}
+        for provider in providers:
+            if self._provider_connection_service is None or not owner_user_id:
+                diagnostics[provider] = {
+                    "provider": provider,
+                    "status": "ready",
+                    "message": f"{provider} live actions are available.",
+                    "connection_id": None,
+                    "reconnect_required": False,
+                }
+            else:
+                diagnostics[provider] = self._provider_connection_service.get_connection_diagnostic(owner_user_id, provider=provider)
+        return diagnostics
+
+    def _serialize_connection_diagnostics(self, owner_user_id: str | None, providers: list[str], document: dict) -> list[dict]:
+        stored = document.get("last_provider_diagnostics")
+        if isinstance(stored, list) and stored:
+            return stored
+        return list(self._build_provider_diagnostics(owner_user_id, providers).values())
+
+    @staticmethod
+    def _default_provider_failure_message(provider: str) -> str:
+        if provider == PROVIDER_COPART:
+            return "Failed to fetch search results from Copart."
+        if provider == PROVIDER_IAAI:
+            return "Failed to fetch search results from IAAI."
+        return "Failed to fetch search results."

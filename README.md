@@ -1,14 +1,14 @@
 # CarTrap
 
-CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, managing invite-only access, and delivering browser push notifications when tracked auction data changes.
+CarTrap is a Docker-based PWA and Python backend for tracking Copart and IAAI lots, managing invite-only access, and delivering browser push notifications when tracked auction data changes.
 
 ## MVP Scope
 - Invite-based onboarding with `admin` and `user` roles
-- Manual Copart search from the app via Copart JSON API, with modal result review
-- Backend-served Copart make/model catalog with admin-triggered refresh
-- Saved manual searches with one-click rerun from the dashboard
-- Watchlist management for tracked lots, including Copart thumbnails and lot photo gallery modal
-- Per-user Copart connector with connect, reconnect, and disconnect flows from the account menu
+- Manual multi-auction search from the app across Copart and IAAI, with modal result review
+- Backend-served search catalog reused by provider-aware manual search flows
+- Saved manual searches with one-click rerun from the dashboard and provider-aware result merging
+- Watchlist management for tracked lots, including provider/source badges and lot photo gallery modal
+- Per-user Copart and IAAI connectors with connect, reconnect, and disconnect flows from the account menu
 - Adaptive polling before auction start
 - Web Push notifications for significant lot changes
 - Auction reminder push notifications at 60 minutes, 15 minutes, and auction start
@@ -22,13 +22,13 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 - `backend` on AWS remains the primary API for auth, Mongo-backed state, worker polling, notifications, and frontend traffic.
 - `copart-gateway` on NAS is a narrow raw-JSON proxy to Copart. AWS calls NAS over HTTP(S) with bearer auth and keep-alive.
 - AWS does not fall back to direct Copart access. If NAS sync is degraded, the app serves cached Mongo-backed data and `/api/system/status` exposes `live_sync.status=degraded`.
-- Live Copart execution is user-scoped: each CarTrap user owns one encrypted Copart session bundle, and upstream auth expiry moves only that user into `reconnect_required` without masquerading as a global outage.
+- Live provider execution is user-scoped: each CarTrap user owns encrypted connector bundles per provider, and upstream auth expiry moves only that user/provider pair into `reconnect_required` without masquerading as a global outage.
 - Saved searches and watchlist items expose additive `freshness` and `refresh_state` metadata so the PWA can distinguish `Live`, `Cached`, `Refreshing/repair pending`, and `Outdated` states per resource instead of relying on one global banner.
 
 ## Reliability Model
 - Ordinary dashboard reads are cache-backed. `GET /api/search/saved` and `GET /api/watchlist` return the latest persisted snapshot even when live upstream refresh fails.
 - Explicit live refreshes now run through dedicated endpoints: `POST /api/search/saved/{saved_search_id}/refresh-live` and `POST /api/watchlist/{tracked_lot_id}/refresh-live`.
-- Saved searches and tracked lots can additionally expose `connection_diagnostic` so the UI can distinguish `connection_missing` / `reconnect_required` from NAS or backend degradation while still rendering cached data.
+- Saved searches and tracked lots can additionally expose `connection_diagnostic` / `connection_diagnostics` so the UI can distinguish provider-level `connection_missing` / `reconnect_required` from NAS or backend degradation while still rendering cached data.
 - `/api/system/status` remains the global backend/gateway health surface and now also returns `freshness_policies` so the frontend can interpret stale windows without hardcoded thresholds.
 - Worker refresh execution uses per-resource runtime metadata with lease/backoff semantics to avoid duplicate concurrent refreshes and to preserve single-delivery push/reminder behavior.
 - Structured JSON logs are emitted across request, refresh, worker, and gateway flows with `event` + `correlation_id`, which makes it practical to separate upstream NAS failures from primary-backend logic failures.
@@ -53,7 +53,8 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart lots, manag
 17. Optional connector tuning lives under `COPART_CONNECTOR_*`: bootstrap/login/verify paths, expiring threshold minutes, mobile header defaults, and connect rate-limit knobs.
 18. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
 19. If you use backend-driven catalog refresh, `COPART_API_SEARCH_KEYWORDS_PATH` defaults to `/mcs/v2/public/data/search/keywords`.
-20. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
+20. Configure IAAI connector/runtime settings in `.env` when enabling multi-auction mode: `IAAI_OIDC_*`, `IAAI_MOBILE_*`, `IAAI_CONNECTOR_ENCRYPTION_KEY_VERSION`, and `IAAI_CONNECTOR_SESSION_EXPIRING_THRESHOLD_MINUTES`.
+21. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
 
 ## NAS Gateway
 

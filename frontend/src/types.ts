@@ -1,4 +1,5 @@
 export type UserRole = "admin" | "user";
+export type AuctionProvider = "copart" | "iaai";
 
 export type FreshnessStatus = "live" | "cached" | "degraded" | "outdated" | "unknown";
 
@@ -29,8 +30,8 @@ export type ProviderConnectionStatus = "connected" | "expiring" | "reconnect_req
 export type ProviderConnectionDiagnosticStatus = "ready" | "connection_missing" | "reconnect_required";
 
 export type ProviderConnectionDiagnostic = {
-  provider: string;
-  status: ProviderConnectionDiagnosticStatus;
+  provider: AuctionProvider;
+  status: ProviderConnectionDiagnosticStatus | string;
   message: string;
   connection_id: string | null;
   reconnect_required: boolean;
@@ -38,7 +39,8 @@ export type ProviderConnectionDiagnostic = {
 
 export type ProviderConnection = {
   id: string;
-  provider: string;
+  provider: AuctionProvider;
+  provider_label?: string | null;
   status: ProviderConnectionStatus;
   account_label: string | null;
   connected_at: string | null;
@@ -100,8 +102,12 @@ export type TokenPair = {
 
 export type WatchlistItem = {
   id: string;
+  provider: AuctionProvider;
+  auction_label: string;
+  provider_lot_id: string;
+  lot_key: string;
   lot_number: string;
-  url: string;
+  url: string | null;
   title: string;
   thumbnail_url: string | null;
   image_urls: string[];
@@ -129,9 +135,13 @@ export type WatchlistItem = {
 };
 
 export type SearchResult = {
+  provider: AuctionProvider;
+  auction_label: string;
+  provider_lot_id: string;
+  lot_key: string;
   lot_number: string;
   title: string;
-  url: string;
+  url: string | null;
   thumbnail_url: string | null;
   location: string | null;
   odometer?: string | null;
@@ -145,6 +155,7 @@ export type SearchResult = {
 };
 
 export type SavedSearchCriteria = {
+  providers?: AuctionProvider[];
   make?: string;
   model?: string;
   make_filter?: string;
@@ -164,7 +175,8 @@ export type SavedSearch = {
   id: string;
   label: string;
   criteria: SavedSearchCriteria;
-  external_url: string;
+  external_url: string | null;
+  external_links: Array<{ provider: AuctionProvider; label: string; url: string }>;
   result_count: number | null;
   cached_result_count: number | null;
   new_count: number;
@@ -172,12 +184,14 @@ export type SavedSearch = {
   freshness: FreshnessEnvelope;
   refresh_state: RefreshState;
   connection_diagnostic?: ProviderConnectionDiagnostic | null;
+  connection_diagnostics?: ProviderConnectionDiagnostic[];
   created_at: string;
 };
 
 export type SearchResultsResponse = {
   results: SearchResult[];
   total_results: number;
+  provider_diagnostics?: ProviderConnectionDiagnostic[];
 };
 
 export type SavedSearchResultsResponse = {

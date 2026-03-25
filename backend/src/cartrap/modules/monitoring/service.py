@@ -11,8 +11,9 @@ from fastapi import HTTPException
 from pymongo.database import Database
 
 from cartrap.core.logging import make_log_extra, new_correlation_id
-from cartrap.modules.copart_provider.models import CopartLotSnapshot
+from cartrap.modules.auction_domain.models import AuctionLotSnapshot, PROVIDER_COPART, build_lot_key
 from cartrap.modules.copart_provider.service import CopartProvider
+from cartrap.modules.iaai_provider.service import IaaiProvider
 from cartrap.modules.monitoring.change_detection import detect_significant_changes
 from cartrap.modules.monitoring.job_runtime import JobRuntimeService
 from cartrap.modules.monitoring.polling_policy import (
@@ -40,6 +41,7 @@ class MonitoringService:
         self,
         database: Database,
         provider_factory: Optional[Callable[[], CopartProvider]] = None,
+        provider_factories: Optional[dict[str, Callable[[], object]]] = None,
         notification_service: Optional[NotificationService] = None,
         default_poll_interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
         near_auction_poll_interval_minutes: int = NEAR_AUCTION_INTERVAL_MINUTES,
@@ -49,7 +51,12 @@ class MonitoringService:
     ) -> None:
         self.repository = WatchlistRepository(database)
         self.repository.ensure_indexes()
-        self._provider_factory = provider_factory or CopartProvider
+        self._provider_factories: dict[str, Callable[[], object]] = {
+            PROVIDER_COPART: provider_factory or CopartProvider,
+            "iaai": IaaiProvider,
+        }
+        if provider_factories:
+            self._provider_factories.update(provider_factories)
         self._notification_service = notification_service
         self._system_status_service = SystemStatusService(database)
         self._default_poll_interval_minutes = default_poll_interval_minutes
@@ -112,7 +119,10 @@ class MonitoringService:
                 )
                 continue
 
-            diagnostic = self._get_connection_diagnostic(tracked_lot["owner_user_id"])
+            diagnostic = self._get_connection_diagnostic(
+                tracked_lot["owner_user_id"],
+                provider=tracked_lot.get("provider") or PROVIDER_COPART,
+            )
             if diagnostic is not None and diagnostic["status"] != "ready":
                 skipped += 1
                 self.repository.update_tracked_lot_state(
@@ -293,7 +303,10 @@ class MonitoringService:
         return self._crossed_pending_auction_reminder_threshold(tracked_lot, now)
 
     def _poll_single_lot(self, tracked_lot: dict, now: datetime) -> dict:
-        provider = self._build_live_provider(tracked_lot["owner_user_id"])
+        provider = self._build_live_provider(
+            tracked_lot["owner_user_id"],
+            provider=tracked_lot.get("provider") or PROVIDER_COPART,
+        )
         priority_class = get_priority_class(
             tracked_lot,
             now,
@@ -301,10 +314,15 @@ class MonitoringService:
         )
         try:
             if hasattr(provider, "fetch_lot_conditional"):
-                fetch_result = provider.fetch_lot_conditional(tracked_lot["url"], etag=tracked_lot.get("detail_etag"))
+                fetch_result = provider.fetch_lot_conditional(
+                    tracked_lot.get("provider_lot_id") or tracked_lot.get("url") or tracked_lot["lot_number"],
+                    etag=tracked_lot.get("detail_etag"),
+                )
             else:
                 fetch_result = None
-                fresh_snapshot = provider.fetch_lot(tracked_lot["url"])
+                fresh_snapshot = provider.fetch_lot(
+                    tracked_lot.get("provider_lot_id") or tracked_lot.get("url") or tracked_lot["lot_number"]
+                )
         finally:
             provider.close()
 
@@ -387,6 +405,10 @@ class MonitoringService:
                 "tracked_lot_id": str(tracked_lot["_id"]),
                 "snapshot_id": str(stored_snapshot["_id"]),
                 "owner_user_id": tracked_lot["owner_user_id"],
+                "provider": tracked_lot.get("provider") or PROVIDER_COPART,
+                "provider_lot_id": tracked_lot.get("provider_lot_id") or tracked_lot["lot_number"],
+                "lot_key": tracked_lot.get("lot_key")
+                or build_lot_key(tracked_lot.get("provider") or PROVIDER_COPART, tracked_lot.get("provider_lot_id"), tracked_lot["lot_number"]),
                 "lot_number": tracked_lot["lot_number"],
                 "title": fresh_snapshot.title,
                 "currency": fresh_snapshot.currency,
@@ -395,15 +417,15 @@ class MonitoringService:
             "reminder_events": reminder_events,
         }
 
-    def _build_live_provider(self, owner_user_id: str | None) -> CopartProvider:
+    def _build_live_provider(self, owner_user_id: str | None, provider: str = PROVIDER_COPART):
         if self._provider_connection_service is not None and owner_user_id is not None:
-            return self._provider_connection_service.build_provider_for_owner(owner_user_id)
-        return self._provider_factory()
+            return self._provider_connection_service.build_provider_for_owner(owner_user_id, provider=provider)
+        return self._provider_factories[provider]()
 
-    def _get_connection_diagnostic(self, owner_user_id: str | None) -> dict | None:
+    def _get_connection_diagnostic(self, owner_user_id: str | None, provider: str = PROVIDER_COPART) -> dict | None:
         if self._provider_connection_service is None or not owner_user_id:
             return None
-        return self._provider_connection_service.get_connection_diagnostic(owner_user_id)
+        return self._provider_connection_service.get_connection_diagnostic(owner_user_id, provider=provider)
 
     def _build_auction_reminders(
         self,
@@ -503,10 +525,13 @@ class MonitoringService:
         return threshold <= now < sale_date
 
     @staticmethod
-    def _snapshot_document(tracked_lot: dict, snapshot: CopartLotSnapshot, now: datetime) -> dict:
+    def _snapshot_document(tracked_lot: dict, snapshot: AuctionLotSnapshot, now: datetime) -> dict:
         return {
             "tracked_lot_id": str(tracked_lot["_id"]),
             "owner_user_id": tracked_lot["owner_user_id"],
+            "provider": snapshot.provider,
+            "provider_lot_id": snapshot.provider_lot_id,
+            "lot_key": snapshot.lot_key,
             "lot_number": snapshot.lot_number,
             "status": snapshot.status,
             "raw_status": snapshot.raw_status,

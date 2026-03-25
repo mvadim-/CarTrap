@@ -12,6 +12,7 @@ Primary collections currently used by the backend:
 | `invites` | Invite-based onboarding |
 | `tracked_lots` | Current user watchlist items |
 | `lot_snapshots` | Historical state snapshots for tracked lots |
+| `provider_connections` | Encrypted user-scoped Copart/IAAI connector bundles |
 | `push_subscriptions` | Browser push subscriptions |
 | `search_catalog` | Current make/model/year catalog |
 | `saved_searches` | User-saved manual searches |
@@ -23,6 +24,7 @@ Primary collections currently used by the backend:
   - `invites.created_by`
   - `tracked_lots.owner_user_id`
   - `lot_snapshots.owner_user_id`
+  - `provider_connections.owner_user_id`
   - `push_subscriptions.owner_user_id`
   - `saved_searches.owner_user_id`
 - `lot_snapshots.tracked_lot_id` stores `tracked_lots._id` as string.
@@ -103,6 +105,10 @@ Typical document:
 {
   "_id": "ObjectId(...)",
   "owner_user_id": "user-id",
+  "provider": "copart",
+  "auction_label": "Copart",
+  "provider_lot_id": "12345678",
+  "lot_key": "copart:12345678",
   "lot_number": "12345678",
   "url": "https://www.copart.com/lot/12345678",
   "title": "2025 FORD MUSTANG MACH-E PREMIUM",
@@ -126,7 +132,10 @@ Typical document:
 Key fields:
 
 - `owner_user_id`: owning user id as string
-- `lot_number`: Copart lot id
+- `provider`: `copart` or `iaai`
+- `provider_lot_id`: provider-scoped immutable lot identity used for refresh routing
+- `lot_key`: composite identity (`<provider>:<provider_lot_id>`) used for uniqueness and dedupe
+- `lot_number`: display lot/stock number shown in UI
 - `thumbnail_url`, `image_urls`: cached media
 - `status` and `raw_status`: normalized and original sale state
 - `active`: used by monitoring worker to select live tracked lots
@@ -136,7 +145,7 @@ Key fields:
 
 Indexes:
 
-- unique compound: `owner_user_id + lot_number`
+- unique compound: `owner_user_id + lot_key`
 - `owner_user_id`
 
 ### `lot_snapshots`
@@ -150,6 +159,9 @@ Typical document:
   "_id": "ObjectId(...)",
   "tracked_lot_id": "tracked-lot-id",
   "owner_user_id": "user-id",
+  "provider": "copart",
+  "provider_lot_id": "12345678",
+  "lot_key": "copart:12345678",
   "lot_number": "12345678",
   "status": "live",
   "raw_status": "Live",
@@ -164,6 +176,7 @@ Typical document:
 Key fields:
 
 - `tracked_lot_id`: parent watchlist item id as string
+- `provider`, `provider_lot_id`, `lot_key`: persisted provider identity mirrored from `tracked_lots`
 - snapshot fields mirror the important mutable lot state
 - `detected_at`: snapshot timestamp
 
@@ -207,6 +220,48 @@ Key fields:
 Indexes:
 
 - unique compound: `owner_user_id + endpoint`
+- `owner_user_id`
+
+### `provider_connections`
+
+Purpose: encrypted per-user connector bundles for Copart and IAAI.
+
+Typical document:
+
+```json
+{
+  "_id": "ObjectId(...)",
+  "owner_user_id": "user-id",
+  "provider": "iaai",
+  "status": "connected",
+  "account_label": "buyer@example.com",
+  "bundle_version": 1,
+  "bundle": {
+    "encrypted_bundle": "<ciphertext>",
+    "key_version": "v1",
+    "captured_at": "2026-03-25T14:10:00Z",
+    "expires_at": "2026-03-25T15:10:00Z"
+  },
+  "last_error": null,
+  "connected_at": "2026-03-25T14:10:00Z",
+  "disconnected_at": null,
+  "last_verified_at": "2026-03-25T14:10:05Z",
+  "last_used_at": "2026-03-25T14:20:00Z",
+  "created_at": "2026-03-25T14:10:00Z",
+  "updated_at": "2026-03-25T14:20:00Z"
+}
+```
+
+Key fields:
+
+- `provider`: `copart` or `iaai`
+- `status`: `connected`, `expiring`, `reconnect_required`, `disconnected`, `error`
+- `bundle.encrypted_bundle`: encrypted provider session bundle; Copart stores connector session metadata, IAAI stores refresh-capable auth bundle
+- `last_error`: most recent provider-specific failure metadata
+
+Indexes:
+
+- unique compound: `owner_user_id + provider`
 - `owner_user_id`
 
 ### `search_catalog`
@@ -274,6 +329,7 @@ Typical document:
   "owner_user_id": "user-id",
   "label": "FORD MUSTANG MACH-E 2025-2027",
   "criteria": {
+    "providers": ["copart", "iaai"],
     "make": "FORD",
     "model": "MUSTANG MACH-E",
     "make_filter": "lot_make_desc:\"FORD\" OR manufacturer_make_desc:\"FORD\"",
@@ -282,6 +338,17 @@ Typical document:
     "year_to": 2027
   },
   "result_count": 42,
+  "external_links": [
+    { "provider": "copart", "label": "Copart", "url": "https://www.copart.com/lotSearchResults?..." },
+    { "provider": "iaai", "label": "IAAI", "url": "https://www.iaai.com/Search?..." }
+  ],
+  "last_provider_diagnostics": [
+    {
+      "provider": "copart",
+      "status": "ready",
+      "message": "Copart live actions are available."
+    }
+  ],
   "criteria_key": "{\"make\":\"FORD\",...}",
   "created_at": "2026-03-13T10:00:00Z",
   "updated_at": "2026-03-13T10:00:00Z"
@@ -291,8 +358,11 @@ Typical document:
 Key fields:
 
 - `criteria`: normalized search payload
+- `criteria.providers`: selected providers for fan-out search
 - `criteria_key`: canonical JSON string used for duplicate detection
 - `result_count`: last saved known number of matches
+- `external_links`: provider-aware deep links shown by the frontend
+- `last_provider_diagnostics`: last known provider-level live-action status snapshot
 
 Indexes:
 
@@ -301,6 +371,7 @@ Indexes:
 
 ## What Is Not Persisted
 
-- Access and refresh tokens are not stored in MongoDB.
+- Plaintext provider passwords are never stored in MongoDB.
+- Provider auth bundles are stored only in encrypted form inside `provider_connections.bundle`.
 - Monitoring change events are calculated in worker/service flow and returned in memory; there is no dedicated `change_events` collection in the current codebase.
 - Copart raw responses are not stored as a separate persistence layer.

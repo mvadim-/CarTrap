@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+import type { AuctionProvider } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
 import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
@@ -110,6 +111,8 @@ type Props = {
   yearTo: string;
   onYearFromChange: (value: string) => void;
   onYearToChange: (value: string) => void;
+  selectedProviders: AuctionProvider[];
+  onToggleProvider: (provider: AuctionProvider) => void;
   activeFilterLabels: string[];
   summaryLabel: string;
   isSearchingDisabled?: boolean;
@@ -142,6 +145,8 @@ export function ManualSearchScreen({
   yearTo,
   onYearFromChange,
   onYearToChange,
+  selectedProviders,
+  onToggleProvider,
   activeFilterLabels,
   summaryLabel,
   isSearchingDisabled = false,
@@ -176,9 +181,9 @@ export function ManualSearchScreen({
       <header className="manual-search-screen__header">
         <div>
           <p className="eyebrow">New Search</p>
-          <h3>Manual Copart Search</h3>
+          <h3>Manual Auction Search</h3>
           <p className="muted manual-search-screen__lede">
-            Compose a focused Copart query, inspect the result set, and save only the searches worth monitoring.
+            Compose one search, fan it out across the selected auctions, and save only the result sets worth monitoring.
           </p>
         </div>
         <button type="button" className="ghost-button" onClick={onClose}>
@@ -218,6 +223,7 @@ export function ManualSearchScreen({
         <div className="search-summary-bar search-summary-bar--screen" aria-live="polite">
           <p className="search-summary-bar__headline">{summaryLabel}</p>
           <p className="search-summary-bar__meta">
+            Providers: {selectedProviders.map((provider) => provider.toUpperCase()).join(" + ")}.{" "}
             Filters: {activeFilterLabels.length > 0 ? activeFilterLabels.join(" · ") : "No filters"}
           </p>
         </div>
@@ -227,6 +233,26 @@ export function ManualSearchScreen({
         ) : null}
 
         <form className="manual-search-screen__form" onSubmit={onSubmit} aria-busy={isSearching}>
+          <fieldset className="search-grid__provider-group">
+            <legend>Auctions</legend>
+            <div className="saved-search-inbox-toolbar" aria-label="Auction providers">
+              {(["copart", "iaai"] as AuctionProvider[]).map((provider) => {
+                const isSelected = selectedProviders.includes(provider);
+                const label = provider === "copart" ? "Copart" : "IAAI";
+                return (
+                  <button
+                    key={provider}
+                    type="button"
+                    className={`saved-search-filter-chip${isSelected ? " is-active" : ""}`}
+                    aria-pressed={isSelected}
+                    onClick={() => onToggleProvider(provider)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
           <SearchableSelector
             label="Make"
             ariaLabel="Make"
@@ -294,7 +320,7 @@ export function ManualSearchScreen({
               ) : null}
             </button>
             <button type="submit" disabled={!selectedMakeLabel || isSearching || isSearchingDisabled} aria-busy={isSearching}>
-              {isSearching ? "Searching..." : isSearchingDisabled ? "Copart action blocked" : "Search Lots"}
+              {isSearching ? "Searching..." : isSearchingDisabled ? "Providers unavailable" : "Search Lots"}
             </button>
           </div>
         </form>
@@ -303,8 +329,8 @@ export function ManualSearchScreen({
           <AsyncStatus
             compact
             progress="bar"
-            title="Searching Copart"
-            message="Current filters stay in place while live results load."
+            title="Searching auctions"
+            message="Current filters stay in place while live provider results load."
             className="panel-status"
           />
         ) : null}

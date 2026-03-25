@@ -2,13 +2,18 @@
 
 PROVIDER_CONNECTIONS_COLLECTION = "provider_connections"
 
-PROVIDER_COPART = "copart"
+from cartrap.modules.auction_domain.models import PROVIDER_COPART, PROVIDER_IAAI
 
 STATUS_CONNECTED = "connected"
 STATUS_EXPIRING = "expiring"
 STATUS_RECONNECT_REQUIRED = "reconnect_required"
 STATUS_DISCONNECTED = "disconnected"
 STATUS_ERROR = "error"
+
+PROVIDER_DISPLAY_NAMES = {
+    PROVIDER_COPART: "Copart",
+    PROVIDER_IAAI: "IAAI",
+}
 
 ACTIVE_CONNECTION_STATUSES = {
     STATUS_CONNECTED,
@@ -21,4 +26,3 @@ USABLE_CONNECTION_STATUSES = {
     STATUS_CONNECTED,
     STATUS_EXPIRING,
 }
-

@@ -9,10 +9,11 @@ from typing import Callable, Optional
 from fastapi import HTTPException, status
 from pymongo.database import Database
 
-from cartrap.modules.copart_provider.models import CopartLotSnapshot
+from cartrap.modules.auction_domain.models import AuctionLotSnapshot, PROVIDER_COPART, build_lot_key, normalize_provider
+from cartrap.modules.copart_provider.service import CopartProvider
+from cartrap.modules.iaai_provider.service import IaaiProvider
 from cartrap.modules.monitoring.change_detection import detect_significant_changes
 from cartrap.modules.monitoring.polling_policy import DEFAULT_INTERVAL_MINUTES, get_poll_interval_minutes
-from cartrap.modules.copart_provider.service import CopartProvider
 from cartrap.modules.provider_connections.service import ProviderConnectionService
 from cartrap.modules.system_status.service import SystemStatusService, build_freshness_envelope
 from cartrap.modules.watchlist.repository import WatchlistRepository
@@ -36,19 +37,37 @@ class WatchlistService:
         self,
         database: Database,
         provider_factory: Optional[Callable[[], CopartProvider]] = None,
+        provider_factories: Optional[dict[str, Callable[[], object]]] = None,
         default_poll_interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
         provider_connection_service: ProviderConnectionService | None = None,
     ) -> None:
         self.repository = WatchlistRepository(database)
         self.repository.ensure_indexes()
-        self._provider_factory = provider_factory or CopartProvider
+        self._provider_factories: dict[str, Callable[[], object]] = {
+            PROVIDER_COPART: provider_factory or CopartProvider,
+            "iaai": IaaiProvider,
+        }
+        if provider_factories:
+            self._provider_factories.update(provider_factories)
         self._default_poll_interval_minutes = default_poll_interval_minutes
         self._system_status_service = SystemStatusService(database)
         self._provider_connection_service = provider_connection_service
 
-    def add_tracked_lot(self, owner_user: dict, lot_url: str) -> dict:
-        snapshot, detail_etag = self._fetch_snapshot(lot_url, owner_user_id=owner_user["id"])
-        existing = self.repository.find_tracked_lot_by_owner_and_lot_number(owner_user["id"], snapshot.lot_number)
+    def add_tracked_lot(
+        self,
+        owner_user: dict,
+        lot_reference: str | None = None,
+        *,
+        provider: str = PROVIDER_COPART,
+        provider_lot_id: str | None = None,
+    ) -> dict:
+        normalized_provider = normalize_provider(provider)
+        snapshot, detail_etag = self._fetch_snapshot(
+            normalized_provider,
+            lot_reference or str(provider_lot_id or ""),
+            owner_user_id=owner_user["id"],
+        )
+        existing = self.repository.find_tracked_lot_by_owner_and_lot_key(owner_user["id"], snapshot.lot_key)
         if existing is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Lot is already in watchlist.")
 
@@ -56,8 +75,12 @@ class WatchlistService:
         tracked_lot = self.repository.create_tracked_lot(
             {
                 "owner_user_id": owner_user["id"],
+                "provider": snapshot.provider,
+                "auction_label": snapshot.auction_label,
+                "provider_lot_id": snapshot.provider_lot_id,
+                "lot_key": snapshot.lot_key,
                 "lot_number": snapshot.lot_number,
-                "url": str(snapshot.url),
+                "url": str(snapshot.url) if snapshot.url else None,
                 "title": snapshot.title,
                 **self._tracked_lot_state_from_snapshot(snapshot, detail_etag=detail_etag),
                 "last_checked_at": now,
@@ -83,6 +106,9 @@ class WatchlistService:
             {
                 "tracked_lot_id": str(tracked_lot["_id"]),
                 "owner_user_id": owner_user["id"],
+                "provider": snapshot.provider,
+                "provider_lot_id": snapshot.provider_lot_id,
+                "lot_key": snapshot.lot_key,
                 "lot_number": snapshot.lot_number,
                 "status": snapshot.status,
                 "raw_status": snapshot.raw_status,
@@ -128,7 +154,11 @@ class WatchlistService:
 
         now = self._now()
         try:
-            snapshot, detail_etag = self._fetch_snapshot(tracked_lot["url"], owner_user_id=owner_user["id"])
+            snapshot, detail_etag = self._fetch_snapshot(
+                tracked_lot.get("provider") or PROVIDER_COPART,
+                tracked_lot.get("provider_lot_id") or tracked_lot.get("url") or tracked_lot["lot_number"],
+                owner_user_id=owner_user["id"],
+            )
         except HTTPException as exc:
             retryable, error_message = self.classify_refresh_exception(exc)
             self.repository.update_tracked_lot_state(
@@ -144,6 +174,9 @@ class WatchlistService:
         next_snapshot = {
             "tracked_lot_id": tracked_lot_id,
             "owner_user_id": tracked_lot["owner_user_id"],
+            "provider": snapshot.provider,
+            "provider_lot_id": snapshot.provider_lot_id,
+            "lot_key": snapshot.lot_key,
             "lot_number": snapshot.lot_number,
             "status": snapshot.status,
             "raw_status": snapshot.raw_status,
@@ -180,22 +213,28 @@ class WatchlistService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked lot not found.")
         return {"tracked_lot": self.serialize_tracked_lot(refreshed, live_sync_status=live_sync_status)}
 
-    def _fetch_snapshot(self, lot_url: str, owner_user_id: str | None = None) -> tuple[CopartLotSnapshot, str | None]:
-        provider = self._build_live_provider(owner_user_id)
+    def _fetch_snapshot(
+        self,
+        provider_name: str,
+        lot_reference: str,
+        owner_user_id: str | None = None,
+    ) -> tuple[AuctionLotSnapshot, str | None]:
+        provider = self._build_live_provider(owner_user_id, provider_name)
         try:
             if hasattr(provider, "fetch_lot_conditional"):
-                result = provider.fetch_lot_conditional(lot_url)
+                result = provider.fetch_lot_conditional(lot_reference)
                 if result.snapshot is None:
                     raise RuntimeError("Conditional lot fetch returned no snapshot.")
                 return result.snapshot, result.etag
-            return provider.fetch_lot(lot_url), None
+            return provider.fetch_lot(lot_reference), None
         except HTTPException:
             raise
         except Exception as exc:
-            logger.exception("Copart lot fetch failed for lot_url=%s", lot_url)
+            logger.exception("Lot fetch failed for provider=%s lot_reference=%s", provider_name, lot_reference)
+            provider_label = "IAAI" if str(provider_name).lower() == "iaai" else "Copart"
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Failed to fetch lot details from Copart: {exc}",
+                detail=f"Failed to fetch lot details from {provider_label}: {exc}",
             ) from exc
         finally:
             provider.close()
@@ -221,8 +260,12 @@ class WatchlistService:
         return needs_media_backfill or needs_detail_backfill
 
     @staticmethod
-    def _tracked_lot_state_from_snapshot(snapshot: CopartLotSnapshot, detail_etag: str | None = None) -> dict:
+    def _tracked_lot_state_from_snapshot(snapshot: AuctionLotSnapshot, detail_etag: str | None = None) -> dict:
         payload = {
+            "provider": snapshot.provider,
+            "auction_label": snapshot.auction_label,
+            "provider_lot_id": snapshot.provider_lot_id,
+            "lot_key": snapshot.lot_key,
             "thumbnail_url": str(snapshot.thumbnail_url) if snapshot.thumbnail_url else None,
             "image_urls": [str(url) for url in snapshot.image_urls],
             "odometer": snapshot.odometer,
@@ -267,6 +310,11 @@ class WatchlistService:
         )
         return {
             "id": str(document["_id"]),
+            "provider": document.get("provider") or PROVIDER_COPART,
+            "auction_label": document.get("auction_label") or ("IAAI" if document.get("provider") == "iaai" else "Copart"),
+            "provider_lot_id": document.get("provider_lot_id") or document["lot_number"],
+            "lot_key": document.get("lot_key")
+            or build_lot_key(document.get("provider") or PROVIDER_COPART, document.get("provider_lot_id"), document["lot_number"]),
             "lot_number": document["lot_number"],
             "url": document["url"],
             "title": document["title"],
@@ -288,7 +336,10 @@ class WatchlistService:
             "last_checked_at": document["last_checked_at"],
             "freshness": freshness,
             "refresh_state": self.serialize_refresh_state(document),
-            "connection_diagnostic": self._get_connection_diagnostic(document.get("owner_user_id")),
+            "connection_diagnostic": self._get_connection_diagnostic(
+                document.get("owner_user_id"),
+                provider=document.get("provider") or PROVIDER_COPART,
+            ),
             "created_at": document["created_at"],
             "has_unseen_update": document.get("has_unseen_update", False),
             "latest_change_at": document.get("latest_change_at"),
@@ -300,6 +351,10 @@ class WatchlistService:
         return {
             "id": str(document["_id"]),
             "tracked_lot_id": document["tracked_lot_id"],
+            "provider": document.get("provider") or PROVIDER_COPART,
+            "provider_lot_id": document.get("provider_lot_id") or document["lot_number"],
+            "lot_key": document.get("lot_key")
+            or build_lot_key(document.get("provider") or PROVIDER_COPART, document.get("provider_lot_id"), document["lot_number"]),
             "lot_number": document["lot_number"],
             "status": document["status"],
             "raw_status": document["raw_status"],
@@ -366,12 +421,12 @@ class WatchlistService:
     def _now() -> datetime:
         return datetime.now(timezone.utc)
 
-    def _build_live_provider(self, owner_user_id: str | None) -> CopartProvider:
+    def _build_live_provider(self, owner_user_id: str | None, provider: str = PROVIDER_COPART):
         if self._provider_connection_service is not None and owner_user_id is not None:
-            return self._provider_connection_service.build_provider_for_owner(owner_user_id)
-        return self._provider_factory()
+            return self._provider_connection_service.build_provider_for_owner(owner_user_id, provider=provider)
+        return self._provider_factories[provider]()
 
-    def _get_connection_diagnostic(self, owner_user_id: str | None) -> dict | None:
+    def _get_connection_diagnostic(self, owner_user_id: str | None, provider: str = PROVIDER_COPART) -> dict | None:
         if self._provider_connection_service is None or not owner_user_id:
             return None
-        return self._provider_connection_service.get_connection_diagnostic(owner_user_id)
+        return self._provider_connection_service.get_connection_diagnostic(owner_user_id, provider=provider)

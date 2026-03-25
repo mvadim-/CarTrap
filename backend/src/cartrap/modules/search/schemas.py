@@ -10,8 +10,14 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
+from cartrap.modules.auction_domain.models import (
+    AuctionSearchResult,
+    PROVIDER_COPART,
+    SUPPORTED_AUCTION_PROVIDERS,
+    get_auction_label,
+    normalize_provider,
+)
 from cartrap.modules.copart_provider.models import CopartApiSearchRequest
-from cartrap.modules.copart_provider.models import CopartSearchResult
 from cartrap.modules.provider_connections.schemas import ProviderConnectionDiagnosticResponse
 from cartrap.modules.system_status.schemas import FreshnessEnvelopeResponse, RefreshStateResponse
 from cartrap.modules.watchlist.schemas import WatchlistCreateResponse
@@ -64,6 +70,7 @@ ODOMETER_RANGE_QUERIES = {
 
 
 class SearchRequest(BaseModel):
+    providers: list[str] = Field(default_factory=lambda: [PROVIDER_COPART], min_length=1)
     make: Optional[str] = Field(default=None, min_length=1, max_length=80)
     model: Optional[str] = Field(default=None, min_length=1, max_length=120)
     make_filter: Optional[str] = Field(default=None, min_length=1, max_length=500)
@@ -84,6 +91,14 @@ class SearchRequest(BaseModel):
             raise ValueError("Provide make/model or lot_number.")
         if self.year_from and self.year_to and self.year_from > self.year_to:
             raise ValueError("year_from must be less than or equal to year_to.")
+        normalized_providers: list[str] = []
+        for provider in self.providers or [PROVIDER_COPART]:
+            normalized = normalize_provider(provider)
+            if normalized not in normalized_providers:
+                normalized_providers.append(normalized)
+        if not normalized_providers:
+            raise ValueError("Provide at least one provider.")
+        self.providers = normalized_providers
         return self
 
     def to_api_request(self, now: Optional[datetime] = None) -> CopartApiSearchRequest:
@@ -117,8 +132,43 @@ class SearchRequest(BaseModel):
             user_start_utc_datetime=start_of_day.isoformat().replace("+00:00", "Z"),
         )
 
+    def to_provider_payload(self, provider: str, now: Optional[datetime] = None) -> dict:
+        normalized_provider = normalize_provider(provider)
+        if normalized_provider == PROVIDER_COPART:
+            return self.to_api_request(now=now).to_payload()
+        return self.to_iaai_payload()
+
+    def to_iaai_payload(self) -> dict:
+        payload: dict[str, object] = {
+            "keyword": self.display_title(),
+            "requestedProviders": self.providers,
+            "filters": {},
+        }
+        filters = payload["filters"]
+        assert isinstance(filters, dict)
+        if self.make:
+            filters["make"] = self.make.strip().upper()
+        if self.model:
+            filters["model"] = self.model.strip().upper()
+        if self.year_from is not None:
+            filters["year_from"] = self.year_from
+        if self.year_to is not None:
+            filters["year_to"] = self.year_to
+        if self.lot_number:
+            filters["stock_number"] = "".join(char for char in self.lot_number if char.isdigit())
+        if self.primary_damage:
+            filters["primary_damage"] = self.primary_damage.strip().lower()
+        if self.title_type:
+            filters["title_type"] = self.title_type.strip().lower()
+        if self.fuel_type:
+            filters["fuel_type"] = self.fuel_type.strip().lower()
+        if self.odometer_range:
+            filters["odometer_range"] = self.odometer_range.strip().lower()
+        return payload
+
     def normalized_criteria(self) -> dict:
         payload = self.model_dump(exclude_none=True)
+        payload["providers"] = [normalize_provider(provider) for provider in payload.get("providers", [PROVIDER_COPART])]
         if "make" in payload:
             payload["make"] = str(payload["make"]).strip().upper()
         if "model" in payload:
@@ -145,6 +195,8 @@ class SearchRequest(BaseModel):
 
     def display_title(self) -> str:
         parts: list[str] = []
+        if self.providers and set(self.providers) != {PROVIDER_COPART}:
+            parts.append("/".join(get_auction_label(provider) for provider in self.providers))
         if self.make:
             parts.append(self.make.strip().upper())
         if self.model:
@@ -250,8 +302,24 @@ class SearchRequest(BaseModel):
         }
         return f"https://www.copart.com/lotSearchResults?{urlencode(params)}"
 
+    def build_external_links(self) -> list[dict]:
+        links: list[dict] = []
+        for provider in self.providers:
+            if provider == PROVIDER_COPART:
+                links.append({"provider": provider, "label": get_auction_label(provider), "url": self.to_external_url()})
+                continue
+            query = self.display_title() or "vehicles"
+            links.append(
+                {
+                    "provider": provider,
+                    "label": get_auction_label(provider),
+                    "url": f"https://www.iaai.com/Search?keyword={urlencode({'q': query})[2:]}",
+                }
+            )
+        return links
 
-class SearchResultResponse(CopartSearchResult):
+
+class SearchResultResponse(AuctionSearchResult):
     pass
 
 
@@ -259,6 +327,7 @@ class SearchResponse(BaseModel):
     results: list[SearchResultResponse]
     total_results: int = 0
     source_request: dict
+    provider_diagnostics: list[ProviderConnectionDiagnosticResponse] = Field(default_factory=list)
 
 
 class SavedSearchCachedResultResponse(SearchResultResponse):
@@ -308,7 +377,8 @@ class SavedSearchResponse(BaseModel):
     id: str
     label: str
     criteria: SearchRequest
-    external_url: HttpUrl
+    external_url: Optional[HttpUrl] = None
+    external_links: list[dict] = Field(default_factory=list)
     result_count: Optional[int] = None
     cached_result_count: Optional[int] = None
     new_count: int = 0
@@ -316,6 +386,7 @@ class SavedSearchResponse(BaseModel):
     freshness: FreshnessEnvelopeResponse
     refresh_state: RefreshStateResponse
     connection_diagnostic: Optional[ProviderConnectionDiagnosticResponse] = None
+    connection_diagnostics: list[ProviderConnectionDiagnosticResponse] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -337,7 +408,24 @@ class SavedSearchViewResponse(BaseModel):
 
 
 class AddFromSearchRequest(BaseModel):
-    lot_url: HttpUrl
+    provider: str = Field(default=PROVIDER_COPART)
+    provider_lot_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    lot_number: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    lot_url: Optional[HttpUrl] = None
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "AddFromSearchRequest":
+        self.provider = normalize_provider(self.provider)
+        if not self.provider_lot_id and not self.lot_number and not self.lot_url:
+            raise ValueError("Provide provider_lot_id, lot_number, or lot_url.")
+        if not self.provider_lot_id:
+            if self.provider == PROVIDER_COPART and self.lot_number:
+                self.provider_lot_id = "".join(char for char in self.lot_number if char.isdigit())
+            elif self.provider == PROVIDER_COPART and self.lot_url:
+                self.provider_lot_id = "".join(char for char in str(self.lot_url) if char.isdigit())
+            elif self.lot_number:
+                self.provider_lot_id = str(self.lot_number).strip()
+        return self
 
 
 class AddFromSearchResponse(WatchlistCreateResponse):

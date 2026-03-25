@@ -142,13 +142,18 @@ class SavedSearchRepository:
         *,
         results: list[dict],
         result_count: int,
-        new_lot_numbers: list[str],
+        new_lot_keys: list[str],
         last_synced_at: datetime,
         seen_at: datetime | None = None,
         updated_at: datetime | None = None,
     ) -> dict:
         object_id = ObjectId(saved_search_id)
         write_time = updated_at or last_synced_at
+        new_lot_numbers = [
+            item.get("lot_number")
+            for item in results
+            if item.get("lot_key") in set(new_lot_keys) and item.get("lot_number")
+        ]
         return self.saved_search_results_cache.find_one_and_update(
             {"saved_search_id": object_id, "owner_user_id": owner_user_id},
             {
@@ -156,6 +161,7 @@ class SavedSearchRepository:
                     "owner_user_id": owner_user_id,
                     "results": list(results),
                     "result_count": result_count,
+                    "new_lot_keys": list(dict.fromkeys(new_lot_keys)),
                     "new_lot_numbers": list(dict.fromkeys(new_lot_numbers)),
                     "last_synced_at": last_synced_at,
                     "seen_at": seen_at,
@@ -188,6 +194,7 @@ class SavedSearchRepository:
                 "$set": {
                     "seen_at": seen_at,
                     "updated_at": updated_at or seen_at,
+                    "new_lot_keys": [],
                     "new_lot_numbers": [],
                 }
             },

@@ -25,21 +25,35 @@ router = APIRouter(prefix="/search", tags=["search"])
 
 
 def get_search_service(request: Request) -> SearchService:
+    provider_factories: dict[str, object] = {}
+    connector_client_factories: dict[str, object] = {}
     provider_factory = getattr(request.app.state, "copart_provider_factory", None)
+    iaai_provider_factory = getattr(request.app.state, "iaai_provider_factory", None)
     connector_client_factory = getattr(request.app.state, "copart_connector_client_factory", None)
+    iaai_connector_client_factory = getattr(request.app.state, "iaai_connector_client_factory", None)
+    if provider_factory is not None:
+        provider_factories["copart"] = provider_factory
+    if iaai_provider_factory is not None:
+        provider_factories["iaai"] = iaai_provider_factory
+    if connector_client_factory is not None:
+        connector_client_factories["copart"] = connector_client_factory
+    if iaai_connector_client_factory is not None:
+        connector_client_factories["iaai"] = iaai_connector_client_factory
     settings = request.app.state.settings
     provider_connection_service = ProviderConnectionService(
         request.app.state.mongo.database,
         settings=settings,
-        connector_client_factory=connector_client_factory,
+        connector_client_factories=connector_client_factories,
     )
     return SearchService(
         request.app.state.mongo.database,
         provider_factory=provider_factory,
+        provider_factories=provider_factories,
         provider_connection_service=provider_connection_service,
         watchlist_service_factory=lambda: WatchlistService(
             request.app.state.mongo.database,
             provider_factory=provider_factory,
+            provider_factories=provider_factories,
             provider_connection_service=provider_connection_service,
             default_poll_interval_minutes=settings.watchlist_default_poll_interval_minutes,
         ),
@@ -115,4 +129,10 @@ def add_from_search(
     current_user: dict = Depends(get_current_user),
     search_service: SearchService = Depends(get_search_service),
 ) -> dict:
-    return search_service.add_from_search(current_user, str(payload.lot_url))
+    return search_service.add_from_search(
+        current_user,
+        provider=payload.provider,
+        provider_lot_id=payload.provider_lot_id,
+        lot_url=str(payload.lot_url) if payload.lot_url else None,
+        lot_number=payload.lot_number,
+    )

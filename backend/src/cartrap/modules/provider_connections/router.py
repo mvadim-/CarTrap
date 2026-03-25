@@ -7,9 +7,9 @@ import ipaddress
 from fastapi import APIRouter, Depends, Request
 
 from cartrap.api.dependencies import get_current_user
-from cartrap.modules.provider_connections.models import PROVIDER_COPART
+from cartrap.modules.auction_domain.models import PROVIDER_COPART, PROVIDER_IAAI
 from cartrap.modules.provider_connections.schemas import (
-    CopartConnectionRequest,
+    ProviderConnectionCredentialsRequest,
     ProviderConnectionListResponse,
     ProviderConnectionMutationResponse,
 )
@@ -20,11 +20,17 @@ router = APIRouter(prefix="/provider-connections", tags=["provider-connections"]
 
 
 def get_provider_connection_service(request: Request) -> ProviderConnectionService:
-    connector_client_factory = getattr(request.app.state, "copart_connector_client_factory", None)
+    connector_client_factories: dict[str, object] = {}
+    copart_connector_client_factory = getattr(request.app.state, "copart_connector_client_factory", None)
+    iaai_connector_client_factory = getattr(request.app.state, "iaai_connector_client_factory", None)
+    if copart_connector_client_factory is not None:
+        connector_client_factories[PROVIDER_COPART] = copart_connector_client_factory
+    if iaai_connector_client_factory is not None:
+        connector_client_factories[PROVIDER_IAAI] = iaai_connector_client_factory
     return ProviderConnectionService(
         request.app.state.mongo.database,
         settings=request.app.state.settings,
-        connector_client_factory=connector_client_factory,
+        connector_client_factories=connector_client_factories,
     )
 
 
@@ -38,7 +44,7 @@ def list_provider_connections(
 
 @router.post("/copart/connect", response_model=ProviderConnectionMutationResponse)
 def connect_copart(
-    payload: CopartConnectionRequest,
+    payload: ProviderConnectionCredentialsRequest,
     request: Request,
     current_user: dict = Depends(get_current_user),
     service: ProviderConnectionService = Depends(get_provider_connection_service),
@@ -53,7 +59,7 @@ def connect_copart(
 
 @router.post("/copart/reconnect", response_model=ProviderConnectionMutationResponse)
 def reconnect_copart(
-    payload: CopartConnectionRequest,
+    payload: ProviderConnectionCredentialsRequest,
     request: Request,
     current_user: dict = Depends(get_current_user),
     service: ProviderConnectionService = Depends(get_provider_connection_service),
@@ -72,6 +78,44 @@ def disconnect_copart(
     service: ProviderConnectionService = Depends(get_provider_connection_service),
 ) -> dict:
     return service.disconnect_copart(current_user)
+
+
+@router.post("/iaai/connect", response_model=ProviderConnectionMutationResponse)
+def connect_iaai(
+    payload: ProviderConnectionCredentialsRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    service: ProviderConnectionService = Depends(get_provider_connection_service),
+) -> dict:
+    return service.connect_iaai(
+        current_user,
+        username=payload.username,
+        password=payload.password,
+        client_ip=_extract_client_ip(request),
+    )
+
+
+@router.post("/iaai/reconnect", response_model=ProviderConnectionMutationResponse)
+def reconnect_iaai(
+    payload: ProviderConnectionCredentialsRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    service: ProviderConnectionService = Depends(get_provider_connection_service),
+) -> dict:
+    return service.reconnect_iaai(
+        current_user,
+        username=payload.username,
+        password=payload.password,
+        client_ip=_extract_client_ip(request),
+    )
+
+
+@router.delete(f"/{PROVIDER_IAAI}", response_model=ProviderConnectionMutationResponse)
+def disconnect_iaai(
+    current_user: dict = Depends(get_current_user),
+    service: ProviderConnectionService = Depends(get_provider_connection_service),
+) -> dict:
+    return service.disconnect_iaai(current_user)
 
 
 def _extract_client_ip(request: Request) -> str | None:

@@ -14,19 +14,19 @@ type Props = {
   results: SearchResult[];
   totalResults: number;
   onClose: () => void;
-  onAddFromSearch: (lotUrl: string) => Promise<void>;
+  onAddFromSearch: (result: SearchResult) => Promise<void>;
   onSaveSearch: () => Promise<void>;
   canSave: boolean;
   isSavingSearch?: boolean;
   addingFromSearchLotUrl?: string | null;
-  trackedLotUrls?: string[];
+  trackedLotKeys?: string[];
   canRefreshLive?: boolean;
   onRefreshLive?: () => Promise<void>;
   isRefreshingLive?: boolean;
   lastSyncedAt?: string | null;
   freshness?: FreshnessEnvelope | null;
   refreshState?: RefreshState | null;
-  connectionDiagnostic?: ProviderConnectionDiagnostic | null;
+  connectionDiagnostics?: ProviderConnectionDiagnostic[];
   refreshError?: string | null;
   statusMessage?: string | null;
   mobileFullscreen?: boolean;
@@ -137,14 +137,14 @@ export function SearchResultsModal({
   canSave,
   isSavingSearch = false,
   addingFromSearchLotUrl = null,
-  trackedLotUrls = [],
+  trackedLotKeys = [],
   canRefreshLive = false,
   onRefreshLive,
   isRefreshingLive = false,
   lastSyncedAt = null,
   freshness = null,
   refreshState = null,
-  connectionDiagnostic = null,
+  connectionDiagnostics = [],
   refreshError = null,
   statusMessage = null,
   mobileFullscreen = false,
@@ -316,7 +316,8 @@ export function SearchResultsModal({
   const hasStatusPanels = isRefreshingLive || Boolean(statusMessage) || Boolean(refreshError);
   const vehicleCountLabel = `${totalResults} ${totalResults === 1 ? "Vehicle" : "Vehicles"}`;
   const reliabilityBadge = getReliabilityBadge(freshness, refreshState, isRefreshingLive);
-  const liveRefreshBlocked = Boolean(connectionDiagnostic && connectionDiagnostic.status !== "ready");
+  const blockingDiagnostics = connectionDiagnostics.filter((diagnostic) => diagnostic.status !== "ready");
+  const liveRefreshBlocked = connectionDiagnostics.length > 0 && connectionDiagnostics.every((diagnostic) => diagnostic.status !== "ready");
 
   const modal = (
     <div
@@ -355,7 +356,7 @@ export function SearchResultsModal({
                       disabled={isRefreshingLive || liveRefreshBlocked}
                       aria-busy={isRefreshingLive}
                     >
-                      {isRefreshingLive ? "Refreshing..." : liveRefreshBlocked ? "Copart action blocked" : "Refresh Live"}
+                      {isRefreshingLive ? "Refreshing..." : liveRefreshBlocked ? "Providers unavailable" : "Refresh Live"}
                     </button>
                   ) : null}
                   <button type="button" className="ghost-button" onClick={onClose}>
@@ -379,9 +380,15 @@ export function SearchResultsModal({
                       <p className="search-results-modal__reliability-copy">{reliabilityBadge.detail}</p>
                     </div>
                   ) : null}
-                  {connectionDiagnostic && connectionDiagnostic.status !== "ready" ? (
-                    <AsyncStatus tone="neutral" compact message={connectionDiagnostic.message} className="panel-status" />
-                  ) : null}
+                  {blockingDiagnostics.map((diagnostic) => (
+                    <AsyncStatus
+                      key={`mobile-${diagnostic.provider}`}
+                      tone="neutral"
+                      compact
+                      message={diagnostic.message}
+                      className="panel-status"
+                    />
+                  ))}
                   {hasStatusPanels ? (
                     <div className="search-results-modal__status-stack">
                       {isRefreshingLive ? (
@@ -389,7 +396,7 @@ export function SearchResultsModal({
                           compact
                           progress="bar"
                           title="Refreshing live results"
-                          message="Cached results stay visible while the latest Copart data loads."
+                          message="Cached results stay visible while the latest provider data loads."
                           className="modal-status"
                         />
                       ) : null}
@@ -435,7 +442,7 @@ export function SearchResultsModal({
                       disabled={isRefreshingLive || liveRefreshBlocked}
                       aria-busy={isRefreshingLive}
                     >
-                      {isRefreshingLive ? "Refreshing..." : liveRefreshBlocked ? "Copart action blocked" : "Refresh Live"}
+                      {isRefreshingLive ? "Refreshing..." : liveRefreshBlocked ? "Providers unavailable" : "Refresh Live"}
                     </button>
                   ) : null}
                   <button type="button" className="ghost-button" onClick={onClose}>
@@ -454,9 +461,15 @@ export function SearchResultsModal({
                   <p className="search-results-modal__reliability-copy">{reliabilityBadge.detail}</p>
                 </div>
               ) : null}
-              {connectionDiagnostic && connectionDiagnostic.status !== "ready" ? (
-                <AsyncStatus tone="neutral" compact message={connectionDiagnostic.message} className="panel-status" />
-              ) : null}
+              {blockingDiagnostics.map((diagnostic) => (
+                <AsyncStatus
+                  key={`desktop-${diagnostic.provider}`}
+                  tone="neutral"
+                  compact
+                  message={diagnostic.message}
+                  className="panel-status"
+                />
+              ))}
               {hasStatusPanels ? (
                 <div className="search-results-modal__status-stack">
                   {isRefreshingLive ? (
@@ -464,7 +477,7 @@ export function SearchResultsModal({
                       compact
                       progress="bar"
                       title="Refreshing live results"
-                      message="Cached results stay visible while the latest Copart data loads."
+                      message="Cached results stay visible while the latest provider data loads."
                       className="modal-status"
                     />
                   ) : null}
@@ -496,27 +509,34 @@ export function SearchResultsModal({
               <div className="search-results-modal__list">
                 {results.map((result) => {
                   const marketSignal = getMarketSignal(result);
-                  const isAdding = addingFromSearchLotUrl === result.url;
-                  const isTracked = trackedLotUrls.includes(result.url);
+                  const trackingKey = result.lot_key || result.provider_lot_id || result.url || result.lot_number;
+                  const isAdding = addingFromSearchLotUrl === trackingKey;
+                  const isTracked = trackedLotKeys.includes(result.lot_key);
 
                   return (
-                    <article key={result.lot_number} className="search-result-row">
+                    <article key={result.lot_key} className="search-result-row">
                       <LotThumbnail title={result.title} thumbnailUrl={result.thumbnail_url} />
                       <div className="search-result-row__body">
                         <div className="search-result-row__title-line">
-                          <a
-                            className="search-result-row__title-link"
-                            href={result.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            aria-label={`Open Copart lot ${result.lot_number}`}
-                            title="Open Copart lot page"
-                          >
+                          {result.url ? (
+                            <a
+                              className="search-result-row__title-link"
+                              href={result.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`Open ${result.auction_label} lot ${result.lot_number}`}
+                              title={`Open ${result.auction_label} lot page`}
+                            >
+                              <strong className="search-result-row__title">{result.title}</strong>
+                            </a>
+                          ) : (
                             <strong className="search-result-row__title">{result.title}</strong>
-                          </a>
+                          )}
                           {result.is_new ? <span className="new-badge">NEW</span> : null}
                         </div>
-                        <p className="search-result-row__meta">Lot#: {result.lot_number}</p>
+                        <p className="search-result-row__meta">
+                          <span className="status-pill">{result.auction_label}</span> Lot#: {result.lot_number}
+                        </p>
                         <p className="search-result-row__location">{result.location ?? "Unknown location"}</p>
                         <p className="search-result-row__odometer">Odo: {result.odometer?.trim() || "N/A"}</p>
                       </div>
@@ -528,7 +548,7 @@ export function SearchResultsModal({
                       <button
                         type="button"
                         className={`search-result-row__cta${isTracked ? " search-result-row__cta--done" : ""}`}
-                        onClick={() => void onAddFromSearch(result.url)}
+                        onClick={() => void onAddFromSearch(result)}
                         disabled={isAdding || isTracked}
                         aria-busy={isAdding}
                         aria-label={

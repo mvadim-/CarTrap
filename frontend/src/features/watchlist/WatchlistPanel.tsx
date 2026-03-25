@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 
-import type { LiveSyncStatus, ProviderConnectionDiagnostic, WatchlistItem } from "../../types";
+import type { AuctionProvider, LiveSyncStatus, ProviderConnectionDiagnostic, WatchlistItem } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
 import { LotThumbnail } from "../shared/LotThumbnail";
 import { buildResourceReliability } from "../shared/resourceReliability";
@@ -16,8 +16,9 @@ type Props = {
   isBrowserOffline: boolean;
   liveSyncStatus: LiveSyncStatus | null;
   copartConnectionDiagnostic: ProviderConnectionDiagnostic | null;
+  iaaiConnectionDiagnostic: ProviderConnectionDiagnostic | null;
   onRetry: () => Promise<void>;
-  onAddByLotNumber: (lotNumber: string) => Promise<void>;
+  onAddByIdentifier: (provider: AuctionProvider, lotNumber: string) => Promise<void>;
   onRefreshItem: (id: string) => Promise<WatchlistItem>;
   onRemove: (id: string) => Promise<void>;
 };
@@ -32,28 +33,31 @@ export function WatchlistPanel({
   isBrowserOffline,
   liveSyncStatus,
   copartConnectionDiagnostic,
+  iaaiConnectionDiagnostic,
   onRetry,
-  onAddByLotNumber,
+  onAddByIdentifier,
   onRefreshItem,
   onRemove,
 }: Props) {
+  const [manualProvider, setManualProvider] = useState<AuctionProvider>("copart");
   const [lotNumber, setLotNumber] = useState("");
   const [selectedLot, setSelectedLot] = useState<WatchlistItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
-  const isCopartActionBlocked = Boolean(copartConnectionDiagnostic && copartConnectionDiagnostic.status !== "ready");
+  const selectedDiagnostic = manualProvider === "iaai" ? iaaiConnectionDiagnostic : copartConnectionDiagnostic;
+  const isManualActionBlocked = Boolean(selectedDiagnostic && selectedDiagnostic.status !== "ready");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!lotNumber.trim() || isAddingLot || isCopartActionBlocked) {
+    if (!lotNumber.trim() || isAddingLot || isManualActionBlocked) {
       return;
     }
     setActionError(null);
     setActionNotice(null);
     try {
-      await onAddByLotNumber(lotNumber.trim());
-      setActionNotice(`Tracked lot ${lotNumber.trim()} added.`);
+      await onAddByIdentifier(manualProvider, lotNumber.trim());
+      setActionNotice(`${manualProvider === "iaai" ? "IAAI" : "Copart"} lot ${lotNumber.trim()} added.`);
       setLotNumber("");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not add lot.");
@@ -237,7 +241,7 @@ export function WatchlistPanel({
       return "This device is offline. Live lot updates and new additions will resume after reconnecting.";
     }
     if (liveSyncStatus?.status === "degraded") {
-      return "Live Copart sync is unavailable. Existing tracked data stays visible while refresh-dependent actions may fail.";
+      return "Live provider sync is unavailable. Existing tracked data stays visible while refresh-dependent actions may fail.";
     }
     return null;
   }
@@ -253,8 +257,8 @@ export function WatchlistPanel({
         </div>
       </div>
       {contextMessage ? <AsyncStatus compact message={contextMessage} className="panel-status" /> : null}
-      {isCopartActionBlocked && copartConnectionDiagnostic ? (
-        <AsyncStatus tone="neutral" compact message={copartConnectionDiagnostic.message} className="panel-status" />
+      {isManualActionBlocked && selectedDiagnostic ? (
+        <AsyncStatus tone="neutral" compact message={selectedDiagnostic.message} className="panel-status" />
       ) : null}
       {loadError ? (
         <AsyncStatus
@@ -275,22 +279,29 @@ export function WatchlistPanel({
       {actionNotice ? <AsyncStatus tone="success" compact message={actionNotice} className="panel-status" /> : null}
       <form className="watchlist-form" onSubmit={handleSubmit} aria-busy={isAddingLot}>
         <label className="watchlist-form__field">
-          Add by Lot Number
+          Auction
+          <select value={manualProvider} onChange={(event) => setManualProvider(event.target.value as AuctionProvider)}>
+            <option value="copart">Copart</option>
+            <option value="iaai">IAAI</option>
+          </select>
+        </label>
+        <label className="watchlist-form__field">
+          Add by Lot / Stock Number
           <input
             value={lotNumber}
             onChange={(event) => setLotNumber(event.target.value)}
-            inputMode="numeric"
-            pattern="[0-9]*"
+            inputMode={manualProvider === "copart" ? "numeric" : "text"}
+            pattern={manualProvider === "copart" ? "[0-9]*" : undefined}
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
-            placeholder="99251295"
-            disabled={isCopartActionBlocked}
+            placeholder={manualProvider === "copart" ? "99251295" : "STK-44 or inventory ID"}
+            disabled={isManualActionBlocked}
           />
         </label>
-        <button type="submit" disabled={!lotNumber.trim() || isAddingLot || isCopartActionBlocked} aria-busy={isAddingLot}>
-          {isAddingLot ? "Adding..." : isCopartActionBlocked ? "Copart action blocked" : "Add Lot"}
+        <button type="submit" disabled={!lotNumber.trim() || isAddingLot || isManualActionBlocked} aria-busy={isAddingLot}>
+          {isAddingLot ? "Adding..." : isManualActionBlocked ? "Provider unavailable" : "Add Lot"}
         </button>
       </form>
       {isAddingLot ? (
@@ -343,15 +354,20 @@ export function WatchlistPanel({
                       </div>
                       <strong>{item.title}</strong>
                       <div className="watchlist-card__meta-row">
-                        <a
-                          className="watchlist-card__lot-link"
-                          href={item.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          aria-label={`Open Copart lot ${item.lot_number}`}
-                        >
-                          Lot {item.lot_number}
-                        </a>
+                        {item.url ? (
+                          <a
+                            className="watchlist-card__lot-link"
+                            href={item.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`Open ${item.auction_label} lot ${item.lot_number}`}
+                          >
+                            Lot {item.lot_number}
+                          </a>
+                        ) : (
+                          <span className="watchlist-card__lot-link">Lot {item.lot_number}</span>
+                        )}
+                        <span className="status-pill">{item.auction_label}</span>
                         <span className="status-pill">{item.raw_status || item.status}</span>
                       </div>
                     </div>
@@ -416,7 +432,7 @@ export function WatchlistPanel({
                     {refreshingItemId === item.id
                       ? "Refreshing..."
                       : item.connection_diagnostic && item.connection_diagnostic.status !== "ready"
-                        ? "Copart action blocked"
+                        ? `${item.auction_label} unavailable`
                         : "Refresh Live"}
                   </button>
                   <button

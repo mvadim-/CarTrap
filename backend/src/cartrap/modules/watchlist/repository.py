@@ -18,7 +18,7 @@ class WatchlistRepository:
         self.lot_snapshots: Collection = database[LOT_SNAPSHOTS_COLLECTION]
 
     def ensure_indexes(self) -> None:
-        self.tracked_lots.create_index([("owner_user_id", 1), ("lot_number", 1)], unique=True)
+        self.tracked_lots.create_index([("owner_user_id", 1), ("lot_key", 1)], unique=True)
         self.tracked_lots.create_index("owner_user_id")
         self.lot_snapshots.create_index([("tracked_lot_id", 1), ("detected_at", -1)])
 
@@ -34,8 +34,8 @@ class WatchlistRepository:
         document["_id"] = result.inserted_id
         return document
 
-    def find_tracked_lot_by_owner_and_lot_number(self, owner_user_id: str, lot_number: str) -> Optional[dict]:
-        return self.tracked_lots.find_one({"owner_user_id": owner_user_id, "lot_number": lot_number})
+    def find_tracked_lot_by_owner_and_lot_key(self, owner_user_id: str, lot_key: str) -> Optional[dict]:
+        return self.tracked_lots.find_one({"owner_user_id": owner_user_id, "lot_key": lot_key})
 
     def list_tracked_lots_for_owner(self, owner_user_id: str) -> list[dict]:
         return list(self.tracked_lots.find({"owner_user_id": owner_user_id}))

@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
+
+from cartrap.modules.auction_domain.models import AuctionLotSnapshot, AuctionSearchResult, PROVIDER_COPART, get_auction_label
 
 
 class CopartApiSearchRequest(BaseModel):
@@ -30,40 +32,14 @@ class CopartApiSearchRequest(BaseModel):
         }
 
 
-class CopartLotSnapshot(BaseModel):
-    lot_number: str
-    title: str
-    url: HttpUrl
-    thumbnail_url: Optional[HttpUrl] = None
-    image_urls: list[HttpUrl] = []
-    odometer: Optional[str] = None
-    primary_damage: Optional[str] = None
-    estimated_retail_value: Optional[float] = None
-    has_key: Optional[bool] = None
-    drivetrain: Optional[str] = None
-    highlights: list[str] = []
-    vin: Optional[str] = None
-    status: str
-    sale_date: Optional[datetime] = None
-    current_bid: Optional[float] = None
-    buy_now_price: Optional[float] = None
-    currency: str = "USD"
-    raw_status: str
+class CopartLotSnapshot(AuctionLotSnapshot):
+    provider: str = PROVIDER_COPART
+    auction_label: str = get_auction_label(PROVIDER_COPART)
 
 
-class CopartSearchResult(BaseModel):
-    lot_number: str
-    title: str
-    url: HttpUrl
-    thumbnail_url: Optional[HttpUrl] = None
-    location: Optional[str] = None
-    odometer: Optional[str] = None
-    sale_date: Optional[datetime] = None
-    current_bid: Optional[float] = None
-    buy_now_price: Optional[float] = None
-    currency: str = "USD"
-    status: str = "upcoming"
-    raw_status: str = "upcoming"
+class CopartSearchResult(AuctionSearchResult):
+    provider: str = PROVIDER_COPART
+    auction_label: str = get_auction_label(PROVIDER_COPART)
 
 
 class CopartSearchPage(BaseModel):

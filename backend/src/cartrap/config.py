@@ -166,6 +166,56 @@ class Settings(BaseSettings):
     copart_gateway_base_url: Optional[str] = Field(default=None, alias="COPART_GATEWAY_BASE_URL")
     copart_gateway_token: Optional[str] = Field(default=None, alias="COPART_GATEWAY_TOKEN")
     copart_gateway_enable_gzip: bool = Field(default=True, alias="COPART_GATEWAY_ENABLE_GZIP")
+    iaai_oidc_configuration_path: str = Field(
+        default="https://login.iaai.com/.well-known/openid-configuration",
+        alias="IAAI_OIDC_CONFIGURATION_PATH",
+        min_length=1,
+    )
+    iaai_oidc_token_path: str = Field(
+        default="https://login.iaai.com/connect/token",
+        alias="IAAI_OIDC_TOKEN_PATH",
+        min_length=1,
+    )
+    iaai_oidc_client_id: str = Field(default="IAABuyerApp", alias="IAAI_OIDC_CLIENT_ID", min_length=1)
+    iaai_oidc_redirect_uri: str = Field(
+        default="mappproxy.iaai.com:/oauth2callback",
+        alias="IAAI_OIDC_REDIRECT_URI",
+        min_length=1,
+    )
+    iaai_mobile_base_url: str = Field(default="https://mappproxy.iaai.com", alias="IAAI_MOBILE_BASE_URL", min_length=1)
+    iaai_mobile_search_path: str = Field(
+        default="https://mappproxy.iaai.com/api/mobilesearch/search",
+        alias="IAAI_MOBILE_SEARCH_PATH",
+        min_length=1,
+    )
+    iaai_mobile_inventory_details_path: str = Field(
+        default="https://mappproxy.iaai.com/api/mobileinventory/GetInventoryDetails/{provider_lot_id}",
+        alias="IAAI_MOBILE_INVENTORY_DETAILS_PATH",
+        min_length=1,
+    )
+    iaai_mobile_tenant: str = Field(default="US", alias="IAAI_MOBILE_TENANT", min_length=1)
+    iaai_mobile_apikey: str = Field(default="mobile-app", alias="IAAI_MOBILE_APIKEY", min_length=1)
+    iaai_mobile_request_type: str = Field(default="mobile", alias="IAAI_MOBILE_REQUEST_TYPE", min_length=1)
+    iaai_mobile_app_version: str = Field(default="1.0.0", alias="IAAI_MOBILE_APP_VERSION", min_length=1)
+    iaai_mobile_country: str = Field(default="US", alias="IAAI_MOBILE_COUNTRY", min_length=1)
+    iaai_mobile_language: str = Field(default="en-US", alias="IAAI_MOBILE_LANGUAGE", min_length=1)
+    iaai_mobile_user_agent: str = Field(
+        default="IAA Buyer/1 CFNetwork/3860.500.112 Darwin/25.4.0",
+        alias="IAAI_MOBILE_USER_AGENT",
+        min_length=1,
+    )
+    iaai_connector_encryption_key_version: str = Field(
+        default="v1",
+        alias="IAAI_CONNECTOR_ENCRYPTION_KEY_VERSION",
+        min_length=1,
+    )
+    iaai_connector_session_expiring_threshold_minutes: int = Field(
+        default=30,
+        alias="IAAI_CONNECTOR_SESSION_EXPIRING_THRESHOLD_MINUTES",
+        ge=1,
+    )
+    iaai_http_timeout_seconds: float = Field(default=20.0, alias="IAAI_HTTP_TIMEOUT_SECONDS", gt=0)
+    iaai_http_connect_timeout_seconds: float = Field(default=5.0, alias="IAAI_HTTP_CONNECT_TIMEOUT_SECONDS", gt=0)
     vapid_public_key: Optional[str] = Field(default=None, alias="VAPID_PUBLIC_KEY")
     vapid_private_key: Optional[str] = Field(default=None, alias="VAPID_PRIVATE_KEY")
     vapid_subject: Optional[str] = Field(default=None, alias="VAPID_SUBJECT")
