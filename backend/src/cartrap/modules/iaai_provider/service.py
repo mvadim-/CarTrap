@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import re
 from typing import Optional
 
@@ -15,7 +16,7 @@ from cartrap.modules.iaai_provider.normalizer import (
 )
 
 
-IAAI_REFERENCE_PATTERN = re.compile(r"(\d{4,})")
+IAAI_REFERENCE_PATTERN = re.compile(r"(\d{4,}(?:~[A-Za-z]{2,})?)")
 
 
 class IaaiProvider:
@@ -35,8 +36,24 @@ class IaaiProvider:
             return IaaiLotFetchResult(snapshot=None, etag=response.etag, not_modified=True)
         if response.payload is None:
             raise RuntimeError("IAAI lot-details payload is missing.")
+        try:
+            snapshot = normalize_lot_details_payload(response.payload)
+        except ValueError as exc:
+            resolved_inventory_id = self._resolve_inventory_id_from_stock_number(
+                lot_reference=lot_reference,
+                attempted_inventory_id=inventory_id,
+                payload_error=exc,
+            )
+            if not resolved_inventory_id or resolved_inventory_id == inventory_id:
+                raise
+            response = self._client.lot_details_with_metadata(resolved_inventory_id, etag=etag)
+            if response.not_modified:
+                return IaaiLotFetchResult(snapshot=None, etag=response.etag, not_modified=True)
+            if response.payload is None:
+                raise RuntimeError("IAAI lot-details payload is missing after stock-number lookup.")
+            snapshot = normalize_lot_details_payload(response.payload)
         return IaaiLotFetchResult(
-            snapshot=normalize_lot_details_payload(response.payload),
+            snapshot=snapshot,
             etag=response.etag,
             not_modified=False,
         )
@@ -63,9 +80,61 @@ class IaaiProvider:
     def close(self) -> None:
         self._client.close()
 
+    def _resolve_inventory_id_from_stock_number(
+        self,
+        *,
+        lot_reference: str,
+        attempted_inventory_id: str,
+        payload_error: ValueError,
+    ) -> str | None:
+        if "inventoryResult" not in str(payload_error):
+            return None
+        if "~" in attempted_inventory_id:
+            return None
+        stock_number = self._extract_stock_number(lot_reference)
+        if stock_number is None:
+            return None
+        response = self._client.search(self._build_stock_number_lookup_payload(stock_number))
+        for vehicle in extract_search_vehicles(response):
+            candidate_stock_number = str(vehicle.get("stockNumber") or "").strip()
+            candidate_inventory_id = str(vehicle.get("id") or vehicle.get("inventoryId") or "").strip()
+            if candidate_stock_number == stock_number and candidate_inventory_id:
+                return candidate_inventory_id
+        return None
+
     @staticmethod
     def _extract_inventory_id(lot_reference: str) -> str:
         match = IAAI_REFERENCE_PATTERN.search(str(lot_reference))
         if match is None:
             raise ValueError("Could not determine IAAI inventory id from reference.")
         return match.group(1)
+
+    @staticmethod
+    def _extract_stock_number(lot_reference: str) -> str | None:
+        match = re.search(r"(\d{4,})", str(lot_reference))
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _build_stock_number_lookup_payload(stock_number: str) -> dict:
+        timestamp = datetime.now(timezone.utc).strftime("%m/%d/%Y %I:%M:%S %p")
+        return {
+            "returnFacets": False,
+            "generateFacets": False,
+            "zipCode": "",
+            "pageSize": 25,
+            "ShowRecommendations": False,
+            "miles": 0,
+            "useFastDistance": False,
+            "sort": [{"isDescending": False, "isGeoSort": False, "sortField": "AuctionDateTime"}],
+            "clientDateTimeInUtc": timestamp,
+            "currentPage": 1,
+            "returnAllIDs": False,
+            "point": {"latitude": 0, "longitude": 0},
+            "skipCaching": False,
+            "roughGeoSearch": False,
+            "includeReasoning": False,
+            "IsSearchTimedAuction": False,
+            "searches": [{"fullSearch": stock_number}],
+            "includeLikeWords": True,
+            "created": timestamp,
+        }

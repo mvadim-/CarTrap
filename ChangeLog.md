@@ -834,3 +834,6 @@
 ## [2026-03-25 18:40] Make IAAI lot-details payload discovery recursive across unknown wrappers
 - Оновлено `backend/src/cartrap/modules/iaai_provider/normalizer.py`: `resolve_inventory_result()` більше не покладається на фіксований перелік wrapper keys; тепер payload discovery рекурсивно проходить кілька рівнів dict/list envelope-ів і знаходить inventory payload навіть у capitalized або нетипових wrapper structures.
 - Оновлено `backend/tests/iaai/test_normalizer.py`: додано regression coverage для глибоко вкладеного `Data -> InventoryDetails -> Result` shape, щоб backend не ламався на продових варіантах `GetInventoryDetails` envelope.
+## [2026-03-25 18:57] Resolve IAAI stock numbers to inventory ids before lot-details fetch
+- Оновлено `backend/src/cartrap/modules/iaai_provider/service.py`: `fetch_lot_conditional()` більше не ріже market suffix із `inventoryId` (`45107325~US`) і, коли digit-only reference виявляється `stockNumber`, робить fallback lookup через `mobilesearch` (`fullSearch`) для резолву `stockNumber -> inventoryId`, а вже потім повторює `GetInventoryDetails`.
+- Додано `backend/tests/iaai/test_service.py`: regression coverage для збереження `inventoryId` suffix і retry-path `stockNumber -> search lookup -> GetInventoryDetails(inventoryId)`, що відтворює зафіксований у `Temp/Login-flow-iaai` mapping `44610371 -> 45107325~US`.
