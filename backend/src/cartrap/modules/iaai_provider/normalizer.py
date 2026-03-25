@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Optional
 import re
+from urllib.parse import quote
 
 from cartrap.modules.auction_domain.models import (
     AuctionLotSnapshot,
@@ -96,50 +97,82 @@ def normalize_lot_details_payload(payload: dict[str, Any]) -> AuctionLotSnapshot
     inventory_result = resolve_inventory_result(payload)
     if inventory_result is None:
         raise ValueError("IAAI lot payload is missing 'inventoryResult'.")
-    sale_information = inventory_result.get("saleInformation") if isinstance(inventory_result.get("saleInformation"), dict) else {}
-    vehicle_information = (
-        inventory_result.get("vehicleInformation") if isinstance(inventory_result.get("vehicleInformation"), dict) else {}
+    sale_information = flatten_field_map(inventory_result.get("saleInformation"))
+    vehicle_information = flatten_field_map(inventory_result.get("vehicleInformation"))
+    vehicle_description = flatten_field_map(inventory_result.get("vehicleDescription"))
+    attributes = flatten_field_map(inventory_result.get("attributes"))
+    inventory_fields = flatten_field_map(inventory_result)
+    provider_lot_id = str(
+        first_present(attributes, "Id", "inventoryId", "SalvageId")
+        or first_present(inventory_fields, "inventoryId", "Id", "SalvageId", "id", "itemId")
     )
-    attributes = inventory_result.get("attributes") if isinstance(inventory_result.get("attributes"), dict) else {}
-    provider_lot_id = str(first_present(inventory_result, "inventoryId", "id", "itemId"))
     lot_number = str(
-        first_present(vehicle_information, "stockNumber", "itemId", "lotNumber")
-        or first_present(inventory_result, "stockNumber", "itemId", "lotNumber")
+        first_present(vehicle_information, "stockNumber", "StockHash", "StockNumber", "itemId", "lotNumber")
+        or first_present(attributes, "StockNumber")
+        or first_present(inventory_fields, "stockNumber", "StockNumber", "itemId", "lotNumber")
     )
     raw_status = derive_raw_status(
         {
-            **inventory_result,
+            **inventory_fields,
             **sale_information,
             **vehicle_information,
+            **vehicle_description,
             **attributes,
         }
     )
     image_urls = extract_image_urls(payload)
+    thumbnail_url = extract_thumbnail_url(payload) or (image_urls[0] if image_urls else None)
     return AuctionLotSnapshot(
         provider=PROVIDER_IAAI,
         auction_label=get_auction_label(PROVIDER_IAAI),
         provider_lot_id=provider_lot_id,
         lot_number=lot_number,
-        title=normalize_text(first_present(vehicle_information, "yearMakeModel", "description", "title")) or "Unknown lot",
+        title=build_lot_title(vehicle_information, vehicle_description, attributes, inventory_fields) or "Unknown lot",
         url=build_iaai_lot_url(provider_lot_id),
-        thumbnail_url=image_urls[0] if image_urls else normalize_text(first_present(payload, "vehiclePrimaryImageUrl")),
+        thumbnail_url=thumbnail_url or normalize_text(first_present(payload, "vehiclePrimaryImageUrl")),
         image_urls=image_urls,
-        odometer=normalize_text(first_present(vehicle_information, "odometer", "odoValue")),
-        primary_damage=normalize_text(first_present(attributes, "Primary Damage", "primaryDamage")),
-        estimated_retail_value=parse_money(first_present(attributes, "Actual Cash Value", "actualCashValue", "acv")),
-        has_key=parse_boolish(first_present(attributes, "Keys", "hasKey")),
-        drivetrain=normalize_text(first_present(attributes, "Drive Line Type", "driveTrain", "drivetrain")),
-        highlights=extract_highlights(attributes),
-        vin=normalize_text(first_present(vehicle_information, "vin", "VIN")),
+        odometer=normalize_text(
+            first_present(vehicle_information, "Odometer", "odometer", "odoValue")
+            or first_present(attributes, "ODOValue")
+            or first_present(inventory_fields, "odometer", "odoValue")
+        ),
+        primary_damage=normalize_text(
+            first_present(vehicle_information, "PrimaryDamage", "primaryDamage", "Primary Damage")
+            or first_present(attributes, "PrimaryDamageDesc", "Primary Damage", "primaryDamage")
+        ),
+        estimated_retail_value=parse_money(
+            first_present(sale_information, "ActualCashValue", "actualCashValue", "ACV", "acv")
+            or first_present(attributes, "ActualCashValue", "actualCashValue", "ACV", "acv", "ProviderACV")
+        ),
+        has_key=parse_boolish(
+            first_present(vehicle_information, "Key", "KeySlashFob", "key")
+            or first_present(attributes, "Keys", "hasKey", "KeyFOB")
+        ),
+        drivetrain=normalize_text(
+            first_present(vehicle_description, "DriveLineType", "Drive Line Type", "driveTrain", "drivetrain")
+            or first_present(attributes, "DriveLineTypeDesc", "Drive Line Type", "driveTrain", "drivetrain")
+        ),
+        highlights=extract_highlights(attributes, vehicle_information, vehicle_description),
+        vin=normalize_text(
+            first_present(attributes, "VIN", "VINMask")
+            or first_present(vehicle_information, "VIN", "vin", "VINMask")
+            or first_present(vehicle_description, "VIN", "vin", "VINMask")
+        ),
         status=normalize_status(raw_status),
-        sale_date=parse_datetime(first_present(sale_information, "auctionDateTime", "saleDate")),
-        current_bid=parse_money(first_present(sale_information, "currentBid", "currentBidAmount")),
+        sale_date=parse_datetime(
+            first_present(sale_information, "AuctionDateTime", "auctionDateTime", "Auction Date and Time", "saleDate")
+            or first_present(attributes, "AuctionDateTime", "saleDate")
+        ),
+        current_bid=parse_money(first_present(sale_information, "CurrentBid", "currentBid", "currentBidAmount")),
         buy_now_price=parse_money(first_present(sale_information, "buyNowAmount", "buyNowPrice")),
-        currency=str(first_present(sale_information, "currency", "currencyCode") or "USD"),
+        currency=str(first_present(sale_information, "currency", "currencyCode") or first_present(attributes, "Currency") or "USD"),
         raw_status=raw_status,
         provider_metadata={
-            "branch": normalize_text(first_present(sale_information, "branchName")),
-            "item_id": normalize_text(first_present(inventory_result, "itemId")),
+            "branch": normalize_text(
+                first_present(sale_information, "SellingBranch", "branchName")
+                or first_present(attributes, "BranchName", "Name")
+            ),
+            "item_id": normalize_text(first_present(inventory_fields, "itemId")),
         },
     )
 
@@ -152,16 +185,20 @@ def normalize_status(raw_status: str) -> str:
 def derive_raw_status(payload: dict[str, Any]) -> str:
     for field_name in (
         "saleStatus",
+        "SaleStatus",
         "auctionStatus",
+        "AuctionStatus",
         "bidStatus",
+        "BidStatus",
         "status",
         "preBidStatus",
+        "PreBidStatus",
     ):
         value = payload.get(field_name)
         normalized = normalize_text(value)
         if normalized:
             return normalized
-    sale_date = parse_datetime(first_present(payload, "auctionDateTime", "saleDate"))
+    sale_date = parse_datetime(first_present(payload, "auctionDateTime", "AuctionDateTime", "saleDate", "SaleDate"))
     if sale_date is None:
         return "upcoming"
     return "live" if sale_date <= datetime.now(timezone.utc) else "upcoming"
@@ -175,8 +212,17 @@ def parse_datetime(value: Any) -> Optional[datetime]:
     text = str(value).strip()
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
-    parsed = datetime.fromisoformat(text)
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    for parser in (
+        lambda candidate: datetime.fromisoformat(candidate),
+        lambda candidate: datetime.strptime(candidate, "%m/%d/%Y %I:%M:%S %p %z"),
+        lambda candidate: datetime.strptime(candidate, "%m/%d/%Y %I:%M:%S %p"),
+    ):
+        try:
+            parsed = parser(text)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
 
 
 def parse_money(value: Any) -> Optional[float]:
@@ -196,9 +242,9 @@ def parse_boolish(value: Any) -> Optional[bool]:
     if isinstance(value, bool):
         return value
     normalized = str(value).strip().lower()
-    if normalized in {"true", "1", "yes", "y", "available"}:
+    if normalized in {"true", "1", "yes", "y", "available", "present"}:
         return True
-    if normalized in {"false", "0", "no", "n", "not available"}:
+    if normalized in {"false", "0", "no", "n", "not available", "missing", "absent"}:
         return False
     return None
 
@@ -212,47 +258,69 @@ def normalize_text(value: Any) -> Optional[str]:
 
 def first_present(payload: dict[str, Any], *field_names: str) -> Any:
     for field_name in field_names:
-        if field_name in payload and payload[field_name] not in (None, ""):
-            return payload[field_name]
+        for candidate in (field_name, field_name.lower(), canonicalize_field_name(field_name)):
+            if candidate in payload and payload[candidate] not in (None, ""):
+                return payload[candidate]
     return None
 
 
 def extract_image_urls(payload: dict[str, Any]) -> list[str]:
     inventory_result = resolve_inventory_result(payload) or {}
-    image_dimensions = inventory_result.get("imageDimensions") if isinstance(inventory_result.get("imageDimensions"), dict) else {}
-    raw_keys = image_dimensions.get("keys")
-    if not isinstance(raw_keys, list):
-        return []
-    base_url = normalize_text(
-        first_present(
-            image_dimensions,
-            "baseUrl",
-            "imageBaseUrl",
-            "cdnBaseUrl",
-        )
+    image_information = payload.get("imageInformation") if isinstance(payload.get("imageInformation"), dict) else {}
+    inventory_image_information = (
+        inventory_result.get("imageInformation") if isinstance(inventory_result.get("imageInformation"), dict) else {}
     )
-    urls: list[str] = []
-    for key in raw_keys:
-        normalized_key = normalize_text(key)
-        if not normalized_key:
-            continue
-        if normalized_key.startswith("http://") or normalized_key.startswith("https://"):
-            urls.append(normalized_key)
-            continue
-        if base_url:
-            urls.append(f"{base_url.rstrip('/')}/{normalized_key.lstrip('/')}")
+    image_dimensions = inventory_result.get("imageDimensions") if isinstance(inventory_result.get("imageDimensions"), dict) else {}
+    urls = dedupe_urls(
+        [
+            *extract_image_values(image_information, "StandardImages"),
+            *extract_image_values(inventory_image_information, "StandardImages"),
+            *extract_image_values(image_information, "ThumbnailImages"),
+            *extract_image_values(inventory_image_information, "ThumbnailImages"),
+            *extract_dimension_urls(image_dimensions),
+        ]
+    )
     return urls
 
 
-def extract_highlights(attributes: dict[str, Any]) -> list[str]:
+def extract_thumbnail_url(payload: dict[str, Any]) -> Optional[str]:
+    inventory_result = resolve_inventory_result(payload) or {}
+    image_information = payload.get("imageInformation") if isinstance(payload.get("imageInformation"), dict) else {}
+    inventory_image_information = (
+        inventory_result.get("imageInformation") if isinstance(inventory_result.get("imageInformation"), dict) else {}
+    )
+    thumbnails = [
+        *extract_image_values(image_information, "ThumbnailImages"),
+        *extract_image_values(inventory_image_information, "ThumbnailImages"),
+    ]
+    if thumbnails:
+        return thumbnails[0]
+    standard_images = [
+        *extract_image_values(image_information, "StandardImages"),
+        *extract_image_values(inventory_image_information, "StandardImages"),
+    ]
+    if standard_images:
+        return standard_images[0]
+    dimension_urls = extract_dimension_urls(
+        inventory_result.get("imageDimensions") if isinstance(inventory_result.get("imageDimensions"), dict) else {}
+    )
+    return dimension_urls[0] if dimension_urls else None
+
+
+def extract_highlights(*containers: dict[str, Any]) -> list[str]:
     highlights: list[str] = []
-    for field_name in ("Highlights", "highlights"):
-        value = attributes.get(field_name)
-        if isinstance(value, list):
-            highlights.extend(normalize_text(item) for item in value if normalize_text(item))
-        elif isinstance(value, str):
-            highlights.extend(part.strip() for part in value.split(",") if part.strip())
-    return highlights
+    for container in containers:
+        for field_name in ("Highlights", "highlights"):
+            value = container.get(field_name)
+            if isinstance(value, list):
+                highlights.extend(normalize_text(item) for item in value if normalize_text(item))
+            elif isinstance(value, str):
+                highlights.extend(part.strip() for part in value.split(",") if part.strip())
+        if parse_boolish(first_present(container, "RunAndDrive", "Run and Drive")) is True:
+            highlights.append("Run and Drive")
+        if parse_boolish(first_present(container, "Key", "KeySlashFob", "Keys")) is True:
+            highlights.append("Key")
+    return dedupe_urls(highlights)
 
 
 def resolve_inventory_result(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -262,10 +330,10 @@ def resolve_inventory_result(payload: dict[str, Any]) -> dict[str, Any] | None:
 def looks_like_inventory_result(payload: dict[str, Any]) -> bool:
     if not isinstance(payload, dict):
         return False
-    if any(field_name in payload for field_name in ("inventoryId", "itemId", "lotNumber")):
+    if any(field_name in payload for field_name in ("inventoryId", "itemId", "lotNumber", "Id", "SalvageId")):
         return True
     return any(
-        isinstance(payload.get(field_name), dict)
+        isinstance(payload.get(field_name), (dict, list))
         for field_name in ("vehicleInformation", "saleInformation", "attributes", "imageDimensions")
     )
 
@@ -293,3 +361,113 @@ def _find_inventory_result(payload: dict[str, Any], *, depth: int) -> dict[str, 
             if resolved is not None:
                 return resolved
     return None
+
+
+def build_lot_title(
+    vehicle_information: dict[str, Any],
+    vehicle_description: dict[str, Any],
+    attributes: dict[str, Any],
+    inventory_fields: dict[str, Any],
+) -> Optional[str]:
+    return normalize_text(
+        first_present(
+            attributes,
+            "YearMakeModelSeries",
+            "yearMakeModel",
+            "description",
+            "title",
+        )
+        or first_present(vehicle_information, "yearMakeModel", "description", "title")
+        or first_present(vehicle_description, "YearMakeModelSeries")
+        or compose_title_from_parts(attributes, inventory_fields)
+    )
+
+
+def compose_title_from_parts(attributes: dict[str, Any], inventory_fields: dict[str, Any]) -> Optional[str]:
+    title_parts = [
+        normalize_text(first_present(attributes, "Year") or first_present(inventory_fields, "year")),
+        normalize_text(first_present(attributes, "Make") or first_present(inventory_fields, "make")),
+        normalize_text(first_present(attributes, "Model") or first_present(inventory_fields, "model")),
+        normalize_text(first_present(attributes, "Series") or first_present(inventory_fields, "series")),
+    ]
+    composed = " ".join(part for part in title_parts if part)
+    return composed or None
+
+
+def flatten_field_map(source: Any) -> dict[str, Any]:
+    if isinstance(source, dict):
+        mapping: dict[str, Any] = {}
+        for field_name, value in source.items():
+            register_field_aliases(mapping, field_name, value)
+        return mapping
+    if isinstance(source, list):
+        mapping = {}
+        for item in source:
+            if not isinstance(item, dict):
+                continue
+            value = item.get("value")
+            for field_name in (item.get("key"), item.get("label"), item.get("name")):
+                register_field_aliases(mapping, field_name, value)
+        return mapping
+    return {}
+
+
+def register_field_aliases(mapping: dict[str, Any], field_name: Any, value: Any) -> None:
+    normalized_name = normalize_text(field_name)
+    if normalized_name is None:
+        return
+    for alias in (normalized_name, normalized_name.lower(), canonicalize_field_name(normalized_name)):
+        if alias and alias not in mapping:
+            mapping[alias] = value
+
+
+def canonicalize_field_name(field_name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", field_name.lower())
+
+
+def extract_image_values(container: dict[str, Any], image_set_name: str) -> list[str]:
+    images = container.get("images") if isinstance(container.get("images"), dict) else {}
+    raw_items = images.get(image_set_name)
+    if not isinstance(raw_items, list):
+        return []
+    values: list[str] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        normalized = normalize_text(item.get("value"))
+        if normalized:
+            values.append(normalized)
+    return values
+
+
+def extract_dimension_urls(image_dimensions: dict[str, Any]) -> list[str]:
+    raw_keys = image_dimensions.get("keys")
+    if not isinstance(raw_keys, list):
+        return []
+    base_url = normalize_text(first_present(image_dimensions, "baseUrl", "imageBaseUrl", "cdnBaseUrl"))
+    urls: list[str] = []
+    for raw_key in raw_keys:
+        normalized_key = normalize_text(raw_key.get("k") if isinstance(raw_key, dict) else raw_key)
+        if not normalized_key:
+            continue
+        if normalized_key.startswith("http://") or normalized_key.startswith("https://"):
+            urls.append(normalized_key)
+            continue
+        if base_url:
+            urls.append(f"{base_url.rstrip('/')}/{normalized_key.lstrip('/')}")
+            continue
+        encoded_key = quote(normalized_key, safe="~")
+        urls.append(f"https://vis.iaai.com/resizer?imageKeys={encoded_key}&width=845&height=633")
+    return urls
+
+
+def dedupe_urls(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = normalize_text(value)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped

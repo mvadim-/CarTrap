@@ -159,3 +159,87 @@ def test_normalize_lot_details_accepts_capitalized_and_deeply_nested_wrappers() 
     assert snapshot.provider_lot_id == "11223344"
     assert snapshot.lot_number == "IAAI-55"
     assert snapshot.status == "live"
+
+
+def test_normalize_lot_details_maps_real_trace_shape_from_login_flow_dump() -> None:
+    snapshot = normalize_lot_details_payload(
+        {
+            "inventoryResult": {
+                "attributes": {
+                    "Id": "44981230~US",
+                    "SalvageId": "44981230",
+                    "StockNumber": "44484523",
+                    "Year": "2025",
+                    "Make": "FORD",
+                    "Model": "MUSTANG MACH-E",
+                    "Series": "GT",
+                    "YearMakeModelSeries": "2025 FORD MUSTANG MACH-E GT",
+                    "PrimaryDamageDesc": "RIGHT FRONT",
+                    "Keys": "True",
+                    "ODOValue": "5568",
+                    "VIN": "3FMTK4SX8SMA28701",
+                    "VINMask": "3FMTK4SX8SM******",
+                    "DriveLineTypeDesc": "AWD",
+                    "AuctionDateTime": "3/26/2026 5:00:00 PM +00:00",
+                    "Currency": "USD",
+                    "BranchName": "Electric Vehicle Auctions",
+                },
+                "itemId": "62724767",
+                "vehicleInformation": [
+                    {"key": "StockHash", "value": "44484523", "label": "Stock #"},
+                    {"key": "PrimaryDamage", "value": "Right Front", "label": "Primary Damage"},
+                    {"key": "KeySlashFob", "value": "Present", "label": "Key"},
+                    {"key": "Odometer", "value": "5,568 mi (Actual)", "label": "Odometer"},
+                    {"key": "VINMask", "value": "3FMTK4SX8SM****** (OK)", "label": "VIN Status"},
+                ],
+                "vehicleDescription": [
+                    {"key": "DriveLineType", "value": "All Wheel Drive", "label": "Drive Line Type"},
+                    {"key": "Model", "value": "MUSTANG MACH-E", "label": "Model"},
+                    {"key": "Series", "value": "GT", "label": "Series"},
+                ],
+                "saleInformation": [
+                    {"key": "SellingBranch", "value": "Electric Vehicle Auctions", "label": "Selling Branch"},
+                    {"key": "AuctionDateTime", "value": "3/26/2026 5:00:00 PM +00:00", "label": "Auction Date and Time"},
+                    {"key": "ActualCashValue", "value": "$42,689 USD", "label": "Actual Cash Value"},
+                ],
+                "imageDimensions": {
+                    "keys": [
+                        {"k": "44981230~SID~B749~S0~I1~RW2576~H1932~TH0"},
+                    ]
+                },
+            },
+            "imageInformation": {
+                "images": {
+                    "StandardImages": [
+                        {
+                            "key": "1",
+                            "value": "https://vis.iaai.com/resizer?imageKeys=44981230~SID~B749~S0~I1~RW2576~H1932~TH0&width=845&height=633",
+                        }
+                    ],
+                    "ThumbnailImages": [
+                        {
+                            "key": "1",
+                            "value": "https://vis.iaai.com/resizer?imageKeys=44981230~SID~B749~S0~I1~RW2576~H1932~TH0&width=400&height=300",
+                        }
+                    ],
+                }
+            },
+        }
+    )
+
+    assert snapshot.provider_lot_id == "44981230~US"
+    assert snapshot.lot_number == "44484523"
+    assert snapshot.title == "2025 FORD MUSTANG MACH-E GT"
+    assert str(snapshot.thumbnail_url) == "https://vis.iaai.com/resizer?imageKeys=44981230~SID~B749~S0~I1~RW2576~H1932~TH0&width=400&height=300"
+    assert [str(url) for url in snapshot.image_urls] == [
+        "https://vis.iaai.com/resizer?imageKeys=44981230~SID~B749~S0~I1~RW2576~H1932~TH0&width=845&height=633",
+        "https://vis.iaai.com/resizer?imageKeys=44981230~SID~B749~S0~I1~RW2576~H1932~TH0&width=400&height=300",
+    ]
+    assert snapshot.odometer == "5,568 mi (Actual)"
+    assert snapshot.primary_damage == "Right Front"
+    assert snapshot.estimated_retail_value == 42689.0
+    assert snapshot.has_key is True
+    assert snapshot.drivetrain == "All Wheel Drive"
+    assert snapshot.vin == "3FMTK4SX8SMA28701"
+    assert snapshot.sale_date == datetime(2026, 3, 26, 17, 0, tzinfo=timezone.utc)
+    assert snapshot.provider_metadata["branch"] == "Electric Vehicle Auctions"
