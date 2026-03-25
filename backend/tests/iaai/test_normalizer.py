@@ -133,3 +133,29 @@ def test_normalize_lot_details_accepts_nested_data_wrapper() -> None:
     assert snapshot.provider_lot_id == "99112233"
     assert snapshot.lot_number == "STK-44"
     assert snapshot.status == "sold"
+
+
+def test_normalize_lot_details_accepts_capitalized_and_deeply_nested_wrappers() -> None:
+    snapshot = normalize_lot_details_payload(
+        {
+            "Data": {
+                "InventoryDetails": {
+                    "Result": {
+                        "inventoryId": 11223344,
+                        "vehicleInformation": {
+                            "stockNumber": "IAAI-55",
+                            "yearMakeModel": "2020 CHEVROLET BOLT EV",
+                        },
+                        "saleInformation": {
+                            "saleStatus": "Live",
+                            "currency": "USD",
+                        },
+                    }
+                }
+            }
+        }
+    )
+
+    assert snapshot.provider_lot_id == "11223344"
+    assert snapshot.lot_number == "IAAI-55"
+    assert snapshot.status == "live"

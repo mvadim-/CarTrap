@@ -831,3 +831,6 @@
 ## [2026-03-25 18:33] Tolerate alternative IAAI lot-details payload shapes from connector flow
 - Оновлено `backend/src/cartrap/modules/iaai_provider/normalizer.py`: `normalize_lot_details_payload()` і image extraction більше не вимагають тільки top-level `inventoryResult`; тепер підтримуються direct inventory payloads і типові nested wrappers (`data`, `result`, `payload`, `inventory`, `inventoryDetails`) з authenticated `GetInventoryDetails` responses.
 - Оновлено `backend/tests/iaai/test_normalizer.py`: додано regression coverage для direct inventory-root shape і nested `data` wrapper, щоб watchlist/add-by-stock-number flow не ламався на `200 OK` payload без явного `inventoryResult`.
+## [2026-03-25 18:40] Make IAAI lot-details payload discovery recursive across unknown wrappers
+- Оновлено `backend/src/cartrap/modules/iaai_provider/normalizer.py`: `resolve_inventory_result()` більше не покладається на фіксований перелік wrapper keys; тепер payload discovery рекурсивно проходить кілька рівнів dict/list envelope-ів і знаходить inventory payload навіть у capitalized або нетипових wrapper structures.
+- Оновлено `backend/tests/iaai/test_normalizer.py`: додано regression coverage для глибоко вкладеного `Data -> InventoryDetails -> Result` shape, щоб backend не ламався на продових варіантах `GetInventoryDetails` envelope.

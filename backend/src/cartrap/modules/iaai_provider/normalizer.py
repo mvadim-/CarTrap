@@ -256,21 +256,7 @@ def extract_highlights(attributes: dict[str, Any]) -> list[str]:
 
 
 def resolve_inventory_result(payload: dict[str, Any]) -> dict[str, Any] | None:
-    direct = payload.get("inventoryResult")
-    if isinstance(direct, dict):
-        return direct
-    for field_name in ("result", "data", "payload", "inventory", "inventoryDetails"):
-        candidate = payload.get(field_name)
-        if not isinstance(candidate, dict):
-            continue
-        nested = candidate.get("inventoryResult")
-        if isinstance(nested, dict):
-            return nested
-        if looks_like_inventory_result(candidate):
-            return candidate
-    if looks_like_inventory_result(payload):
-        return payload
-    return None
+    return _find_inventory_result(payload, depth=0)
 
 
 def looks_like_inventory_result(payload: dict[str, Any]) -> bool:
@@ -282,3 +268,28 @@ def looks_like_inventory_result(payload: dict[str, Any]) -> bool:
         isinstance(payload.get(field_name), dict)
         for field_name in ("vehicleInformation", "saleInformation", "attributes", "imageDimensions")
     )
+
+
+def _find_inventory_result(payload: dict[str, Any], *, depth: int) -> dict[str, Any] | None:
+    if looks_like_inventory_result(payload):
+        return payload
+    if depth >= 4:
+        return None
+    for field_name, candidate in payload.items():
+        if not isinstance(candidate, dict):
+            continue
+        if str(field_name).strip().lower() == "inventoryresult":
+            return candidate if looks_like_inventory_result(candidate) else _find_inventory_result(candidate, depth=depth + 1)
+        resolved = _find_inventory_result(candidate, depth=depth + 1)
+        if resolved is not None:
+            return resolved
+    for candidate in payload.values():
+        if not isinstance(candidate, list):
+            continue
+        for item in candidate:
+            if not isinstance(item, dict):
+                continue
+            resolved = _find_inventory_result(item, depth=depth + 1)
+            if resolved is not None:
+                return resolved
+    return None
