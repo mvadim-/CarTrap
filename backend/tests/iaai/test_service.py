@@ -93,3 +93,45 @@ def test_fetch_lot_conditional_resolves_stock_number_to_inventory_id_before_retr
     assert result.snapshot.provider_lot_id == "45107325~US"
     assert result.snapshot.lot_number == "44610371"
     assert result.snapshot.sale_date == datetime(2026, 3, 26, 17, 0, tzinfo=timezone.utc)
+
+
+def test_fetch_lot_conditional_resolves_item_id_to_inventory_id_before_retrying_lot_details() -> None:
+    client = FakeIaaiClient(
+        lot_payloads={
+            "62993275": {"unexpected": "shape"},
+            "45107325~US": {
+                "inventoryResult": {
+                    "attributes": {
+                        "Id": "45107325~US",
+                        "StockNumber": "44610371",
+                        "YearMakeModelSeries": "2025 FORD MUSTANG MACH-E GT",
+                        "AuctionDateTime": "3/26/2026 5:00:00 PM +00:00",
+                        "Currency": "USD",
+                    },
+                    "itemId": "62993275",
+                    "saleInformation": [
+                        {"key": "AuctionDateTime", "value": "3/26/2026 5:00:00 PM +00:00"},
+                    ],
+                }
+            },
+        },
+        search_payload={
+            "vehicles": [
+                {
+                    "id": "45107325~US",
+                    "itemId": "62993275",
+                    "stockNumber": "44610371",
+                }
+            ]
+        },
+    )
+
+    result = IaaiProvider(client=client).fetch_lot_conditional("62993275")
+
+    assert client.requested_inventory_ids == ["62993275", "45107325~US"]
+    assert client.requested_search_payloads
+    assert client.requested_search_payloads[0]["searches"] == [{"fullSearch": "62993275"}]
+    assert result.snapshot is not None
+    assert result.snapshot.provider_lot_id == "45107325~US"
+    assert result.snapshot.lot_number == "44610371"
+    assert result.snapshot.sale_date == datetime(2026, 3, 26, 17, 0, tzinfo=timezone.utc)

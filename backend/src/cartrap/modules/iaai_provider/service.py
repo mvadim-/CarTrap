@@ -39,7 +39,7 @@ class IaaiProvider:
         try:
             snapshot = normalize_lot_details_payload(response.payload)
         except ValueError as exc:
-            resolved_inventory_id = self._resolve_inventory_id_from_stock_number(
+            resolved_inventory_id = self._resolve_inventory_id_from_reference_lookup(
                 lot_reference=lot_reference,
                 attempted_inventory_id=inventory_id,
                 payload_error=exc,
@@ -80,7 +80,7 @@ class IaaiProvider:
     def close(self) -> None:
         self._client.close()
 
-    def _resolve_inventory_id_from_stock_number(
+    def _resolve_inventory_id_from_reference_lookup(
         self,
         *,
         lot_reference: str,
@@ -91,14 +91,13 @@ class IaaiProvider:
             return None
         if "~" in attempted_inventory_id:
             return None
-        stock_number = self._extract_stock_number(lot_reference)
-        if stock_number is None:
+        lookup_reference = self._extract_lookup_reference(lot_reference)
+        if lookup_reference is None:
             return None
-        response = self._client.search(self._build_stock_number_lookup_payload(stock_number))
+        response = self._client.search(self._build_reference_lookup_payload(lookup_reference))
         for vehicle in extract_search_vehicles(response):
-            candidate_stock_number = str(vehicle.get("stockNumber") or "").strip()
             candidate_inventory_id = str(vehicle.get("id") or vehicle.get("inventoryId") or "").strip()
-            if candidate_stock_number == stock_number and candidate_inventory_id:
+            if candidate_inventory_id and self._vehicle_matches_lookup_reference(vehicle, lookup_reference):
                 return candidate_inventory_id
         return None
 
@@ -110,12 +109,12 @@ class IaaiProvider:
         return match.group(1)
 
     @staticmethod
-    def _extract_stock_number(lot_reference: str) -> str | None:
+    def _extract_lookup_reference(lot_reference: str) -> str | None:
         match = re.search(r"(\d{4,})", str(lot_reference))
         return match.group(1) if match else None
 
     @staticmethod
-    def _build_stock_number_lookup_payload(stock_number: str) -> dict:
+    def _build_reference_lookup_payload(lookup_reference: str) -> dict:
         timestamp = datetime.now(timezone.utc).strftime("%m/%d/%Y %I:%M:%S %p")
         return {
             "returnFacets": False,
@@ -134,7 +133,33 @@ class IaaiProvider:
             "roughGeoSearch": False,
             "includeReasoning": False,
             "IsSearchTimedAuction": False,
-            "searches": [{"fullSearch": stock_number}],
+            "searches": [{"fullSearch": lookup_reference}],
             "includeLikeWords": True,
             "created": timestamp,
         }
+
+    @staticmethod
+    def _vehicle_matches_lookup_reference(vehicle: dict, lookup_reference: str) -> bool:
+        normalized_reference = str(lookup_reference).strip()
+        if not normalized_reference:
+            return False
+        candidate_fields = (
+            vehicle.get("stockNumber"),
+            vehicle.get("itemId"),
+            vehicle.get("salvageId"),
+            vehicle.get("inventoryId"),
+            vehicle.get("id"),
+        )
+        normalized_candidates = {
+            str(candidate).strip()
+            for candidate in candidate_fields
+            if str(candidate or "").strip()
+        }
+        if normalized_reference in normalized_candidates:
+            return True
+        normalized_inventory_ids = {
+            candidate.split("~", 1)[0]
+            for candidate in normalized_candidates
+            if "~" in candidate
+        }
+        return normalized_reference in normalized_inventory_ids
