@@ -482,6 +482,7 @@ class ProviderConnectionService:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"{provider_label} connector bootstrap failed.") from exc
 
     def _log_connect_failure(self, provider: str, owner_user_id: str, correlation_id: str, started_at: float, exc: Exception) -> None:
+        iaai_diagnostics = self._extract_iaai_diagnostics(exc)
         logger.warning(
             "provider_connection.connect.failed",
             extra=make_log_extra(
@@ -491,6 +492,9 @@ class ProviderConnectionService:
                 provider=provider,
                 duration_ms=round((perf_counter() - started_at) * 1000, 2),
                 error_type=type(exc).__name__,
+                step=(iaai_diagnostics.step if iaai_diagnostics else None),
+                failure_class=(iaai_diagnostics.failure_class if iaai_diagnostics else None),
+                hint=(iaai_diagnostics.hint if iaai_diagnostics else None),
             ),
         )
 

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
+import logging
 import re
 from typing import Any, Optional
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -15,7 +16,7 @@ from uuid import uuid4
 import httpx
 
 from cartrap.config import Settings, get_settings
-from cartrap.core.logging import new_correlation_id
+from cartrap.core.logging import make_log_extra, new_correlation_id
 from cartrap.modules.iaai_provider.errors import (
     IaaiAuthenticationError,
     IaaiConfigurationError,
@@ -54,6 +55,9 @@ AUTHENTICATED_COOKIE_PREFIXES = ("incap_ses_", "visid_incap_", "nlbi_", "ARRAffi
 REQUEST_TIMEOUT_HINT = "timeout"
 WAF_HINT = "imperva_or_waf"
 INVALID_CREDENTIALS_HINT = "missing_authorization_code"
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -856,6 +860,12 @@ class IaaiHttpClient:
 
     def _run_imperva_preflight(self, *, login_page: httpx.Response, correlation_id: str) -> None:
         script_path = _extract_imperva_script_path(login_page.text)
+        self._log_cookie_state(
+            correlation_id=correlation_id,
+            step=STEP_LOGIN_PAGE,
+            reason="after_login_page",
+            response=login_page,
+        )
         if not script_path:
             raise IaaiWafError(
                 "IAAI login page is missing the Imperva preflight script.",
@@ -867,7 +877,7 @@ class IaaiHttpClient:
                     hint="missing_imperva_script",
                 ),
             )
-        self._request_browser_step(
+        script_response = self._request_browser_step(
             STEP_IMPERVA_PREFLIGHT,
             correlation_id=correlation_id,
             callback=lambda: self._client.get(
@@ -875,8 +885,36 @@ class IaaiHttpClient:
                 headers=self._build_browser_script_headers(referer=str(login_page.request.url)),
             ),
         )
+        self._log_cookie_state(
+            correlation_id=correlation_id,
+            step=STEP_IMPERVA_PREFLIGHT,
+            reason="after_script_get",
+            response=script_response,
+        )
         imperva_token = self._cookie_value(IMPERVA_COOKIE_NAME)
+        token_source = "cookie"
         if not imperva_token:
+            imperva_token = _extract_imperva_token_from_script_body(script_response.text)
+            if imperva_token:
+                token_source = "script_body"
+                logger.info(
+                    "iaai_client.bootstrap.imperva_token_fallback",
+                    extra=make_log_extra(
+                        "iaai_client.bootstrap.imperva_token_fallback",
+                        correlation_id=correlation_id,
+                        step=STEP_IMPERVA_PREFLIGHT,
+                        token_source=token_source,
+                        script_content_type=script_response.headers.get("content-type"),
+                        script_body_length=len(script_response.text or ""),
+                    ),
+                )
+        if not imperva_token:
+            self._log_cookie_state(
+                correlation_id=correlation_id,
+                step=STEP_IMPERVA_PREFLIGHT,
+                reason="missing_imperva_token",
+                response=script_response,
+            )
             raise IaaiWafError(
                 "IAAI Imperva preflight state is incomplete.",
                 diagnostics=self._make_diagnostics(
@@ -884,7 +922,7 @@ class IaaiHttpClient:
                     step=STEP_IMPERVA_PREFLIGHT,
                     error_code="upstream_rejected",
                     failure_class="bootstrap_incomplete",
-                    hint="missing_reese84_cookie",
+                    hint="missing_reese84_cookie_after_script_get",
                 ),
             )
         preflight_response = self._request_browser_step(
@@ -895,6 +933,13 @@ class IaaiHttpClient:
                 content=json.dumps(imperva_token).encode("utf-8"),
                 headers=self._build_browser_preflight_headers(referer=str(login_page.request.url)),
             ),
+        )
+        self._log_cookie_state(
+            correlation_id=correlation_id,
+            step=STEP_IMPERVA_PREFLIGHT,
+            reason="after_script_post",
+            response=preflight_response,
+            token_source=token_source,
         )
         if preflight_response.is_error:
             raise IaaiWafError(
@@ -923,6 +968,38 @@ class IaaiHttpClient:
                         hint="missing_imperva_post_state",
                     ),
                 )
+
+    def _log_cookie_state(
+        self,
+        *,
+        correlation_id: str,
+        step: str,
+        reason: str,
+        response: httpx.Response | None,
+        token_source: str | None = None,
+    ) -> None:
+        cookie_names = self._cookie_names()
+        logger.info(
+            "iaai_client.bootstrap.state",
+            extra=make_log_extra(
+                "iaai_client.bootstrap.state",
+                correlation_id=correlation_id,
+                step=step,
+                reason=reason,
+                cookie_names=cookie_names,
+                has_reese84=IMPERVA_COOKIE_NAME in cookie_names,
+                has_request_verification_token=bool(
+                    response is not None and _extract_request_verification_token(response.text or "")
+                ),
+                response_status=(response.status_code if response is not None else None),
+                response_content_type=(response.headers.get("content-type") if response is not None else None),
+                response_body_length=(len(response.text or "") if response is not None else None),
+                response_set_cookie_names=(
+                    _extract_set_cookie_names(response.headers) if response is not None else None
+                ),
+                token_source=token_source,
+            ),
+        )
 
     def _resolve_authorization_code(
         self,
@@ -983,6 +1060,10 @@ class IaaiHttpClient:
             if cookie.name == name:
                 return cookie.value
         return None
+
+    def _cookie_names(self) -> list[str]:
+        names = {cookie.name for cookie in self._client.cookies.jar}
+        return sorted(names)
 
     def _build_browser_document_headers(self, *, referer: str | None, same_origin: bool) -> dict[str, str]:
         headers = {
@@ -1087,6 +1168,21 @@ def _extract_imperva_script_path(html: str) -> str | None:
     if not match:
         return None
     return match.group(1)
+
+
+def _extract_imperva_token_from_script_body(body: str) -> str | None:
+    if not body:
+        return None
+    patterns = (
+        r'"token"\s*:\s*"([^"]+)"',
+        r"reese84\s*[:=]\s*['\"]([^'\"]+)['\"]",
+        r"['\"](3:[^'\"]+)['\"]",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, body)
+        if match:
+            return match.group(1)
+    return None
 
 
 def _extract_hidden_input_value(html: str, name: str) -> str | None:
@@ -1222,3 +1318,12 @@ def _safe_json_dict(response: httpx.Response) -> dict[str, Any]:
     except ValueError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _extract_set_cookie_names(headers: httpx.Headers) -> list[str]:
+    names: list[str] = []
+    for value in headers.get_list("set-cookie"):
+        candidate = value.split("=", 1)[0].strip()
+        if candidate:
+            names.append(candidate)
+    return sorted(set(names))

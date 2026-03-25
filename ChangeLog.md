@@ -816,3 +816,9 @@
 ## [2026-03-25 18:01] Archive completed IAAI gateway hardening plan
 - Переміщено `docs/plans/20260325-iaai-gateway-bootstrap-hardening.md` у `docs/plans/completed/20260325-iaai-gateway-bootstrap-hardening.md` після фактичного завершення всіх задач і verification.
 - Поточний активний planning context залишився в `docs/plans/20260325-iaai-multi-auction-support.md`, а hardening-план зафіксовано як completed artifact для подальшого rollout/smoke-test follow-up.
+
+## [2026-03-25 18:10] Add NAS-oriented IAAI Imperva diagnostics and script-token fallback
+- Оновлено `backend/src/cartrap/modules/iaai_provider/client.py`: додано safe bootstrap telemetry `iaai_client.bootstrap.state` з cookie names, set-cookie names, response status/content-type/body-length без витоку cookie values; `imperva_preflight` тепер логуватиме точніший `hint`, а також має fallback на випадок, коли Imperva token не потрапив у cookie jar, але присутній у body script response.
+- Оновлено `backend/src/cartrap/modules/iaai_gateway/service.py` і `backend/src/cartrap/modules/provider_connections/service.py`: gateway/AWS failure logs тепер включають `hint`, `step` і `failure_class`, щоб з production NAS логів було видно не лише факт падіння, а й sanitized причину на кшталт `missing_reese84_cookie_after_script_get`.
+- Оновлено `backend/tests/iaai/test_http_client.py`: додано regression coverage для fallback `script body -> Imperva token` і синхронізовано expectation для нового diagnostic hint.
+- Verification: `./.venv/bin/pytest backend/tests/iaai/test_http_client.py backend/tests/iaai/test_gateway_connector_flow.py backend/tests/provider_connections/test_iaai_router.py` -> `13 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime).

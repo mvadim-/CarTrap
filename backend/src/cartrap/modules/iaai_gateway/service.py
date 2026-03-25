@@ -104,6 +104,7 @@ class IaaiGatewayService:
                     error_code=(diagnostics.error_code if diagnostics else None),
                     failure_class=(diagnostics.failure_class if diagnostics else None),
                     upstream_status_code=(diagnostics.upstream_status_code if diagnostics else None),
+                    hint=(diagnostics.hint if diagnostics else None),
                     error_type=type(exc).__name__,
                 ),
             )

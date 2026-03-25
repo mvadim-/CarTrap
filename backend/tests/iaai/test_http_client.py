@@ -103,6 +103,62 @@ def test_iaai_client_bootstrap_replays_oidc_login_flow_with_imperva_preflight() 
     assert all("x-ipaddress" not in dict_ for dict_ in (dict(httpx.Headers({"cookie": cookie or ""})) for _, _, cookie in requests))
 
 
+def test_iaai_client_bootstrap_uses_script_body_token_when_cookie_is_missing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://login.test/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={
+                    "authorization_endpoint": "https://login.test/connect/authorize",
+                    "token_endpoint": "https://login.test/connect/token",
+                },
+            )
+        if str(request.url) == "https://login.test/connect/authorize/callback?state=state-1":
+            return httpx.Response(302, headers={"location": "https://mappproxy.iaai.com/oauth2callback?code=abc123"})
+        if str(request.url).startswith("https://login.test/connect/authorize"):
+            return httpx.Response(302, headers={"location": "https://login.test/login"})
+        if str(request.url) == "https://login.test/login" and request.method == "GET":
+            return httpx.Response(
+                200,
+                text=(
+                    '<script src="/A-would-they-here-beathe-and-should-mis-fore-Cas" async></script>'
+                    '<input name="__RequestVerificationToken" type="hidden" value="csrf-123" />'
+                ),
+            )
+        if str(request.url) == "https://login.test/A-would-they-here-beathe-and-should-mis-fore-Cas" and request.method == "GET":
+            return httpx.Response(200, text='{"token":"body-token-1"}', headers={"content-type": "application/json"})
+        if str(request.url) == "https://login.test/A-would-they-here-beathe-and-should-mis-fore-Cas?d=login.iaai.com":
+            assert request.content == b'"body-token-1"'
+            return httpx.Response(
+                200,
+                json={"token": "body-token-1"},
+                headers={"set-cookie": "nlbi_2831003_2147483392=lb-1; Path=/; Domain=.login.test"},
+            )
+        if str(request.url) == "https://login.test/login" and request.method == "POST":
+            return httpx.Response(302, headers={"location": "/connect/authorize/callback?state=state-1"})
+        if str(request.url) == "https://login.test/connect/token":
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "header.payload.signature",
+                    "refresh_token": "refresh-1",
+                    "expires_in": 3600,
+                },
+                headers={"set-cookie": "incap_ses_323_2831003=imperva-1; Path=/; Domain=.login.test"},
+            )
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    settings = Settings(
+        IAAI_OIDC_CONFIGURATION_PATH="https://login.test/.well-known/openid-configuration",
+        IAAI_OIDC_TOKEN_PATH="https://login.test/connect/token",
+    )
+    client = IaaiHttpClient(settings=settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    result = client.bootstrap_connector_session(username="buyer@example.com", password="secret")
+
+    assert result.connection_status == "connected"
+
+
 def test_iaai_client_rejects_missing_imperva_state() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == "https://login.test/.well-known/openid-configuration":
@@ -138,7 +194,7 @@ def test_iaai_client_rejects_missing_imperva_state() -> None:
 
     assert excinfo.value.diagnostics is not None
     assert excinfo.value.diagnostics.step == "imperva_preflight"
-    assert excinfo.value.diagnostics.hint == "missing_reese84_cookie"
+    assert excinfo.value.diagnostics.hint == "missing_reese84_cookie_after_script_get"
 
 
 def test_iaai_client_refreshes_expired_token_before_search() -> None:
