@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from typing import Optional
 
 from bson import ObjectId
 from pymongo.collection import Collection
 from pymongo.database import Database
+from pymongo.errors import DuplicateKeyError
 
+from cartrap.modules.auction_domain.models import backfill_lot_identity
 from cartrap.modules.watchlist.models import LOT_SNAPSHOTS_COLLECTION, TRACKED_LOTS_COLLECTION
+
+
+logger = logging.getLogger(__name__)
 
 
 class WatchlistRepository:
@@ -18,9 +24,54 @@ class WatchlistRepository:
         self.lot_snapshots: Collection = database[LOT_SNAPSHOTS_COLLECTION]
 
     def ensure_indexes(self) -> None:
-        self.tracked_lots.create_index([("owner_user_id", 1), ("lot_key", 1)], unique=True)
+        self._backfill_legacy_lot_identity()
+        try:
+            self.tracked_lots.create_index(
+                [("owner_user_id", 1), ("lot_key", 1)],
+                unique=True,
+                partialFilterExpression={"lot_key": {"$type": "string"}},
+            )
+        except DuplicateKeyError:
+            logger.exception(
+                "Failed to create unique tracked_lots index after lot identity backfill; "
+                "duplicate owner_user_id + lot_key records remain in Mongo."
+            )
         self.tracked_lots.create_index("owner_user_id")
         self.lot_snapshots.create_index([("tracked_lot_id", 1), ("detected_at", -1)])
+
+    def _backfill_legacy_lot_identity(self) -> None:
+        legacy_documents = self.tracked_lots.find(
+            {
+                "$or": [
+                    {"provider": {"$exists": False}},
+                    {"provider_lot_id": {"$exists": False}},
+                    {"provider_lot_id": None},
+                    {"auction_label": {"$exists": False}},
+                    {"lot_key": {"$exists": False}},
+                    {"lot_key": None},
+                ]
+            }
+        )
+        for document in legacy_documents:
+            try:
+                backfilled = backfill_lot_identity(document)
+            except ValueError:
+                logger.warning(
+                    "Skipping tracked_lots identity backfill for document %s because provider_lot_id/lot_number is missing.",
+                    document.get("_id"),
+                )
+                continue
+            self.tracked_lots.update_one(
+                {"_id": document["_id"]},
+                {
+                    "$set": {
+                        "provider": backfilled["provider"],
+                        "auction_label": backfilled["auction_label"],
+                        "provider_lot_id": backfilled["provider_lot_id"],
+                        "lot_key": backfilled["lot_key"],
+                    }
+                },
+            )
 
     def create_tracked_lot(self, payload: dict) -> dict:
         document = dict(payload)
