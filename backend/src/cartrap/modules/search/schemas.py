@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+import re
 from typing import Optional
 from urllib.parse import urlencode
 from uuid import uuid4
@@ -66,6 +67,50 @@ ODOMETER_RANGE_QUERIES = {
     "100001_to_150000": "odometer_reading_received:[100001 TO 150000]",
     "150001_to_200000": "odometer_reading_received:[150001 TO 200000]",
     "over_200000": "odometer_reading_received:[200000 TO *]",
+}
+
+IAAI_DRIVE_TYPE_FACET_VALUES = {
+    "all_wheel_drive": "All-Wheel Drive",
+    "front_wheel_drive": "Front-Wheel Drive",
+    "rear_wheel_drive": "Rear-Wheel Drive",
+    "4x4_front": "4x4 W/Front Whl Drv",
+    "4x4_rear": "4x4 W/Rear Wheel Drv",
+}
+
+IAAI_FUEL_TYPE_FACET_VALUES = {
+    "electric": "Electric",
+}
+
+IAAI_PRIMARY_DAMAGE_FACET_VALUES = {
+    "front_end": "Front End",
+    "rear_end": "Rear",
+    "side": "Side",
+    "hail": "Hail",
+    "minor_dents_scratches": "Minor Dents/Scratches",
+    "mechanical": "Mechanical",
+    "water_flood": "Flood",
+    "rollover": "Rollover",
+    "normal_wear": "Normal Wear",
+}
+
+IAAI_TITLE_TYPE_FACET_VALUES = {
+    "clean_title": "Clear",
+    "salvage_title": "Salvage",
+    "non_repairable": "Non-Repairable",
+}
+
+IAAI_LOT_CONDITION_FACET_VALUES = {
+    "run_and_drive": ("StartsDesc", "Run & Drive"),
+}
+
+IAAI_ODOMETER_RANGE_VALUES = {
+    "under_25000": {"name": "ODOValue", "from": 0, "to": 25000},
+    "25000_to_50000": {"name": "ODOValue", "from": 25000, "to": 50000},
+    "50001_to_75000": {"name": "ODOValue", "from": 50001, "to": 75000},
+    "75001_to_100000": {"name": "ODOValue", "from": 75001, "to": 100000},
+    "100001_to_150000": {"name": "ODOValue", "from": 100001, "to": 150000},
+    "150001_to_200000": {"name": "ODOValue", "from": 150001, "to": 200000},
+    "over_200000": {"name": "ODOValue", "from": 200000},
 }
 
 
@@ -136,35 +181,37 @@ class SearchRequest(BaseModel):
         normalized_provider = normalize_provider(provider)
         if normalized_provider == PROVIDER_COPART:
             return self.to_api_request(now=now).to_payload()
-        return self.to_iaai_payload()
+        return self.to_iaai_payload(now=now)
 
-    def to_iaai_payload(self) -> dict:
-        payload: dict[str, object] = {
-            "keyword": self.display_title(),
-            "requestedProviders": self.providers,
-            "filters": {},
+    def to_iaai_payload(self, now: Optional[datetime] = None) -> dict:
+        request_time = now or datetime.now(timezone.utc)
+        timestamp = request_time.astimezone(timezone.utc).strftime("%m/%d/%Y %I:%M:%S %p")
+        searches = self._build_iaai_searches()
+        if not searches:
+            fallback_term = self._build_iaai_fallback_full_search()
+            if fallback_term:
+                searches = [{"fullSearch": fallback_term}]
+        return {
+            "returnFacets": False,
+            "generateFacets": False,
+            "zipCode": "",
+            "pageSize": 100,
+            "ShowRecommendations": False,
+            "miles": 0,
+            "useFastDistance": False,
+            "sort": [{"isDescending": False, "isGeoSort": False, "sortField": "AuctionDateTime"}],
+            "clientDateTimeInUtc": timestamp,
+            "currentPage": 1,
+            "returnAllIDs": False,
+            "point": {"latitude": 0, "longitude": 0},
+            "skipCaching": False,
+            "roughGeoSearch": False,
+            "includeReasoning": False,
+            "IsSearchTimedAuction": False,
+            "searches": searches,
+            "includeLikeWords": True,
+            "created": timestamp,
         }
-        filters = payload["filters"]
-        assert isinstance(filters, dict)
-        if self.make:
-            filters["make"] = self.make.strip().upper()
-        if self.model:
-            filters["model"] = self.model.strip().upper()
-        if self.year_from is not None:
-            filters["year_from"] = self.year_from
-        if self.year_to is not None:
-            filters["year_to"] = self.year_to
-        if self.lot_number:
-            filters["stock_number"] = "".join(char for char in self.lot_number if char.isdigit())
-        if self.primary_damage:
-            filters["primary_damage"] = self.primary_damage.strip().lower()
-        if self.title_type:
-            filters["title_type"] = self.title_type.strip().lower()
-        if self.fuel_type:
-            filters["fuel_type"] = self.fuel_type.strip().lower()
-        if self.odometer_range:
-            filters["odometer_range"] = self.odometer_range.strip().lower()
-        return payload
 
     def normalized_criteria(self) -> dict:
         payload = self.model_dump(exclude_none=True)
@@ -317,6 +364,130 @@ class SearchRequest(BaseModel):
                 }
             )
         return links
+
+    def _build_iaai_searches(self) -> list[dict[str, object]]:
+        searches: list[dict[str, object]] = []
+        lot_number = "".join(char for char in str(self.lot_number or "") if char.isdigit())
+        if lot_number:
+            searches.append({"fullSearch": lot_number})
+
+        make_value = self._resolve_iaai_make_value()
+        if make_value:
+            searches.append(self._build_iaai_facet_search("Make", make_value))
+
+        model_value = self._resolve_iaai_model_value()
+        if model_value:
+            searches.append(self._build_iaai_facet_search("Model", model_value))
+
+        if self.year_from or self.year_to:
+            lower = self.year_from or self.year_to
+            upper = self.year_to or self.year_from
+            if lower is not None and upper is not None:
+                searches.append(self._build_iaai_long_range_search("Year", lower, upper))
+
+        if self.drive_type:
+            drive_value = IAAI_DRIVE_TYPE_FACET_VALUES.get(self.drive_type.strip().lower())
+            if drive_value:
+                searches.append(self._build_iaai_facet_search("DriveLineType", drive_value))
+
+        if self.primary_damage:
+            damage_value = IAAI_PRIMARY_DAMAGE_FACET_VALUES.get(self.primary_damage.strip().lower())
+            if damage_value:
+                searches.append(self._build_iaai_facet_search("PrimaryDamageDesc", damage_value))
+
+        if self.title_type:
+            title_value = IAAI_TITLE_TYPE_FACET_VALUES.get(self.title_type.strip().lower())
+            if title_value:
+                searches.append(self._build_iaai_facet_search("SaleDocument", title_value))
+
+        if self.fuel_type:
+            fuel_value = IAAI_FUEL_TYPE_FACET_VALUES.get(self.fuel_type.strip().lower())
+            if fuel_value:
+                searches.append(self._build_iaai_facet_search("FuelTypeDesc", fuel_value))
+
+        if self.lot_condition:
+            condition = IAAI_LOT_CONDITION_FACET_VALUES.get(self.lot_condition.strip().lower())
+            if condition:
+                group, value = condition
+                searches.append(self._build_iaai_facet_search(group, value))
+
+        if self.odometer_range:
+            odometer_range = IAAI_ODOMETER_RANGE_VALUES.get(self.odometer_range.strip().lower())
+            if odometer_range:
+                searches.append({"longRanges": [odometer_range]})
+
+        return searches
+
+    def _build_iaai_fallback_full_search(self) -> Optional[str]:
+        lot_number = "".join(char for char in str(self.lot_number or "") if char.isdigit())
+        if lot_number:
+            return lot_number
+        parts = [self._resolve_iaai_make_value(), self._resolve_iaai_model_value()]
+        fallback = " ".join(part for part in parts if part)
+        return fallback or None
+
+    def _resolve_iaai_make_value(self) -> Optional[str]:
+        if self.make:
+            return _normalize_iaai_make_value(self.make)
+        parsed = _extract_catalog_filter_value(
+            self.make_filter,
+            ("lot_make_desc", "manufacturer_make_desc"),
+        )
+        return _normalize_iaai_make_value(parsed)
+
+    def _resolve_iaai_model_value(self) -> Optional[str]:
+        if self.model:
+            return _normalize_iaai_text_value(self.model)
+        return _extract_catalog_filter_value(
+            self.model_filter,
+            ("lot_model_desc", "lot_model_group", "manufacturer_model_desc"),
+        )
+
+    @staticmethod
+    def _build_iaai_facet_search(group: str, value: str) -> dict[str, object]:
+        return {"facets": [{"group": group, "value": value}]}
+
+    @staticmethod
+    def _build_iaai_long_range_search(name: str, lower: int, upper: int) -> dict[str, object]:
+        return {"longRanges": [{"name": name, "from": lower, "to": upper}]}
+
+
+def _extract_catalog_filter_value(filter_text: str | None, field_names: tuple[str, ...]) -> Optional[str]:
+    if not filter_text:
+        return None
+    for field_name in field_names:
+        match = re.search(rf'{re.escape(field_name)}:"([^"]+)"', filter_text)
+        if match:
+            return _normalize_iaai_text_value(match.group(1))
+    match = re.search(r'"([^"]+)"', filter_text)
+    if match:
+        return _normalize_iaai_text_value(match.group(1))
+    return None
+
+
+def _normalize_iaai_make_value(value: str | None) -> Optional[str]:
+    normalized = _normalize_iaai_text_value(value)
+    if normalized is None:
+        return None
+    parts: list[str] = []
+    for token in re.split(r"([ /-])", normalized):
+        if token in {" ", "/", "-"}:
+            parts.append(token)
+            continue
+        if not token:
+            continue
+        if token.isupper() and len(token) <= 3:
+            parts.append(token)
+            continue
+        parts.append(token.title() if token.isupper() else token)
+    return "".join(parts).strip() or None
+
+
+def _normalize_iaai_text_value(value: str | None) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
 
 
 class SearchResultResponse(AuctionSearchResult):

@@ -103,8 +103,17 @@ class FakeConnectorClient:
     def __init__(self, app) -> None:
         self._app = app
 
-    def bootstrap_connector_session(self, *, username: str, password: str) -> CopartConnectorBootstrapResult:
+    def bootstrap_connector_session(
+        self,
+        *,
+        username: str,
+        password: str,
+        client_ip: str | None = None,
+        correlation_id: str | None = None,
+    ) -> CopartConnectorBootstrapResult:
         del password
+        del client_ip
+        del correlation_id
         bundle = CopartEncryptedSessionBundle(
             encrypted_bundle=f"bundle:{username}",
             key_version="v1",
@@ -781,6 +790,67 @@ def test_search_request_builds_api_payload() -> None:
     assert payload["filter"] == []
     assert payload["pageNumber"] == 1
     assert payload["userStartUtcDatetime"] == "2026-03-12T00:00:00Z"
+
+
+def test_search_request_builds_native_iaai_payload() -> None:
+    request = SearchRequest(
+        providers=["iaai"],
+        make="FORD",
+        model="MUSTANG MACH-E",
+        year_from=2025,
+        year_to=2027,
+        drive_type="all_wheel_drive",
+        fuel_type="electric",
+        title_type="salvage_title",
+        lot_condition="run_and_drive",
+    )
+
+    payload = request.to_provider_payload("iaai", now=datetime(2026, 3, 27, 13, 18, tzinfo=timezone.utc))
+
+    assert payload == {
+        "returnFacets": False,
+        "generateFacets": False,
+        "zipCode": "",
+        "pageSize": 100,
+        "ShowRecommendations": False,
+        "miles": 0,
+        "useFastDistance": False,
+        "sort": [{"isDescending": False, "isGeoSort": False, "sortField": "AuctionDateTime"}],
+        "clientDateTimeInUtc": "03/27/2026 01:18:00 PM",
+        "currentPage": 1,
+        "returnAllIDs": False,
+        "point": {"latitude": 0, "longitude": 0},
+        "skipCaching": False,
+        "roughGeoSearch": False,
+        "includeReasoning": False,
+        "IsSearchTimedAuction": False,
+        "searches": [
+            {"facets": [{"group": "Make", "value": "Ford"}]},
+            {"facets": [{"group": "Model", "value": "MUSTANG MACH-E"}]},
+            {"longRanges": [{"name": "Year", "from": 2025, "to": 2027}]},
+            {"facets": [{"group": "DriveLineType", "value": "All-Wheel Drive"}]},
+            {"facets": [{"group": "SaleDocument", "value": "Salvage"}]},
+            {"facets": [{"group": "FuelTypeDesc", "value": "Electric"}]},
+            {"facets": [{"group": "StartsDesc", "value": "Run & Drive"}]},
+        ],
+        "includeLikeWords": True,
+        "created": "03/27/2026 01:18:00 PM",
+    }
+
+
+def test_search_request_builds_iaai_payload_from_catalog_filters() -> None:
+    request = SearchRequest(
+        providers=["iaai"],
+        make_filter='lot_make_desc:"FORD" OR manufacturer_make_desc:"FORD"',
+        model_filter='lot_model_desc:"MUSTANG MACH-E" OR manufacturer_model_desc:"MUSTANG MACH-E"',
+    )
+
+    payload = request.to_provider_payload("iaai", now=datetime(2026, 3, 27, 13, 18, tzinfo=timezone.utc))
+
+    assert payload["searches"] == [
+        {"facets": [{"group": "Make", "value": "Ford"}]},
+        {"facets": [{"group": "Model", "value": "MUSTANG MACH-E"}]},
+    ]
 
 
 def test_search_request_builds_structured_filters_payload() -> None:

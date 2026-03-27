@@ -32,10 +32,27 @@ def build_iaai_lot_url(provider_lot_id: str) -> str:
 
 
 def extract_search_vehicles(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    vehicles = payload.get("vehicles")
-    if not isinstance(vehicles, list):
-        raise ValueError("IAAI search payload is missing 'vehicles'.")
-    return [item for item in vehicles if isinstance(item, dict)]
+    for container in (payload, payload.get("result")):
+        if not isinstance(container, dict):
+            continue
+        vehicles = container.get("vehicles")
+        if isinstance(vehicles, list):
+            return [item for item in vehicles if isinstance(item, dict)]
+        results = container.get("results")
+        if not isinstance(results, list):
+            continue
+        extracted: list[dict[str, Any]] = []
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            candidate = item.get("data") if isinstance(item.get("data"), dict) else item
+            if not isinstance(candidate, dict):
+                continue
+            if any(field_name in candidate for field_name in ("id", "inventoryId", "itemId", "stockNumber", "make", "model")):
+                extracted.append(candidate)
+        if extracted:
+            return extracted
+    raise ValueError("IAAI search payload is missing 'vehicles'.")
 
 
 def extract_search_total(payload: dict[str, Any]) -> int:
@@ -72,7 +89,7 @@ def normalize_search_results(payload: list[dict[str, Any]]) -> list[AuctionSearc
                 provider_lot_id=provider_lot_id,
                 lot_key=None,
                 lot_number=lot_number,
-                title=normalize_text(first_present(item, "description", "itemDescription", "title")) or "Unknown lot",
+                title=build_search_result_title(item) or "Unknown lot",
                 url=build_iaai_lot_url(provider_lot_id),
                 thumbnail_url=normalize_text(first_present(item, "vehiclePrimaryImageUrl", "thumbnailUrl")),
                 location=location or normalize_text(first_present(item, "market")),
@@ -91,6 +108,25 @@ def normalize_search_results(payload: list[dict[str, Any]]) -> list[AuctionSearc
             )
         )
     return results
+
+
+def build_search_result_title(payload: dict[str, Any]) -> Optional[str]:
+    return normalize_text(
+        first_present(payload, "yearMakeModelSeries", "yearMakeModel", "description", "itemDescription")
+        or compose_search_title_from_parts(payload)
+        or first_present(payload, "title", "saleDocument")
+    )
+
+
+def compose_search_title_from_parts(payload: dict[str, Any]) -> Optional[str]:
+    title_parts = [
+        normalize_text(first_present(payload, "year")),
+        normalize_text(first_present(payload, "make")),
+        normalize_text(first_present(payload, "model")),
+        normalize_text(first_present(payload, "series", "seriesName")),
+    ]
+    composed = " ".join(part for part in title_parts if part and part != "-")
+    return composed or None
 
 
 def normalize_lot_details_payload(payload: dict[str, Any]) -> AuctionLotSnapshot:

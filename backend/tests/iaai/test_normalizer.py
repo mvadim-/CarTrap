@@ -8,7 +8,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-from cartrap.modules.iaai_provider.normalizer import normalize_lot_details_payload, normalize_search_results
+from cartrap.modules.iaai_provider.normalizer import (
+    extract_search_vehicles,
+    normalize_lot_details_payload,
+    normalize_search_results,
+)
 
 
 def test_normalize_search_results_maps_iaai_fields_into_shared_contract() -> None:
@@ -37,6 +41,43 @@ def test_normalize_search_results_maps_iaai_fields_into_shared_contract() -> Non
     assert results[0].lot_number == "STK-44"
     assert results[0].lot_key == "iaai:99112233"
     assert results[0].status == "live"
+
+
+def test_normalize_search_results_prefers_vehicle_identity_title_over_sale_document() -> None:
+    payload = {
+        "totalCount": 1,
+        "results": [
+            {
+                "data": {
+                    "id": "45107325~US",
+                    "itemId": "62993275",
+                    "stockNumber": "44610371",
+                    "year": "2025",
+                    "make": "FORD",
+                    "model": "MUSTANG MACH-E",
+                    "series": "GT",
+                    "title": "CLEAR-PA",
+                    "saleDocument": "Clear",
+                    "auctionDateTime": "2026-03-26T17:00:00+00:00",
+                    "vehiclePrimaryImageUrl": "https://vis.iaai.com/resizer?imageKeys=45107325~SID~I1&width=400&height=300",
+                    "odoValue": "2728",
+                    "currency": "USD",
+                    "branchName": "Electric Vehicle Auctions",
+                    "city": "Rancho Cordova",
+                    "state": "CA",
+                    "market": "IAA United States",
+                }
+            }
+        ],
+    }
+
+    results = normalize_search_results(extract_search_vehicles(payload))
+
+    assert len(results) == 1
+    assert results[0].provider_lot_id == "45107325~US"
+    assert results[0].lot_number == "44610371"
+    assert results[0].title == "2025 FORD MUSTANG MACH-E GT"
+    assert results[0].lot_key == "iaai:45107325~US"
 
 
 def test_normalize_lot_details_extracts_images_and_status() -> None:
