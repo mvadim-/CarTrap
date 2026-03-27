@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 
 import cartrap.app as app_module
 from cartrap.config import Settings
+from cartrap.modules.auction_domain.models import AuctionSearchResult
 from cartrap.modules.copart_provider.client import (
     CopartConnectorExecutionResult,
     CopartConnectorBootstrapResult,
@@ -349,6 +350,65 @@ def test_search_fetches_all_pages_from_num_found(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["total_results"] == 21
     assert len(response.json()["results"]) == 3
+
+
+def test_search_sums_total_results_across_multiple_providers() -> None:
+    class MultiProviderPage:
+        def __init__(self, results: list[AuctionSearchResult], num_found: int) -> None:
+            self.results = results
+            self.num_found = num_found
+
+    class MultiProvider:
+        def __init__(self, results: list[AuctionSearchResult], num_found: int) -> None:
+            self._results = results
+            self._num_found = num_found
+
+        def search_lots(self, payload: dict) -> MultiProviderPage:
+            del payload
+            return MultiProviderPage(self._results, self._num_found)
+
+        def close(self) -> None:
+            return None
+
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test_multi_provider_totals"]
+    service = SearchService(
+        database,
+        provider_factories={
+            "copart": lambda: MultiProvider(
+                [
+                    AuctionSearchResult(
+                        provider="copart",
+                        provider_lot_id="12345678",
+                        lot_number="12345678",
+                        title="2025 FORD MUSTANG MACH-E PREMIUM",
+                        url="https://www.copart.com/lot/12345678",
+                        status="upcoming",
+                        raw_status="Upcoming",
+                    )
+                ],
+                120,
+            ),
+            "iaai": lambda: MultiProvider(
+                [
+                    AuctionSearchResult(
+                        provider="iaai",
+                        provider_lot_id="45107325~US",
+                        lot_number="44610371",
+                        title="2025 FORD MUSTANG MACH-E GT",
+                        url="https://www.iaai.com/VehicleDetail/45107325~US",
+                        status="upcoming",
+                        raw_status="upcoming",
+                    )
+                ],
+                35,
+            ),
+        },
+    )
+
+    response = service.search({"id": "user-1"}, SearchRequest(providers=["copart", "iaai"], make="Ford"))
+
+    assert response["total_results"] == 155
+    assert len(response["results"]) == 2
 
 
 def test_search_catalog_endpoint_returns_seeded_catalog(client: TestClient) -> None:

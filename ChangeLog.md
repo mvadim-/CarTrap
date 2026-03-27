@@ -852,3 +852,9 @@
 - Оновлено `backend/src/cartrap/modules/iaai_provider/normalizer.py`: IAAI search result normalizer тепер підтримує і flat `vehicles[]`, і authenticated `results[].data` payload shapes, а `title` будується з `year/make/model/series`, щоб API більше не показував `CLEAR-*` / `SALVAGE-*` замість реальної машини.
 - Оновлено `backend/tests/{search/test_search_api.py,iaai/test_normalizer.py}`: додано regression coverage для native IAAI search payload builder, fallback parsing catalog filters і auth-style search response normalization з vehicle title `2025 FORD MUSTANG MACH-E GT`.
 - Verification: `./.venv/bin/pytest backend/tests/search/test_search_api.py backend/tests/iaai/test_normalizer.py` -> `32 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime).
+
+## [2026-03-27 13:39] Fix multi-provider total result aggregation
+- Оновлено `backend/src/cartrap/modules/search/service.py`: multi-provider `total_results` більше не рахується через `max(...)`; тепер backend сумує `num_found` по кожному успішному provider, тому одночасний пошук по Copart + IAAI повертає повний count замість фактично лише більшого з двох значень.
+- У тому ж сервісі синхронізовано single-provider error detail у `fetch_result_count()`, щоб background poll зберігав provider-specific повідомлення на кшталт `Failed to fetch search results from Copart.` замість generic тексту.
+- Оновлено `backend/tests/search/test_search_api.py`: додано regression coverage для multi-provider search, яка перевіряє `120 + 35 -> total_results=155`.
+- Verification: `./.venv/bin/pytest backend/tests/search/test_search_api.py backend/tests/search/test_saved_search_monitoring.py` -> `34 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime).

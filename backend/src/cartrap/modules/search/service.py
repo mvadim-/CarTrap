@@ -112,7 +112,7 @@ class SearchService:
                         page_request["pageNumber"] = page_number
                         next_page = provider_client.search_lots(page_request)
                         provider_results.extend(next_page.results)
-                reported_total_results = max(reported_total_results, int(getattr(page, "num_found", len(provider_results)) or 0))
+                reported_total_results += int(getattr(page, "num_found", len(provider_results)) or 0)
                 for item in provider_results:
                     serialized = self.serialize_result(item)
                     results_by_lot_key[serialized["lot_key"]] = serialized
@@ -804,7 +804,7 @@ class SearchService:
             logger.exception("Search result-count fetch failed for source_request=%s", source_request)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to fetch search results.",
+                detail=self._default_provider_failure_message(provider_name),
             ) from exc
         finally:
             provider.close()
