@@ -37,6 +37,7 @@ type SearchPayload = {
 };
 
 type Props = {
+  isMobileLayout: boolean;
   catalog: SearchCatalog | null;
   isLoadingCatalog: boolean;
   catalogError: string | null;
@@ -266,6 +267,7 @@ function getBlockedSavedSearchActionLabel(diagnostics: ProviderConnectionDiagnos
 }
 
 export function SearchPanel({
+  isMobileLayout,
   catalog,
   isLoadingCatalog,
   catalogError,
@@ -317,6 +319,7 @@ export function SearchPanel({
   const [quickFilter, setQuickFilter] = useState<SavedSearchQuickFilter>("all");
   const [openSavedSearchMenuId, setOpenSavedSearchMenuId] = useState<string | null>(null);
   const [highlightedSavedSearchId, setHighlightedSavedSearchId] = useState<string | null>(null);
+  const [isSectionCollapsed, setIsSectionCollapsed] = useState(false);
   const [searchModal, setSearchModal] = useState<SearchModalState>({
     isOpen: false,
     mode: "manual",
@@ -682,9 +685,16 @@ export function SearchPanel({
     })
     .filter((item) => filterMatchesSavedSearch(item, quickFilter));
   const hasVisibleSavedSearches = visibleSavedSearches.length > 0;
+  const isSectionContentVisible = !isMobileLayout || !isSectionCollapsed;
 
   const makeOptions: SearchableOption[] = filteredMakes.map((item) => ({ slug: item.slug, name: item.name }));
   const modelOptions: SearchableOption[] = filteredModels.map((item) => ({ slug: item.slug, name: item.name }));
+
+  useEffect(() => {
+    if (!isMobileLayout) {
+      setIsSectionCollapsed(false);
+    }
+  }, [isMobileLayout]);
 
   async function handleAddCurrentResultToWatchlist(result: SearchResult) {
     await onAddFromSearch({
@@ -724,242 +734,262 @@ export function SearchPanel({
               Open any saved search to see results quickly, then check for updates when you need them.
             </p>
           </div>
-          <button
-            type="button"
-            className="ghost-button search-panel__new-search-button"
-            onClick={onOpenManualSearch}
-            disabled={areSelectedProvidersBlocked}
-          >
-            New Search
-          </button>
-        </div>
-
-        {areSelectedProvidersBlocked && searchDisabledReason ? (
-          <AsyncStatus tone="neutral" compact message={searchDisabledReason} className="panel-status" />
-        ) : null}
-
-        {savedSearchNotice ? (
-          <AsyncStatus tone="success" compact message={savedSearchNotice} className="panel-status" />
-        ) : null}
-        {savedSearchError ? (
-          <AsyncStatus tone="error" title="Couldn't update saved searches" message={savedSearchError} className="panel-status" />
-        ) : null}
-
-        <div className="saved-search-inbox-toolbar" aria-label="Saved search filters">
-          <button
-            type="button"
-            className={`saved-search-filter-chip${quickFilter === "all" ? " is-active" : ""}`}
-            aria-pressed={quickFilter === "all"}
-            onClick={() => setQuickFilter("all")}
-          >
-            All
-            <span aria-hidden="true">{quickFilterCounts.all}</span>
-          </button>
-          <button
-            type="button"
-            className={`saved-search-filter-chip${quickFilter === "new" ? " is-active" : ""}`}
-            aria-pressed={quickFilter === "new"}
-            onClick={() => setQuickFilter("new")}
-          >
-            New
-            <span aria-hidden="true">{quickFilterCounts.new}</span>
-          </button>
-          <button
-            type="button"
-            className={`saved-search-filter-chip${quickFilter === "needs-refresh" ? " is-active" : ""}`}
-            aria-pressed={quickFilter === "needs-refresh"}
-            onClick={() => setQuickFilter("needs-refresh")}
-          >
-            Needs attention
-            <span aria-hidden="true">{quickFilterCounts["needs-refresh"]}</span>
-          </button>
-        </div>
-
-        {isLoadingSavedSearches && savedSearches.length === 0 ? (
-          <AsyncStatus
-            progress="spinner"
-            title="Loading saved searches"
-            message="Getting your saved searches ready."
-            className="panel-status"
-          />
-        ) : null}
-
-        {savedSearchesError ? (
-          <AsyncStatus
-            tone="error"
-            title="Couldn't load saved searches"
-            message={savedSearchesError}
-            action={
-              <button type="button" className="ghost-button" onClick={() => void onRetrySavedSearches()}>
-                Try again
+          <div className="panel-header__actions">
+            <button
+              type="button"
+              className="ghost-button search-panel__new-search-button"
+              onClick={onOpenManualSearch}
+              disabled={areSelectedProvidersBlocked}
+            >
+              New Search
+            </button>
+            {isMobileLayout ? (
+              <button
+                type="button"
+                className="ghost-button ghost-button--quiet panel-collapse-toggle"
+                aria-controls="saved-searches-panel-content"
+                aria-expanded={isSectionContentVisible}
+                aria-label={`${isSectionContentVisible ? "Collapse" : "Expand"} Saved Searches`}
+                onClick={() => setIsSectionCollapsed((current) => !current)}
+              >
+                {isSectionContentVisible ? "Hide section" : "Show section"}
               </button>
-            }
-            className="panel-status"
-          />
-        ) : null}
+            ) : null}
+          </div>
+        </div>
+        {isSectionContentVisible ? (
+          <>
+            {areSelectedProvidersBlocked && searchDisabledReason ? (
+              <AsyncStatus tone="neutral" compact message={searchDisabledReason} className="panel-status" />
+            ) : null}
 
-        <div className="result-list saved-search-inbox">
-          {!isLoadingSavedSearches && savedSearches.length === 0 && !savedSearchesError ? (
-            <div className="saved-search-empty-state">
-              <p className="saved-search-empty-state__title">You don't have any saved searches yet.</p>
-              <p className="muted">
-                Run a search and save it if you want to keep an eye on new matches.
-              </p>
-              <button type="button" onClick={onOpenManualSearch} disabled={areSelectedProvidersBlocked}>
-                New Search
-              </button>
-            </div>
-          ) : null}
+            {savedSearchNotice ? (
+              <AsyncStatus tone="success" compact message={savedSearchNotice} className="panel-status" />
+            ) : null}
+            {savedSearchError ? (
+              <AsyncStatus tone="error" title="Couldn't update saved searches" message={savedSearchError} className="panel-status" />
+            ) : null}
 
-          {!savedSearchesError && savedSearches.length > 0 && !hasVisibleSavedSearches ? (
-            <div className="saved-search-empty-state saved-search-empty-state--filtered">
-              <p className="saved-search-empty-state__title">Nothing matches this filter.</p>
-              <p className="muted">Choose another filter or create a new saved search.</p>
-              <div className="saved-search-empty-state__actions">
-                <button type="button" className="ghost-button" onClick={() => setQuickFilter("all")}>
-                  Show all
+            <div id="saved-searches-panel-content">
+              <div className="saved-search-inbox-toolbar" aria-label="Saved search filters">
+                <button
+                  type="button"
+                  className={`saved-search-filter-chip${quickFilter === "all" ? " is-active" : ""}`}
+                  aria-pressed={quickFilter === "all"}
+                  onClick={() => setQuickFilter("all")}
+                >
+                  All
+                  <span aria-hidden="true">{quickFilterCounts.all}</span>
                 </button>
-                <button type="button" onClick={onOpenManualSearch} disabled={areSelectedProvidersBlocked}>
-                  New Search
+                <button
+                  type="button"
+                  className={`saved-search-filter-chip${quickFilter === "new" ? " is-active" : ""}`}
+                  aria-pressed={quickFilter === "new"}
+                  onClick={() => setQuickFilter("new")}
+                >
+                  New
+                  <span aria-hidden="true">{quickFilterCounts.new}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`saved-search-filter-chip${quickFilter === "needs-refresh" ? " is-active" : ""}`}
+                  aria-pressed={quickFilter === "needs-refresh"}
+                  onClick={() => setQuickFilter("needs-refresh")}
+                >
+                  Needs attention
+                  <span aria-hidden="true">{quickFilterCounts["needs-refresh"]}</span>
+                </button>
+              </div>
+
+              {isLoadingSavedSearches && savedSearches.length === 0 ? (
+                <AsyncStatus
+                  progress="spinner"
+                  title="Loading saved searches"
+                  message="Getting your saved searches ready."
+                  className="panel-status"
+                />
+              ) : null}
+
+              {savedSearchesError ? (
+                <AsyncStatus
+                  tone="error"
+                  title="Couldn't load saved searches"
+                  message={savedSearchesError}
+                  action={
+                    <button type="button" className="ghost-button" onClick={() => void onRetrySavedSearches()}>
+                      Try again
+                    </button>
+                  }
+                  className="panel-status"
+                />
+              ) : null}
+
+              <div className="result-list saved-search-inbox">
+                {!isLoadingSavedSearches && savedSearches.length === 0 && !savedSearchesError ? (
+                  <div className="saved-search-empty-state">
+                    <p className="saved-search-empty-state__title">You don't have any saved searches yet.</p>
+                    <p className="muted">
+                      Run a search and save it if you want to keep an eye on new matches.
+                    </p>
+                    <button type="button" onClick={onOpenManualSearch} disabled={areSelectedProvidersBlocked}>
+                      New Search
+                    </button>
+                  </div>
+                ) : null}
+
+                {!savedSearchesError && savedSearches.length > 0 && !hasVisibleSavedSearches ? (
+                  <div className="saved-search-empty-state saved-search-empty-state--filtered">
+                    <p className="saved-search-empty-state__title">Nothing matches this filter.</p>
+                    <p className="muted">Choose another filter or create a new saved search.</p>
+                    <div className="saved-search-empty-state__actions">
+                      <button type="button" className="ghost-button" onClick={() => setQuickFilter("all")}>
+                        Show all
+                      </button>
+                      <button type="button" onClick={onOpenManualSearch} disabled={areSelectedProvidersBlocked}>
+                        New Search
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {visibleSavedSearches.map((item) => {
+                  const isMenuOpen = openSavedSearchMenuId === item.id;
+                  const isHighlighted = highlightedSavedSearchId === item.id;
+                  const reliability = getSavedSearchReliability(item, refreshingSavedSearchId);
+                  const savedSearchDiagnostics = getSavedSearchConnectionDiagnostics(item);
+                  const blockedSavedSearchDiagnostics = savedSearchDiagnostics.filter((diagnostic) => diagnostic.status !== "ready");
+                  const allSavedSearchDiagnosticsBlocked =
+                    savedSearchDiagnostics.length > 0 &&
+                    savedSearchDiagnostics.every((diagnostic) => diagnostic.status !== "ready");
+
+                  return (
+                    <article
+                      key={item.id}
+                      className={`result-card saved-search-card${isHighlighted ? " saved-search-card--highlighted" : ""}${reliability.needsAttention ? " saved-search-card--attention" : ""}`}
+                    >
+                      <div className="saved-search-card__body">
+                        <div className="saved-search-card__header">
+                          <button
+                            type="button"
+                            className="saved-search-card__title-button"
+                            onClick={() => void handleRunSavedSearch(item)}
+                            disabled={openingSavedSearchId === item.id}
+                            aria-busy={openingSavedSearchId === item.id}
+                          >
+                            <div className="saved-search-card__title-block">
+                              <strong>{item.label}</strong>
+                              <p className="saved-search-card__criteria">{formatSavedSearchCriteriaSummary(item)}</p>
+                            </div>
+                            <span className="saved-search-card__open-label">
+                              {openingSavedSearchId === item.id ? "Opening..." : "Open results"}
+                            </span>
+                            <span className="sr-only">{buildSavedSearchTitleButtonLabel(item)}</span>
+                          </button>
+                          <div className="saved-search-card__header-badges">
+                            {isHighlighted ? <span className="saved-search-card__saved-badge">Just saved</span> : null}
+                            {item.new_count > 0 ? <span className="new-badge">{item.new_count} NEW</span> : null}
+                          </div>
+                        </div>
+
+                        <p className="saved-search-card__filters">Extra filters: {formatSavedSearchFilterSummary(item)}</p>
+
+                        <div className="saved-search-card__reliability">
+                          <span className={`status-pill status-pill--${reliability.tone}`}>{reliability.label}</span>
+                          <p className="saved-search-card__reliability-copy">{reliability.detail}</p>
+                        </div>
+                        {blockedSavedSearchDiagnostics.map((diagnostic) => (
+                          <AsyncStatus
+                            key={`${item.id}-${diagnostic.provider}`}
+                            tone="neutral"
+                            compact
+                            message={diagnostic.message}
+                            className="panel-status"
+                          />
+                        ))}
+
+                        <dl className="saved-search-card__metrics">
+                          <div className="saved-search-card__metric">
+                            <dt className="detail-label">Results</dt>
+                            <dd className="detail-value">{formatLotCount(item.cached_result_count ?? item.result_count)}</dd>
+                          </div>
+                          <div className="saved-search-card__metric">
+                            <dt className="detail-label">Update urgency</dt>
+                            <dd className="detail-value">{formatPriorityLabel(item.refresh_state.priority_class)}</dd>
+                          </div>
+                        </dl>
+                      </div>
+
+                      <div className="saved-search-card__actions">
+                        <button
+                          type="button"
+                          className="ghost-button saved-search-card__menu-trigger"
+                          data-saved-search-menu-trigger="true"
+                          aria-expanded={isMenuOpen}
+                          aria-haspopup="menu"
+                          aria-label={`More actions for ${item.label}`}
+                          onClick={() => setOpenSavedSearchMenuId((current) => (current === item.id ? null : item.id))}
+                        >
+                          More
+                        </button>
+
+                        {isMenuOpen ? (
+                          <div className="saved-search-actions-menu" role="menu" data-saved-search-menu="true">
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="saved-search-actions-menu__item"
+                              onClick={() => void handleRefreshSavedSearchFromList(item)}
+                              disabled={refreshingSavedSearchId === item.id || allSavedSearchDiagnosticsBlocked}
+                            >
+                              {refreshingSavedSearchId === item.id
+                                ? "Updating..."
+                                : allSavedSearchDiagnosticsBlocked
+                                  ? getBlockedSavedSearchActionLabel(blockedSavedSearchDiagnostics)
+                                  : "Check for updates"}
+                            </button>
+                            {(item.external_links.length > 0 ? item.external_links : item.external_url ? [{ provider: "copart", label: "Open URL", url: item.external_url }] : []).map((link) => (
+                              <a
+                                key={`${item.id}-${link.provider}-${link.url}`}
+                                role="menuitem"
+                                className="saved-search-actions-menu__item"
+                                href={link.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={() => setOpenSavedSearchMenuId(null)}
+                              >
+                                {item.external_links.length > 0 ? `Open ${link.label}` : String(link.label)}
+                              </a>
+                            ))}
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="saved-search-actions-menu__item saved-search-actions-menu__item--danger"
+                              onClick={() => void handleDeleteSavedSearch(item.id)}
+                              disabled={deletingSavedSearchId === item.id}
+                            >
+                              {deletingSavedSearchId === item.id ? "Deleting..." : "Delete"}
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <div className="search-panel__sticky-cta">
+                <button
+                  type="button"
+                  className="search-panel__sticky-button"
+                  onClick={onOpenManualSearch}
+                  disabled={areSelectedProvidersBlocked}
+                >
+                  {areSelectedProvidersBlocked ? "Reconnect account" : "New Search"}
                 </button>
               </div>
             </div>
-          ) : null}
-
-          {visibleSavedSearches.map((item) => {
-            const isMenuOpen = openSavedSearchMenuId === item.id;
-            const isHighlighted = highlightedSavedSearchId === item.id;
-            const reliability = getSavedSearchReliability(item, refreshingSavedSearchId);
-            const savedSearchDiagnostics = getSavedSearchConnectionDiagnostics(item);
-            const blockedSavedSearchDiagnostics = savedSearchDiagnostics.filter((diagnostic) => diagnostic.status !== "ready");
-            const allSavedSearchDiagnosticsBlocked =
-              savedSearchDiagnostics.length > 0 && savedSearchDiagnostics.every((diagnostic) => diagnostic.status !== "ready");
-
-            return (
-              <article
-                key={item.id}
-                className={`result-card saved-search-card${isHighlighted ? " saved-search-card--highlighted" : ""}${reliability.needsAttention ? " saved-search-card--attention" : ""}`}
-              >
-                <div className="saved-search-card__body">
-                  <div className="saved-search-card__header">
-                    <button
-                      type="button"
-                      className="saved-search-card__title-button"
-                      onClick={() => void handleRunSavedSearch(item)}
-                      disabled={openingSavedSearchId === item.id}
-                      aria-busy={openingSavedSearchId === item.id}
-                    >
-                      <div className="saved-search-card__title-block">
-                        <strong>{item.label}</strong>
-                        <p className="saved-search-card__criteria">{formatSavedSearchCriteriaSummary(item)}</p>
-                      </div>
-                      <span className="saved-search-card__open-label">
-                        {openingSavedSearchId === item.id ? "Opening..." : "Open results"}
-                      </span>
-                      <span className="sr-only">{buildSavedSearchTitleButtonLabel(item)}</span>
-                    </button>
-                    <div className="saved-search-card__header-badges">
-                      {isHighlighted ? <span className="saved-search-card__saved-badge">Just saved</span> : null}
-                      {item.new_count > 0 ? <span className="new-badge">{item.new_count} NEW</span> : null}
-                    </div>
-                  </div>
-
-                  <p className="saved-search-card__filters">Extra filters: {formatSavedSearchFilterSummary(item)}</p>
-
-                  <div className="saved-search-card__reliability">
-                    <span className={`status-pill status-pill--${reliability.tone}`}>{reliability.label}</span>
-                    <p className="saved-search-card__reliability-copy">{reliability.detail}</p>
-                  </div>
-                  {blockedSavedSearchDiagnostics.map((diagnostic) => (
-                      <AsyncStatus
-                        key={`${item.id}-${diagnostic.provider}`}
-                        tone="neutral"
-                        compact
-                        message={diagnostic.message}
-                        className="panel-status"
-                      />
-                    ))}
-
-                  <dl className="saved-search-card__metrics">
-                    <div className="saved-search-card__metric">
-                      <dt className="detail-label">Results</dt>
-                      <dd className="detail-value">{formatLotCount(item.cached_result_count ?? item.result_count)}</dd>
-                    </div>
-                    <div className="saved-search-card__metric">
-                      <dt className="detail-label">Update urgency</dt>
-                      <dd className="detail-value">{formatPriorityLabel(item.refresh_state.priority_class)}</dd>
-                    </div>
-                  </dl>
-                </div>
-
-                <div className="saved-search-card__actions">
-                  <button
-                    type="button"
-                    className="ghost-button saved-search-card__menu-trigger"
-                    data-saved-search-menu-trigger="true"
-                    aria-expanded={isMenuOpen}
-                    aria-haspopup="menu"
-                    aria-label={`More actions for ${item.label}`}
-                    onClick={() => setOpenSavedSearchMenuId((current) => (current === item.id ? null : item.id))}
-                  >
-                    More
-                  </button>
-
-                  {isMenuOpen ? (
-                    <div className="saved-search-actions-menu" role="menu" data-saved-search-menu="true">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="saved-search-actions-menu__item"
-                        onClick={() => void handleRefreshSavedSearchFromList(item)}
-                        disabled={refreshingSavedSearchId === item.id || allSavedSearchDiagnosticsBlocked}
-                      >
-                        {refreshingSavedSearchId === item.id
-                          ? "Updating..."
-                          : allSavedSearchDiagnosticsBlocked
-                            ? getBlockedSavedSearchActionLabel(blockedSavedSearchDiagnostics)
-                            : "Check for updates"}
-                      </button>
-                      {(item.external_links.length > 0 ? item.external_links : item.external_url ? [{ provider: "copart", label: "Open URL", url: item.external_url }] : []).map((link) => (
-                        <a
-                          key={`${item.id}-${link.provider}-${link.url}`}
-                          role="menuitem"
-                          className="saved-search-actions-menu__item"
-                          href={link.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={() => setOpenSavedSearchMenuId(null)}
-                        >
-                          {item.external_links.length > 0 ? `Open ${link.label}` : String(link.label)}
-                        </a>
-                      ))}
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="saved-search-actions-menu__item saved-search-actions-menu__item--danger"
-                        onClick={() => void handleDeleteSavedSearch(item.id)}
-                        disabled={deletingSavedSearchId === item.id}
-                      >
-                        {deletingSavedSearchId === item.id ? "Deleting..." : "Delete"}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-
-        <div className="search-panel__sticky-cta">
-          <button
-            type="button"
-            className="search-panel__sticky-button"
-            onClick={onOpenManualSearch}
-            disabled={areSelectedProvidersBlocked}
-          >
-            {areSelectedProvidersBlocked ? "Reconnect account" : "New Search"}
-          </button>
-        </div>
+          </>
+        ) : null}
       </section>
 
       <ManualSearchScreen

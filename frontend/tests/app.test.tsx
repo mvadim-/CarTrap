@@ -1047,6 +1047,31 @@ describe("CarTrap app", () => {
     expect(document.documentElement.style.overflow).toBe("hidden");
   });
 
+  it("collapses saved searches and tracked lots on mobile", async () => {
+    mockMobileViewport();
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    expect(screen.getByText(/you don't have any saved searches yet/i)).toBeTruthy();
+    expect(screen.getByLabelText(/lot or stock number/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /collapse saved searches/i }));
+    fireEvent.click(screen.getByRole("button", { name: /collapse tracked lots/i }));
+
+    expect(screen.queryByText(/you don't have any saved searches yet/i)).toBeNull();
+    expect(screen.queryByLabelText(/lot or stock number/i)).toBeNull();
+    expect(screen.queryByText(/you haven't added any lots yet/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /expand saved searches/i }));
+    fireEvent.click(screen.getByRole("button", { name: /expand tracked lots/i }));
+
+    expect(screen.getByText(/you don't have any saved searches yet/i)).toBeTruthy();
+    expect(screen.getByLabelText(/lot or stock number/i)).toBeTruthy();
+    expect(screen.getByText(/you haven't added any lots yet/i)).toBeTruthy();
+  });
+
   it("runs manual search and adds result to tracked lots", async () => {
     render(<App />);
     submitLoginForm();

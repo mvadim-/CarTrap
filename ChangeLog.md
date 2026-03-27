@@ -1,5 +1,10 @@
 # Change Log
 
+## [2026-03-27 17:27] Add collapsible Saved Searches and Tracked Lots on mobile
+- Оновлено `frontend/src/{App.tsx,styles.css}`: додано mobile-layout detection для dashboard і стилі для panel header actions / collapse toggles, щоб мобільні секції можна було згортати без впливу на desktop layout.
+- Оновлено `frontend/src/features/{search/SearchPanel.tsx,watchlist/WatchlistPanel.tsx}`: `Saved Searches` і `Tracked Lots` тепер мають mobile-only toggle-кнопки з `aria-expanded` / `aria-controls`, а їхній вміст можна сховати або повернути назад без втрати внутрішнього стану панелей.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для mobile viewport, що обидві секції коректно collapse/expand.
+
 ## [2026-03-25 17:30] Tighten IAAI bootstrap hardening plan after review
 - Переглянуто `docs/plans/20260325-iaai-gateway-bootstrap-hardening.md` проти поточного `iaai_provider`, `iaai_gateway` і `provider_connections` stack.
 - Додано в план два пропущені напрями: end-to-end correlation між AWS backend і NAS gateway для step-level діагностики та явне рішення щодо використання `client_ip` у IAAI replay flow.

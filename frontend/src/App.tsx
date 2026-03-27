@@ -137,7 +137,8 @@ const PUSH_MESSAGE_TYPE = "cartrap:push-received";
 const APP_TITLE = "CarTrap";
 const AUTO_REFRESH_INTERVAL_MS = 60_000;
 const TAB_ATTENTION_BLINK_MS = 1_000;
-const MOBILE_PULL_TO_REFRESH_MAX_WIDTH = 900;
+const MOBILE_LAYOUT_MAX_WIDTH = 900;
+const MOBILE_PULL_TO_REFRESH_MAX_WIDTH = MOBILE_LAYOUT_MAX_WIDTH;
 const PULL_TO_REFRESH_THRESHOLD = 72;
 const PULL_TO_REFRESH_MAX_OFFSET = 104;
 const OPERATIONAL_REFRESH_TARGETS: PushRefreshTarget[] = ["watchlist", "savedSearches", "liveSync"];
@@ -179,6 +180,13 @@ function getVerticalScrollOffset(): number {
     return 0;
   }
   return Math.max(window.scrollY, document.documentElement.scrollTop, document.body.scrollTop, 0);
+}
+
+function isMobileDashboardLayout(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.innerWidth <= MOBILE_LAYOUT_MAX_WIDTH;
 }
 
 function supportsMobilePullToRefresh(): boolean {
@@ -498,6 +506,7 @@ export function App() {
   const [providerConnectionsError, setProviderConnectionsError] = useState<string | null>(null);
   const [pullToRefreshOffset, setPullToRefreshOffset] = useState(0);
   const [pullToRefreshPhase, setPullToRefreshPhase] = useState<PullToRefreshPhase>("idle");
+  const [isMobileLayout, setIsMobileLayout] = useState(isMobileDashboardLayout());
   const pushRefreshTimeoutRef = useRef<number | null>(null);
   const pendingPushRefreshTargetsRef = useRef<Set<PushRefreshTarget>>(new Set());
   const watchlistRef = useRef<WatchlistItem[]>([]);
@@ -545,6 +554,18 @@ export function App() {
     return () => {
       window.removeEventListener("online", syncOnlineState);
       window.removeEventListener("offline", syncOnlineState);
+    };
+  }, []);
+
+  useEffect(() => {
+    function syncMobileLayout() {
+      setIsMobileLayout(isMobileDashboardLayout());
+    }
+
+    syncMobileLayout();
+    window.addEventListener("resize", syncMobileLayout);
+    return () => {
+      window.removeEventListener("resize", syncMobileLayout);
     };
   }, []);
 
@@ -1597,6 +1618,7 @@ export function App() {
           />
         ) : null}
         <SearchPanel
+          isMobileLayout={isMobileLayout}
           catalog={searchCatalog}
           isLoadingCatalog={dashboardLoading.searchCatalog}
           catalogError={dashboardErrors.searchCatalog}
@@ -1629,6 +1651,7 @@ export function App() {
           onAddFromSearch={handleAddFromSearch}
         />
         <WatchlistPanel
+          isMobileLayout={isMobileLayout}
           items={watchlist}
           isLoading={dashboardLoading.watchlist}
           loadError={dashboardErrors.watchlist}

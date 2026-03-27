@@ -319,6 +319,18 @@ button:focus-visible,
   gap: 1rem;
 }
 
+.panel-header__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.panel-collapse-toggle {
+  min-width: 7.25rem;
+}
+
 .auth-panel {
   max-width: 36rem;
   margin: 6rem auto;
@@ -2050,6 +2062,7 @@ button:focus-visible,
   }
 
   .search-panel__header,
+  .panel-header__actions,
   .account-menu-sheet__identity,
   .account-menu-sheet__status-header,
   .settings-section__actions,
@@ -2058,6 +2071,7 @@ button:focus-visible,
   }
 
   .dashboard-header__actions,
+  .panel-header__actions,
   .account-menu-sheet__actions button,
   .settings-section__actions button,
   .async-status__action button,
