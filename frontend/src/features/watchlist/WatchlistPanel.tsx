@@ -264,6 +264,9 @@ export function WatchlistPanel({
         <div>
           <p className="eyebrow">Watchlist</p>
           <h2>Tracked Lots</h2>
+          <p className="muted panel-header__lede">
+            Keep the lots you care about close by, then check for changes when you need them.
+          </p>
         </div>
         {isMobileLayout ? (
           <div className="panel-header__actions">

@@ -725,12 +725,16 @@ export function SearchPanel({
 
   return (
     <>
-      <section className="panel panel--search panel--operational search-panel">
+      <section
+        className={`panel panel--search panel--operational search-panel${
+          !isSectionContentVisible ? " search-panel--collapsed" : ""
+        }`}
+      >
         <div className="panel-header search-panel__header">
           <div>
             <p className="eyebrow">Inbox</p>
             <h2>Saved Searches</h2>
-            <p className="muted search-panel__lede">
+            <p className="muted panel-header__lede search-panel__lede">
               Open any saved search to see results quickly, then check for updates when you need them.
             </p>
           </div>

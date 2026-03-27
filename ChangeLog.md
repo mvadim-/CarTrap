@@ -1,5 +1,13 @@
 # Change Log
 
+## [2026-03-27 17:49] Normalize dashboard button shape and sizing
+- Оновлено `frontend/src/styles.css`: для основних CTA, ghost buttons і filter chips введено спільні control tokens (`--control-height`, `--control-radius`), вирівняно мінімальну висоту, padding і округлення, щоб кнопки в dashboard більше не виглядали як суміш круглих, овальних і різновисоких елементів.
+- Окремо на mobile прибрано зайве full-width розтягування `Menu` button у header, щоб він залишався тим самим rounded-rectangle control, що й інші дії на екрані.
+
+## [2026-03-27 17:45] Tighten mobile saved-search spacing and add watchlist lede
+- Оновлено `frontend/src/features/{search/SearchPanel.tsx,watchlist/WatchlistPanel.tsx}`: `Saved Searches` у collapsed state тепер не залишає зайвий порожній блок під action buttons, а `Tracked Lots` отримав explanatory lede під заголовком для візуальної симетрії з inbox секцією.
+- Оновлено `frontend/src/styles.css`: mobile toolbar для `All / New / Needs attention` переведено в один рядок з компактнішими chip proportions, а collapsed search panel тепер має зменшений bottom padding.
+
 ## [2026-03-27 17:40] Relax mobile header action stacking after Playwright review
 - Оновлено `frontend/src/styles.css`: прибрано агресивне mobile-правило, яке розтягувало `.panel-header__actions` у колонку на всю ширину; action buttons для `Saved Searches` і `Tracked Lots` тепер лишаються компактною inline-group на мобільному, без ламання композиції секцій.
 - Verification: Playwright mobile check проти `https://cartrapapp.pp.ua` підтвердив проблему на проді, після чого локальний frontend було перевірено в mobile viewport; `cd frontend && npm test -- app.test.tsx` -> `53 passed`, `cd frontend && npm run build` -> успішно.
