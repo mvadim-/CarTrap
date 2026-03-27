@@ -57,10 +57,10 @@ export function WatchlistPanel({
     setActionNotice(null);
     try {
       await onAddByIdentifier(manualProvider, lotNumber.trim());
-      setActionNotice(`${manualProvider === "iaai" ? "IAAI" : "Copart"} lot ${lotNumber.trim()} added.`);
+      setActionNotice(`${manualProvider === "iaai" ? "IAAI" : "Copart"} lot ${lotNumber.trim()} added to tracked lots.`);
       setLotNumber("");
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Could not add lot.");
+      setActionError(error instanceof Error ? error.message : "Couldn't add this lot.");
     }
   }
 
@@ -69,9 +69,9 @@ export function WatchlistPanel({
     setActionNotice(null);
     try {
       await onRemove(id);
-      setActionNotice("Tracked lot removed.");
+      setActionNotice("Removed from tracked lots.");
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Could not remove lot.");
+      setActionError(error instanceof Error ? error.message : "Couldn't remove this lot.");
     }
   }
 
@@ -80,9 +80,9 @@ export function WatchlistPanel({
     setActionNotice(null);
     try {
       await onRefreshItem(id);
-      setActionNotice(`Live refresh completed for ${title}.`);
+      setActionNotice(`Updated ${title}.`);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Could not refresh tracked lot.");
+      setActionError(error instanceof Error ? error.message : "Couldn't update this lot.");
     }
   }
 
@@ -218,8 +218,8 @@ export function WatchlistPanel({
       freshness: item.freshness,
       refreshState: item.refresh_state,
       isRefreshing: refreshingItemId === item.id,
-      repairPendingDetail: "Legacy lot enrichment is queued for repair.",
-      unknownDetail: "This tracked lot does not have a trusted live snapshot yet.",
+      repairPendingDetail: "We're fixing an issue with this vehicle entry.",
+      unknownDetail: "We haven't checked this vehicle yet.",
     });
   }
 
@@ -238,10 +238,10 @@ export function WatchlistPanel({
 
   function getWatchlistContextMessage(): string | null {
     if (isBrowserOffline) {
-      return "This device is offline. Live lot updates and new additions will resume after reconnecting.";
+      return "You're offline. You can still view saved info, but new updates will wait until you're back online.";
     }
     if (liveSyncStatus?.status === "degraded") {
-      return "Live provider sync is unavailable. Existing tracked data stays visible while refresh-dependent actions may fail.";
+      return "Live updates are having trouble right now. You can still view saved info, but checking for new changes may fail.";
     }
     return null;
   }
@@ -263,30 +263,30 @@ export function WatchlistPanel({
       {loadError ? (
         <AsyncStatus
           tone="error"
-          title="Tracked lots unavailable"
+          title="Couldn't load tracked lots"
           message={loadError}
           action={
             <button type="button" className="ghost-button" onClick={() => void onRetry()}>
-              Retry watchlist
+              Try again
             </button>
           }
           className="panel-status"
         />
       ) : null}
       {actionError ? (
-        <AsyncStatus tone="error" title="Watchlist action failed" message={actionError} className="panel-status" />
+        <AsyncStatus tone="error" title="Couldn't update tracked lots" message={actionError} className="panel-status" />
       ) : null}
       {actionNotice ? <AsyncStatus tone="success" compact message={actionNotice} className="panel-status" /> : null}
       <form className="watchlist-form" onSubmit={handleSubmit} aria-busy={isAddingLot}>
         <label className="watchlist-form__field">
-          Auction
+          Auction site
           <select value={manualProvider} onChange={(event) => setManualProvider(event.target.value as AuctionProvider)}>
             <option value="copart">Copart</option>
             <option value="iaai">IAAI</option>
           </select>
         </label>
         <label className="watchlist-form__field">
-          Add by Lot / Stock Number
+          Lot or stock number
           <input
             value={lotNumber}
             onChange={(event) => setLotNumber(event.target.value)}
@@ -296,20 +296,20 @@ export function WatchlistPanel({
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
-            placeholder={manualProvider === "copart" ? "99251295" : "STK-44 or inventory ID"}
+            placeholder={manualProvider === "copart" ? "99251295" : "STK-44 or item ID"}
             disabled={isManualActionBlocked}
           />
         </label>
         <button type="submit" disabled={!lotNumber.trim() || isAddingLot || isManualActionBlocked} aria-busy={isAddingLot}>
-          {isAddingLot ? "Adding..." : isManualActionBlocked ? "Provider unavailable" : "Add Lot"}
+          {isAddingLot ? "Adding..." : isManualActionBlocked ? "Reconnect account" : "Add Lot"}
         </button>
       </form>
       {isAddingLot ? (
         <AsyncStatus
           compact
           progress="bar"
-          title="Adding tracked lot"
-          message="Current watchlist items stay visible while fresh lot details load."
+          title="Adding lot"
+          message="We'll keep your current list visible while we load the details."
           className="panel-status"
         />
       ) : null}
@@ -317,12 +317,12 @@ export function WatchlistPanel({
         <AsyncStatus
           progress="spinner"
           title="Loading tracked lots"
-          message="Saved lot details and freshness metadata are loading."
+          message="Getting your saved vehicle details ready."
           className="panel-status"
         />
       ) : null}
       {!isLoading && items.length === 0 && !loadError ? (
-        <p className="muted">No lots tracked yet.</p>
+        <p className="muted">You haven't added any lots yet.</p>
       ) : (
         <div className="result-list watchlist-list">
           {items.map((item) => {
@@ -372,7 +372,7 @@ export function WatchlistPanel({
                       </div>
                     </div>
                     <div className="watchlist-card__header-badges">
-                      {item.has_unseen_update ? <span className="watchlist-card__update-badge">Updated</span> : null}
+                      {item.has_unseen_update ? <span className="watchlist-card__update-badge">Changed</span> : null}
                     </div>
                   </div>
                   <dl className="watchlist-card__signals">
@@ -396,7 +396,7 @@ export function WatchlistPanel({
                     <div className="watchlist-card__update-callout" role="status" aria-live="polite">
                       <p className="watchlist-card__update-summary">{formatLatestChangeSummary(item).join(" · ")}</p>
                       {item.latest_change_at ? (
-                        <p className="watchlist-card__update-meta">Detected {formatLastChecked(item.latest_change_at)}</p>
+                        <p className="watchlist-card__update-meta">Found {formatLastChecked(item.latest_change_at)}</p>
                       ) : null}
                     </div>
                   ) : null}
@@ -430,10 +430,10 @@ export function WatchlistPanel({
                     aria-busy={refreshingItemId === item.id}
                   >
                     {refreshingItemId === item.id
-                      ? "Refreshing..."
+                      ? "Updating..."
                       : item.connection_diagnostic && item.connection_diagnostic.status !== "ready"
-                        ? `${item.auction_label} unavailable`
-                        : "Refresh Live"}
+                        ? `Reconnect ${item.auction_label}`
+                        : "Check now"}
                   </button>
                   <button
                     type="button"

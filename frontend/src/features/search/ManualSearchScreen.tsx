@@ -181,9 +181,9 @@ export function ManualSearchScreen({
       <header className="manual-search-screen__header">
         <div>
           <p className="eyebrow">New Search</p>
-          <h3>Manual Auction Search</h3>
+          <h3>Find Vehicles</h3>
           <p className="muted manual-search-screen__lede">
-            Compose one search, fan it out across the selected auctions, and save only the result sets worth monitoring.
+            Search across the auction sites you choose, then save the searches you want to revisit later.
           </p>
         </div>
         <button type="button" className="ghost-button" onClick={onClose}>
@@ -195,26 +195,26 @@ export function ManualSearchScreen({
         {isLoadingCatalog && !catalogReady ? (
           <AsyncStatus
             progress="bar"
-            title="Loading search catalog"
-            message="Make and model options are loading for this device."
+            title="Loading vehicle list"
+            message="Makes and models are loading for this device."
             className="panel-status"
           />
         ) : null}
         {catalogError ? (
           <AsyncStatus
             tone="error"
-            title="Search catalog unavailable"
+            title="Couldn't load vehicle list"
             message={catalogError}
             action={
               <button type="button" className="ghost-button" onClick={() => void onRetryCatalog()}>
-                Retry catalog
+                Try again
               </button>
             }
             className="panel-status"
           />
         ) : null}
         {manualSearchError ? (
-          <AsyncStatus tone="error" title="Search request failed" message={manualSearchError} className="panel-status" />
+          <AsyncStatus tone="error" title="Couldn't run search" message={manualSearchError} className="panel-status" />
         ) : null}
         {isSearchingDisabled && disabledReason ? (
           <AsyncStatus tone="neutral" compact message={disabledReason} className="panel-status" />
@@ -223,13 +223,13 @@ export function ManualSearchScreen({
         <div className="search-summary-bar search-summary-bar--screen" aria-live="polite">
           <p className="search-summary-bar__headline">{summaryLabel}</p>
           <p className="search-summary-bar__meta">
-            Providers: {selectedProviders.map((provider) => provider.toUpperCase()).join(" + ")}.{" "}
-            Filters: {activeFilterLabels.length > 0 ? activeFilterLabels.join(" · ") : "No filters"}
+            Sites: {selectedProviders.map((provider) => provider.toUpperCase()).join(" + ")}.{" "}
+            Extra filters: {activeFilterLabels.length > 0 ? activeFilterLabels.join(" · ") : "None"}
           </p>
         </div>
 
         {!catalogReady && !isLoadingCatalog && !catalogError ? (
-          <p className="muted">Search catalog is unavailable.</p>
+          <p className="muted">The vehicle list is unavailable right now.</p>
         ) : null}
 
         <form className="manual-search-screen__form" onSubmit={onSubmit} aria-busy={isSearching}>
@@ -258,9 +258,9 @@ export function ManualSearchScreen({
             ariaLabel="Make"
             query={makeQuery}
             selectedLabel={selectedMakeLabel}
-            placeholder="Type make prefix"
+            placeholder="Start typing a make"
             options={makeOptions}
-            emptyMessage={catalogReady ? "No makes found." : "Loading catalog..."}
+            emptyMessage={catalogReady ? "No makes found." : "Loading vehicle list..."}
             disabled={isSearchingDisabled || isLoadingCatalog || !catalogReady}
             onQueryChange={onMakeQueryChange}
             onSelect={onMakeSelect}
@@ -270,16 +270,16 @@ export function ManualSearchScreen({
             ariaLabel="Model"
             query={modelQuery}
             selectedLabel={selectedModelLabel}
-            placeholder="Type model word"
+            placeholder="Start typing a model"
             options={modelOptions}
-            emptyMessage={selectedMakeLabel ? "No models found." : "Select make first."}
+            emptyMessage={selectedMakeLabel ? "No models found." : "Choose a make first."}
             disabled={isSearchingDisabled || isModelDisabled}
             onQueryChange={onModelQueryChange}
             onSelect={onModelSelect}
           />
           <div className="search-grid__year-group">
             <label className="search-grid__year-field">
-              Year From
+              From year
               <input
                 inputMode="numeric"
                 maxLength={4}
@@ -291,7 +291,7 @@ export function ManualSearchScreen({
               />
             </label>
             <label className="search-grid__year-field">
-              Year To
+              To year
               <input
                 inputMode="numeric"
                 maxLength={4}
@@ -320,7 +320,7 @@ export function ManualSearchScreen({
               ) : null}
             </button>
             <button type="submit" disabled={!selectedMakeLabel || isSearching || isSearchingDisabled} aria-busy={isSearching}>
-              {isSearching ? "Searching..." : isSearchingDisabled ? "Providers unavailable" : "Search Lots"}
+              {isSearching ? "Searching..." : isSearchingDisabled ? "Reconnect account" : "Search Lots"}
             </button>
           </div>
         </form>
@@ -330,7 +330,7 @@ export function ManualSearchScreen({
             compact
             progress="bar"
             title="Searching auctions"
-            message="Current filters stay in place while live provider results load."
+            message="Looking for matching vehicles. This may take a moment."
             className="panel-status"
           />
         ) : null}

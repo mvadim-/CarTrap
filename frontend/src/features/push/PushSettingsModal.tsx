@@ -57,6 +57,19 @@ function maskEndpoint(endpoint: string): string {
   return `${endpoint.slice(0, 28)}...${endpoint.slice(-18)}`;
 }
 
+function formatPermissionState(value: string): string {
+  switch (value) {
+    case "granted":
+      return "Allowed";
+    case "denied":
+      return "Blocked";
+    case "default":
+      return "Not chosen yet";
+    default:
+      return value.replace(/_/g, " ");
+  }
+}
+
 export function PushSettingsModal({
   isOpen,
   isAdmin,
@@ -120,9 +133,9 @@ export function PushSettingsModal({
     setError(null);
     try {
       await onSubscribe();
-      setMessage("Push is enabled for this device.");
+      setMessage("Notifications are turned on for this device.");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not enable push notifications.");
+      setError(caught instanceof Error ? caught.message : "Couldn't turn on notifications.");
     }
   }
 
@@ -131,9 +144,9 @@ export function PushSettingsModal({
     setError(null);
     try {
       await onUnsubscribe(endpoint);
-      setMessage("Push subscription revoked.");
+      setMessage("Notifications are turned off for this device.");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not revoke push subscription.");
+      setError(caught instanceof Error ? caught.message : "Couldn't turn off notifications.");
     }
   }
 
@@ -143,19 +156,19 @@ export function PushSettingsModal({
     try {
       const result = await onSendTestPush();
       setMessage(
-        `Push test finished: ${result.delivered} delivered, ${result.failed} failed, ${result.removed} removed.`,
+        `Test notification finished: ${result.delivered} delivered, ${result.failed} failed, ${result.removed} removed.`,
       );
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not send test push.");
+      setError(caught instanceof Error ? caught.message : "Couldn't send a test notification.");
     }
   }
 
   const serverStatus = pushConfig
     ? pushConfig.enabled && pushConfig.public_key
-      ? "Configured"
-      : pushConfig.reason ?? "Not configured"
+      ? "Ready"
+      : pushConfig.reason ?? "Not ready"
     : isLoadingPushConfig
-      ? "Loading diagnostics"
+      ? "Checking"
       : "Unknown";
 
   const modal = (
@@ -173,22 +186,22 @@ export function PushSettingsModal({
         <div className="modal-header settings-modal__header">
           <div>
             <p className="eyebrow">Settings</p>
-            <h3>User Preferences</h3>
+            <h3>Device settings</h3>
           </div>
           <button type="button" className="ghost-button" onClick={onClose}>
             Close
           </button>
         </div>
         <div className="modal-body settings-modal__body">
-          <section className="settings-section" aria-label="Connector settings">
+          <section className="settings-section" aria-label="Account settings">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Connectors</p>
-                <h3>Auction Accounts</h3>
+                <p className="eyebrow">Accounts</p>
+                <h3>Auction accounts</h3>
               </div>
             </div>
             <p className="muted settings-section__intro">
-              Manage the live Copart and IAAI sessions this device uses for search and watchlist refreshes.
+              Manage the Copart and IAAI sign-ins used for searches and tracked lots on this device.
             </p>
             <CopartConnectionCard
               connection={copartConnection}
@@ -215,11 +228,11 @@ export function PushSettingsModal({
             <div className="panel-header">
               <div>
                 <p className="eyebrow">Push</p>
-                <h3>Browser Notifications</h3>
+                <h3>Notifications</h3>
               </div>
               {isAdmin ? (
                 <button type="button" className="ghost-button" onClick={() => void onRetryDiagnostics()}>
-                  Retry Diagnostics
+                  Refresh info
                 </button>
               ) : null}
             </div>
@@ -230,8 +243,8 @@ export function PushSettingsModal({
                 title="Device offline"
                 message={
                   isAdmin
-                    ? "Reconnect to refresh diagnostics, enable push, or send a test notification."
-                    : "Reconnect to enable push or manage device subscriptions."
+                    ? "Reconnect to refresh notification info, turn on notifications, or send a test notification."
+                    : "Reconnect to turn on notifications or manage devices."
                 }
                 className="panel-status"
               />
@@ -240,8 +253,8 @@ export function PushSettingsModal({
               <AsyncStatus
                 compact
                 progress="bar"
-                title="Loading push diagnostics"
-                message="Checking browser support, server readiness, and registered device subscriptions."
+                title="Checking notification setup"
+                message="Checking browser support, server readiness, and connected devices."
                 className="panel-status"
               />
             ) : null}
@@ -249,7 +262,7 @@ export function PushSettingsModal({
               <AsyncStatus
                 compact
                 tone="error"
-                title="Push diagnostics unavailable"
+                title="Couldn't load notification setup"
                 message={pushConfigError}
                 className="panel-status"
               />
@@ -258,7 +271,7 @@ export function PushSettingsModal({
               <AsyncStatus
                 compact
                 tone="error"
-                title="Device list unavailable"
+                title="Couldn't load connected devices"
                 message={subscriptionsError}
                 className="panel-status"
               />
@@ -268,38 +281,38 @@ export function PushSettingsModal({
             <dl className="detail-grid detail-grid--single">
               <div className="detail-item">
                 <dt className="detail-label">Permission:</dt>
-                <dd className="detail-value">
-                  <span className="status-pill">{permissionState}</span>
-                </dd>
+                    <dd className="detail-value">
+                      <span className="status-pill">{formatPermissionState(permissionState)}</span>
+                    </dd>
               </div>
               <div className="detail-item">
-                <dt className="detail-label">Subscriptions:</dt>
+                <dt className="detail-label">Connected devices:</dt>
                 <dd className="detail-value">{subscriptions.length}</dd>
               </div>
               {isAdmin ? (
                 <>
                   <div className="detail-item">
                     <dt className="detail-label">Browser support:</dt>
-                    <dd className="detail-value">{supportsPush ? "Supported" : "Unsupported"}</dd>
+                    <dd className="detail-value">{supportsPush ? "Available" : "Not available"}</dd>
                   </div>
                   <div className="detail-item">
-                    <dt className="detail-label">Secure context:</dt>
+                    <dt className="detail-label">Secure connection:</dt>
                     <dd className="detail-value">{isSecureContext ? "Ready" : "HTTPS or localhost required"}</dd>
                   </div>
                   <div className="detail-item detail-item--stack">
-                    <dt className="detail-label">Server config:</dt>
+                    <dt className="detail-label">Server setup:</dt>
                     <dd className="detail-value">{serverStatus}</dd>
                   </div>
                   <div className="detail-item detail-item--stack">
-                    <dt className="detail-label">Current device:</dt>
-                    <dd className="detail-value">{currentDeviceEndpoint ? "Registered" : "Not registered here"}</dd>
+                    <dt className="detail-label">This browser:</dt>
+                    <dd className="detail-value">{currentDeviceEndpoint ? "Connected" : "Not connected yet"}</dd>
                   </div>
                 </>
               ) : null}
             </dl>
             <div className="settings-section__actions">
               <button type="button" onClick={() => void handleSubscribe()} disabled={isSubscribing} aria-busy={isSubscribing}>
-                {isSubscribing ? "Enabling..." : "Enable Push On This Device"}
+                {isSubscribing ? "Turning on..." : "Turn On Notifications"}
               </button>
               {isAdmin ? (
                 <button
@@ -309,12 +322,12 @@ export function PushSettingsModal({
                   disabled={isSendingTestPush}
                   aria-busy={isSendingTestPush}
                 >
-                  {isSendingTestPush ? "Sending Test..." : "Send Test Push"}
+                  {isSendingTestPush ? "Sending..." : "Send Test Notification"}
                 </button>
               ) : null}
             </div>
             {subscriptions.length === 0 && !isLoadingSubscriptions ? (
-              <p className="muted">No device subscriptions registered.</p>
+              <p className="muted">Notifications aren't turned on for any device yet.</p>
             ) : (
               <div className="result-list">
                 {subscriptions.map((subscription) => {
@@ -335,7 +348,7 @@ export function PushSettingsModal({
                         disabled={unsubscribingEndpoint === subscription.endpoint}
                         aria-busy={unsubscribingEndpoint === subscription.endpoint}
                       >
-                        {unsubscribingEndpoint === subscription.endpoint ? "Revoking..." : "Revoke"}
+                        {unsubscribingEndpoint === subscription.endpoint ? "Turning off..." : "Turn Off"}
                       </button>
                     </article>
                   );

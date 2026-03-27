@@ -52,19 +52,19 @@ export function AdminSearchCatalogPanel({
       {isLoading && !catalog ? (
         <AsyncStatus
           progress="spinner"
-          title="Loading catalog diagnostics"
-          message="Catalog freshness and make/model counts are loading."
+          title="Loading catalog details"
+          message="Getting make and model information ready."
           className="panel-status"
         />
       ) : null}
       {loadError ? (
         <AsyncStatus
           tone="error"
-          title="Catalog diagnostics unavailable"
+          title="Couldn't load catalog details"
           message={loadError}
           action={
             <button type="button" className="ghost-button" onClick={() => void onRetryLoad()}>
-              Retry catalog
+              Try again
             </button>
           }
           className="panel-status"
@@ -95,14 +95,14 @@ export function AdminSearchCatalogPanel({
         </div>
       </dl>
       <button type="button" onClick={() => void handleRefresh()} disabled={isRefreshing} aria-busy={isRefreshing}>
-        {isRefreshing ? "Refreshing..." : "Refresh Search Catalog"}
+        {isRefreshing ? "Refreshing..." : "Refresh Catalog"}
       </button>
       {isRefreshing ? (
         <AsyncStatus
           compact
           progress="bar"
           title="Refreshing catalog"
-          message="Existing catalog metadata stays visible until the updated snapshot returns."
+          message="Current catalog details stay visible until the updated version is ready."
           className="panel-status"
         />
       ) : null}

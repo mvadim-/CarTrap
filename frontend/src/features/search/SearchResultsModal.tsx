@@ -48,7 +48,7 @@ function formatMoney(value: number | null | undefined, currency: string) {
 
 function formatStatusLabel(status: string | null | undefined) {
   if (!status) {
-    return "Status unavailable";
+    return "Status unknown";
   }
 
   return status
@@ -69,8 +69,8 @@ function getReliabilityBadge(
     freshness,
     refreshState,
     isRefreshing: isRefreshingLive,
-    repairPendingDetail: "A compatibility repair is queued for this saved search.",
-    unknownDetail: "No successful live snapshot exists for this saved search yet.",
+    repairPendingDetail: "We're fixing an issue with this saved search.",
+    unknownDetail: "We haven't checked this saved search yet.",
   });
 }
 
@@ -314,7 +314,7 @@ export function SearchResultsModal({
   }
 
   const hasStatusPanels = isRefreshingLive || Boolean(statusMessage) || Boolean(refreshError);
-  const vehicleCountLabel = `${totalResults} ${totalResults === 1 ? "Vehicle" : "Vehicles"}`;
+  const vehicleCountLabel = `${totalResults} ${totalResults === 1 ? "result" : "results"}`;
   const reliabilityBadge = getReliabilityBadge(freshness, refreshState, isRefreshingLive);
   const blockingDiagnostics = connectionDiagnostics.filter((diagnostic) => diagnostic.status !== "ready");
   const liveRefreshBlocked = connectionDiagnostics.length > 0 && connectionDiagnostics.every((diagnostic) => diagnostic.status !== "ready");
@@ -356,7 +356,7 @@ export function SearchResultsModal({
                       disabled={isRefreshingLive || liveRefreshBlocked}
                       aria-busy={isRefreshingLive}
                     >
-                      {isRefreshingLive ? "Refreshing..." : liveRefreshBlocked ? "Providers unavailable" : "Refresh Live"}
+                      {isRefreshingLive ? "Updating..." : liveRefreshBlocked ? "Reconnect account" : "Check for updates"}
                     </button>
                   ) : null}
                   <button type="button" className="ghost-button" onClick={onClose}>
@@ -371,7 +371,7 @@ export function SearchResultsModal({
                   </div>
                   <div className="modal-filter-bar search-results-modal__meta">
                     <span className="muted">
-                      {totalResults} {totalResults === 1 ? "lot" : "lots"} found. Current result set stays reopenable until you close it.
+                  {totalResults} {totalResults === 1 ? "result" : "results"} found. These stay on screen until you close this window.
                     </span>
                   </div>
                   {reliabilityBadge ? (
@@ -395,8 +395,8 @@ export function SearchResultsModal({
                         <AsyncStatus
                           compact
                           progress="bar"
-                          title="Refreshing live results"
-                          message="Cached results stay visible while the latest provider data loads."
+                          title="Checking for updates"
+                          message="You can keep looking at the current results while we load the latest ones."
                           className="modal-status"
                         />
                       ) : null}
@@ -407,7 +407,7 @@ export function SearchResultsModal({
                         <AsyncStatus
                           compact
                           tone="error"
-                          title="Live refresh unavailable"
+                          title="Couldn't update results"
                           message={refreshError}
                           className="modal-status"
                         />
@@ -442,7 +442,7 @@ export function SearchResultsModal({
                       disabled={isRefreshingLive || liveRefreshBlocked}
                       aria-busy={isRefreshingLive}
                     >
-                      {isRefreshingLive ? "Refreshing..." : liveRefreshBlocked ? "Providers unavailable" : "Refresh Live"}
+                      {isRefreshingLive ? "Updating..." : liveRefreshBlocked ? "Reconnect account" : "Check for updates"}
                     </button>
                   ) : null}
                   <button type="button" className="ghost-button" onClick={onClose}>
@@ -452,7 +452,7 @@ export function SearchResultsModal({
               </div>
               <div className="modal-filter-bar search-results-modal__meta">
                 <span className="muted">
-                  {totalResults} {totalResults === 1 ? "lot" : "lots"} found. Current result set stays reopenable until you close it.
+                  {totalResults} {totalResults === 1 ? "result" : "results"} found. These stay on screen until you close this window.
                 </span>
               </div>
               {reliabilityBadge ? (
@@ -476,8 +476,8 @@ export function SearchResultsModal({
                     <AsyncStatus
                       compact
                       progress="bar"
-                      title="Refreshing live results"
-                      message="Cached results stay visible while the latest provider data loads."
+                      title="Checking for updates"
+                      message="You can keep looking at the current results while we load the latest ones."
                       className="modal-status"
                     />
                   ) : null}
@@ -488,7 +488,7 @@ export function SearchResultsModal({
                     <AsyncStatus
                       compact
                       tone="error"
-                      title="Live refresh unavailable"
+                      title="Couldn't update results"
                       message={refreshError}
                       className="modal-status"
                     />
@@ -500,7 +500,7 @@ export function SearchResultsModal({
         </div>
         <div ref={modalBodyRef} className="modal-body result-list search-results-modal__body" onScroll={handleBodyScroll}>
           {results.length === 0 ? (
-            <p className="muted search-results-modal__empty">No lots matched this search.</p>
+            <p className="muted search-results-modal__empty">No results found for this search.</p>
           ) : (
             <>
               <div className="search-results-modal__count" aria-live="polite">
@@ -537,8 +537,8 @@ export function SearchResultsModal({
                         <p className="search-result-row__meta">
                           <span className="status-pill">{result.auction_label}</span> Lot#: {result.lot_number}
                         </p>
-                        <p className="search-result-row__location">{result.location ?? "Unknown location"}</p>
-                        <p className="search-result-row__odometer">Odo: {result.odometer?.trim() || "N/A"}</p>
+                        <p className="search-result-row__location">{result.location ?? "Location not listed"}</p>
+                        <p className="search-result-row__odometer">Odometer: {result.odometer?.trim() || "Not listed"}</p>
                       </div>
                       <div className={`search-result-row__market search-result-row__market--${marketSignal.accent}`}>
                         <p className="search-result-row__market-headline">{marketSignal.headline}</p>
@@ -553,17 +553,17 @@ export function SearchResultsModal({
                         aria-busy={isAdding}
                         aria-label={
                           isAdding
-                            ? `Adding ${result.title} to watchlist`
+                            ? `Adding ${result.title} to tracked lots`
                             : isTracked
-                              ? `Already in watchlist: ${result.title}`
-                              : `Add to watchlist: ${result.title}`
+                              ? `Already in tracked lots: ${result.title}`
+                              : `Add to tracked lots: ${result.title}`
                         }
                         title={
                           isAdding
-                            ? "Adding to watchlist"
+                            ? "Adding to tracked lots"
                             : isTracked
-                              ? "Lot is already in the watchlist"
-                              : "Add to watchlist"
+                              ? "This lot is already in your tracked lots"
+                              : "Add to tracked lots"
                         }
                       >
                         {isAdding ? "..." : isTracked ? "✓" : "+"}

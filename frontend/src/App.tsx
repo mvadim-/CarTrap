@@ -363,7 +363,7 @@ function buildProviderDiagnostic(
     return {
       provider,
       status: "connection_missing",
-      message: `Connect ${label} to enable live search and watchlist refreshes.`,
+      message: `Connect ${label} in Settings to turn on live updates.`,
       connection_id: null,
       reconnect_required: false,
     };
@@ -372,7 +372,7 @@ function buildProviderDiagnostic(
     return {
       provider,
       status: "reconnect_required",
-      message: `Reconnect ${label} from Settings to restore live search and refresh actions.`,
+      message: `Sign in to ${label} again in Settings to keep live updates working.`,
       connection_id: connection.id,
       reconnect_required: true,
     };
@@ -380,7 +380,7 @@ function buildProviderDiagnostic(
   return {
     provider,
     status: "ready",
-    message: `${label} live actions are available.`,
+    message: `${label} is ready for live updates.`,
     connection_id: connection.id,
     reconnect_required: false,
   };
@@ -1069,10 +1069,10 @@ export function App() {
 
   function formatConnectivityError(actionLabel: string, fallbackMessage: string, status: LiveSyncStatus | null): string {
     if (isBrowserOffline) {
-      return `${actionLabel} is unavailable because this device is offline. Reconnect and try again.`;
+      return `${actionLabel} isn't available because this device is offline. Reconnect and try again.`;
     }
     if (isLiveSyncUnavailable(status)) {
-      return `${actionLabel} is unavailable right now because live Copart sync is offline. Cached data remains available.`;
+      return `${actionLabel} isn't available right now because live updates are having trouble. You can still view saved data.`;
     }
     return fallbackMessage;
   }
@@ -1240,7 +1240,7 @@ export function App() {
       await loadWatchlistResource(session.accessToken, { silent: true });
       throw new Error(
         formatConnectivityError(
-          "Watchlist refresh",
+          "Tracked lot update",
           toErrorMessage(caught, "Could not refresh tracked lot"),
           status,
         ),
@@ -1340,7 +1340,7 @@ export function App() {
       const status = isBrowserOffline ? liveSyncStatus : await refreshLiveSyncStatus(session.accessToken);
       throw new Error(
         formatConnectivityError(
-          "Adding a lot to the watchlist",
+          "Adding a lot to tracked lots",
           toErrorMessage(caught, "Could not add lot"),
           status,
         ),
@@ -1382,8 +1382,8 @@ export function App() {
       const status = isBrowserOffline ? liveSyncStatus : await refreshLiveSyncStatus(session.accessToken);
       throw new Error(
         formatConnectivityError(
-          "Refreshing the search catalog",
-          toErrorMessage(caught, "Could not refresh search catalog"),
+          "Refreshing the vehicle list",
+          toErrorMessage(caught, "Could not refresh the vehicle list"),
           status,
         ),
       );
@@ -1536,7 +1536,7 @@ export function App() {
       }
       return await sendPushTest(session.accessToken);
     } catch (caught) {
-      throw new Error(toErrorMessage(caught, "Could not send test push"));
+      throw new Error(toErrorMessage(caught, "Could not send a test notification"));
     } finally {
       setActionState((current) => ({ ...current, isSendingPushTest: false }));
     }
@@ -1591,8 +1591,8 @@ export function App() {
         {copartConnection?.status === "reconnect_required" || iaaiConnection?.status === "reconnect_required" ? (
           <AsyncStatus
             tone="neutral"
-            title="Connector reconnect required"
-            message="Some live search and refresh actions are blocked until you reconnect the affected provider from Settings."
+            title="Account sign-in needed"
+            message="Some searches and updates are paused until you sign in to the affected account again in Settings."
             className="dashboard-status dashboard-grid__status"
           />
         ) : null}

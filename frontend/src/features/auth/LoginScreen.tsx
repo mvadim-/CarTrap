@@ -22,11 +22,9 @@ export function LoginScreen({ error, onSubmit }: Props) {
 
   return (
     <section className="panel auth-panel">
-      <p className="eyebrow">Invite-Only Access</p>
-      <h1>Track Copart lots before the rest of the yard reacts.</h1>
-      <p className="lede">
-        Log in to manage watchlists, run manual searches, send push alerts, and coordinate auction activity.
-      </p>
+      <p className="eyebrow">Private Access</p>
+      <h1>Sign in to CarTrap</h1>
+      <p className="lede">Manage saved searches, tracked lots, and notifications from one place.</p>
       <form className="stack" onSubmit={handleSubmit}>
         <label>
           Email

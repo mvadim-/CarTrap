@@ -57,7 +57,8 @@ export function AccountMenuSheet({
   }
 
   const isAdmin = user.role === "admin";
-  const liveSyncTone = liveSyncStatus?.status === "degraded" ? "Degraded" : "Available";
+  const liveSyncTone = liveSyncStatus?.status === "degraded" ? "Needs attention" : "Working normally";
+  const liveSyncLabel = liveSyncStatus?.status === "degraded" ? "Issue" : "Working";
 
   const sheet = (
     <div className="modal-backdrop modal-backdrop--sheet" onClick={onClose}>
@@ -79,12 +80,12 @@ export function AccountMenuSheet({
         </div>
         <div className="modal-body account-menu-sheet__body">
           <section className="account-menu-sheet__card" aria-label="Signed-in account">
-            <p className="detail-label">Role</p>
+            <p className="detail-label">Access</p>
             <div className="account-menu-sheet__identity">
               <p className="account-menu-sheet__email">{user.email}</p>
               <span className="status-pill">{user.role}</span>
             </div>
-            <p className="muted">Connector access and device controls now live in Settings.</p>
+            <p className="muted">Manage connected accounts and notifications in Settings.</p>
           </section>
 
           {isAdmin ? (
@@ -92,66 +93,66 @@ export function AccountMenuSheet({
               <section className="account-menu-sheet__card" aria-label="System status">
                 <div className="account-menu-sheet__status-header">
                   <div>
-                    <p className="detail-label">System status</p>
-                    <p className="account-menu-sheet__status-value">Live sync {liveSyncTone}</p>
+                    <p className="detail-label">Live updates</p>
+                    <p className="account-menu-sheet__status-value">{liveSyncTone}</p>
                   </div>
                   <span
                     className={`status-pill${liveSyncStatus?.status === "degraded" ? " account-menu-sheet__pill--warning" : ""}`}
                   >
-                    {liveSyncStatus?.status ?? "unknown"}
+                    {liveSyncLabel}
                   </span>
                 </div>
                 <dl className="detail-grid detail-grid--single">
                   <div className="detail-item detail-item--stack">
-                    <dt className="detail-label">Last success</dt>
+                    <dt className="detail-label">Last successful update</dt>
                     <dd className="detail-value">{formatTimestamp(liveSyncStatus?.last_success_at ?? null)}</dd>
                   </div>
                   <div className="detail-item detail-item--stack">
-                    <dt className="detail-label">Last failure</dt>
+                    <dt className="detail-label">Last problem</dt>
                     <dd className="detail-value">{formatTimestamp(liveSyncStatus?.last_failure_at ?? null)}</dd>
                   </div>
                   {liveSyncStatus?.last_error_message ? (
                     <div className="detail-item detail-item--stack">
-                      <dt className="detail-label">Latest error</dt>
+                      <dt className="detail-label">What went wrong</dt>
                       <dd className="detail-value">{liveSyncStatus.last_error_message}</dd>
                     </div>
                   ) : null}
                 </dl>
               </section>
 
-              <section className="account-menu-sheet__card" aria-label="Refresh diagnostics">
+              <section className="account-menu-sheet__card" aria-label="Items to review">
                 <div className="account-menu-sheet__status-header">
                   <div>
-                    <p className="detail-label">Refresh diagnostics</p>
+                    <p className="detail-label">Items to review</p>
                     <p className="account-menu-sheet__status-value">
-                      {diagnostics.total_attention > 0 ? `${diagnostics.total_attention} items need attention` : "No refresh backlog"}
+                      {diagnostics.total_attention > 0 ? `${diagnostics.total_attention} items may need attention` : "Everything looks good"}
                     </p>
                   </div>
                   <span className={`status-pill${diagnostics.total_attention > 0 ? " account-menu-sheet__pill--warning" : ""}`}>
-                    backlog
+                    Review
                   </span>
                 </div>
                 <dl className="detail-grid detail-grid--single">
                   <div className="detail-item detail-item--stack">
                     <dt className="detail-label">Saved searches</dt>
                     <dd className="detail-value">
-                      {diagnostics.saved_searches.attention} attention, {diagnostics.saved_searches.cached} cached,{" "}
-                      {diagnostics.saved_searches.outdated} outdated
+                      {diagnostics.saved_searches.attention} may need attention, {diagnostics.saved_searches.cached} using saved
+                      data, {diagnostics.saved_searches.outdated} out of date
                     </dd>
                   </div>
                   <div className="detail-item detail-item--stack">
                     <dt className="detail-label">Tracked lots</dt>
                     <dd className="detail-value">
-                      {diagnostics.watchlist.attention} attention, {diagnostics.watchlist.cached} cached,{" "}
-                      {diagnostics.watchlist.outdated} outdated
+                      {diagnostics.watchlist.attention} may need attention, {diagnostics.watchlist.cached} using saved data,{" "}
+                      {diagnostics.watchlist.outdated} out of date
                     </dd>
                   </div>
                   <div className="detail-item detail-item--stack">
-                    <dt className="detail-label">Retry backlog</dt>
+                    <dt className="detail-label">Update queue</dt>
                     <dd className="detail-value">
-                      {diagnostics.saved_searches.retryable_failures + diagnostics.watchlist.retryable_failures} retryable
-                      , {diagnostics.saved_searches.repair_pending + diagnostics.watchlist.repair_pending} repair pending,{" "}
-                      {diagnostics.saved_searches.failed + diagnostics.watchlist.failed} failed
+                      {diagnostics.saved_searches.retryable_failures + diagnostics.watchlist.retryable_failures} retrying,{" "}
+                      {diagnostics.saved_searches.repair_pending + diagnostics.watchlist.repair_pending} being fixed,{" "}
+                      {diagnostics.saved_searches.failed + diagnostics.watchlist.failed} need manual help
                     </dd>
                   </div>
                 </dl>

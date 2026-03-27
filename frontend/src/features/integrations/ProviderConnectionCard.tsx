@@ -34,13 +34,13 @@ function getConnectionLabel(status: ProviderConnection["status"] | "missing"): s
     case "connected":
       return "Connected";
     case "expiring":
-      return "Expiring soon";
+      return "Expires soon";
     case "reconnect_required":
-      return "Reconnect required";
+      return "Sign in again";
     case "disconnected":
       return "Disconnected";
     case "error":
-      return "Error";
+      return "Needs attention";
     default:
       return "Not connected";
   }
@@ -87,21 +87,21 @@ export function ProviderConnectionCard({
 
   const helperText = useMemo(() => {
     if (isBrowserOffline) {
-      return "Connector changes are unavailable while this device is offline.";
+      return "You can view saved account details, but changes are unavailable while this device is offline.";
     }
     if (!connection) {
-      return `Connect your ${providerLabel} account to enable live search and watchlist refreshes.`;
+      return `Connect your ${providerLabel} account so search and tracked lots can update.`;
     }
     if (requiresReconnect) {
-      return `${providerLabel} rejected the stored session. Re-enter credentials to restore live actions.`;
+      return `Please sign in to ${providerLabel} again so updates can continue.`;
     }
     if (connection.status === "expiring") {
-      return "This session still works, but it is close to expiry.";
+      return "This account is still connected, but you'll likely need to sign in again soon.";
     }
     if (connection.status === "connected") {
-      return `Live ${providerLabel} requests use the stored connector bundle. Password is not kept after bootstrap.`;
+      return `${providerLabel} is connected and ready for searches and tracked lots.`;
     }
-    return "Connector metadata is available, but live access is not ready.";
+    return "This account needs attention before live updates can continue.";
   }, [connection, isBrowserOffline, providerLabel, requiresReconnect]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -115,14 +115,14 @@ export function ProviderConnectionCard({
     try {
       if (requiresReconnect) {
         await onReconnect({ username: username.trim(), password: password.trim() });
-        setNotice(`${providerLabel} connection restored.`);
+        setNotice(`${providerLabel} account is connected again.`);
       } else {
         await onConnect({ username: username.trim(), password: password.trim() });
-        setNotice(`${providerLabel} connected.`);
+        setNotice(`${providerLabel} account connected.`);
       }
       setPassword("");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `Could not update ${providerLabel} connection.`);
+      setError(caught instanceof Error ? caught.message : `Couldn't update your ${providerLabel} account.`);
     } finally {
       setIsSubmitting(false);
     }
@@ -135,19 +135,19 @@ export function ProviderConnectionCard({
     try {
       await onDisconnect();
       setPassword("");
-      setNotice(`${providerLabel} connection removed.`);
+      setNotice(`${providerLabel} account disconnected.`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `Could not disconnect ${providerLabel}.`);
+      setError(caught instanceof Error ? caught.message : `Couldn't disconnect your ${providerLabel} account.`);
     } finally {
       setIsDisconnecting(false);
     }
   }
 
   return (
-    <section className="settings-section settings-section--card provider-connection-card" aria-label={`${providerLabel} connection`}>
+    <section className="settings-section settings-section--card provider-connection-card" aria-label={`${providerLabel} account`}>
       <div className="provider-connection-card__header">
         <div>
-          <p className="detail-label">{providerLabel} connector</p>
+          <p className="detail-label">{providerLabel} account</p>
           <p className="provider-connection-card__status-value">{helperText}</p>
         </div>
         <span className={`status-pill status-pill--${getConnectionTone(status)}`}>{getConnectionLabel(status)}</span>
@@ -159,19 +159,19 @@ export function ProviderConnectionCard({
 
       <dl className="detail-grid detail-grid--single">
         <div className="detail-item detail-item--stack">
-          <dt className="detail-label">Account</dt>
+          <dt className="detail-label">Account email</dt>
           <dd className="detail-value">{connection?.account_label ?? "Not connected"}</dd>
         </div>
         <div className="detail-item detail-item--stack">
-          <dt className="detail-label">Connected since</dt>
+          <dt className="detail-label">Connected on</dt>
           <dd className="detail-value">{formatTimestamp(connection?.connected_at ?? null)}</dd>
         </div>
         <div className="detail-item detail-item--stack">
-          <dt className="detail-label">Last verified</dt>
+          <dt className="detail-label">Last checked</dt>
           <dd className="detail-value">{formatTimestamp(connection?.last_verified_at ?? null)}</dd>
         </div>
         <div className="detail-item detail-item--stack">
-          <dt className="detail-label">Session expiry</dt>
+          <dt className="detail-label">Expires</dt>
           <dd className="detail-value">{formatTimestamp(connection?.expires_at ?? null)}</dd>
         </div>
       </dl>

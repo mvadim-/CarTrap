@@ -26,14 +26,14 @@ export function DashboardShell({
   const isPullToRefreshVisible = isPullToRefreshEnabled && pullToRefreshPhase !== "idle";
   const pullToRefreshTitle =
     pullToRefreshPhase === "refreshing"
-      ? "Refreshing dashboard"
+      ? "Updating"
       : pullToRefreshPhase === "armed"
-        ? "Release to refresh"
-        : "Pull to refresh";
+        ? "Release to update"
+        : "Pull to update";
   const pullToRefreshMessage =
     pullToRefreshPhase === "refreshing"
-      ? "Reloading watchlist, saved searches, and live-sync status."
-      : "Drag down from the top edge to reload dashboard data.";
+      ? "Reloading saved searches, tracked lots, and connection status."
+      : "Drag down from the top edge to refresh the page.";
 
   return (
     <>
@@ -58,7 +58,7 @@ export function DashboardShell({
           <div className="dashboard-header__copy">
             <p className="eyebrow">Auction Control</p>
             <h1>CarTrap dispatch board</h1>
-            <p className="lede">Saved-search inbox, watchlist urgency, and settings-backed device controls.</p>
+            <p className="lede">Track searches, saved lots, and connected accounts in one place.</p>
           </div>
           <div className="dashboard-header__actions">
             <button
@@ -77,8 +77,8 @@ export function DashboardShell({
           <AsyncStatus
             compact
             progress="bar"
-            title="Updating dashboard"
-            message="Loading the latest saved searches, watchlist, and device diagnostics."
+            title="Loading your dashboard"
+            message="Getting saved searches, tracked lots, and device settings ready."
             className="dashboard-status"
           />
         ) : null}
@@ -88,12 +88,11 @@ export function DashboardShell({
               <p className="eyebrow">Connection</p>
               <h2>This device is offline.</h2>
               <p className="lede live-sync-banner__copy">
-                Previously loaded data stays visible, but live search, watchlist updates, and push diagnostics need a
-                connection.
+                You can still see saved information, but new searches and updates need an internet connection.
               </p>
             </div>
             <div className="live-sync-banner__meta">
-              <p>Reconnect to resume live Copart actions and retry failed requests.</p>
+              <p>Reconnect to keep your searches, tracked lots, and alerts up to date.</p>
             </div>
           </section>
         ) : null}

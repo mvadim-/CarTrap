@@ -138,7 +138,7 @@ function matchesModelQuery(name: string, query: string): boolean {
 
 function formatLotCount(count: number | null | undefined): string {
   if (count === null || count === undefined) {
-    return "Lot count unavailable";
+    return "Result count unavailable";
   }
   return `${count} ${count === 1 ? "lot" : "lots"} found`;
 }
@@ -151,14 +151,27 @@ function formatYearRange(from?: string, to?: string): string {
 }
 
 function formatFilterSummary(labels: string[]): string {
-  return labels.length > 0 ? labels.join(" · ") : "No filters";
+  return labels.length > 0 ? labels.join(" · ") : "No extra filters";
 }
 
 function formatPriorityLabel(value: string | null): string {
   if (!value) {
     return "—";
   }
-  return value.replace(/_/g, " ");
+  switch (value) {
+    case "auction_imminent":
+      return "Sale coming up";
+    case "recently_changed":
+      return "Recent changes";
+    case "manual":
+      return "Just updated";
+    case "normal":
+      return "Normal";
+    case "cold":
+      return "Low";
+    default:
+      return value.replace(/_/g, " ");
+  }
 }
 
 function isSavedSearchNeedingRefresh(item: SavedSearch): boolean {
@@ -229,8 +242,8 @@ function getSavedSearchReliability(item: SavedSearch, refreshingSavedSearchId: s
     freshness: item.freshness,
     refreshState: item.refresh_state,
     isRefreshing: refreshingSavedSearchId === item.id,
-    repairPendingDetail: "Compatibility repair is queued for this saved search.",
-    unknownDetail: "This saved search does not have a trusted live snapshot yet.",
+    repairPendingDetail: "We're fixing an issue with this saved search.",
+    unknownDetail: "We haven't checked this saved search yet.",
   });
 }
 
@@ -247,9 +260,9 @@ function getSavedSearchConnectionDiagnostics(item: SavedSearch): ProviderConnect
 
 function getBlockedSavedSearchActionLabel(diagnostics: ProviderConnectionDiagnostic[]): string {
   if (diagnostics.length === 1) {
-    return diagnostics[0].provider === "iaai" ? "IAAI action blocked" : "Copart action blocked";
+    return diagnostics[0].provider === "iaai" ? "Reconnect IAAI" : "Reconnect Copart";
   }
-  return "Providers unavailable";
+  return "Reconnect account";
 }
 
 export function SearchPanel({
@@ -327,8 +340,8 @@ export function SearchPanel({
     selectedProviderDiagnostics.every((diagnostic) => diagnostic.status !== "ready");
   const searchDisabledReason = areSelectedProvidersBlocked
     ? selectedProviders.length === 1
-      ? selectedProviderDiagnostics[0]?.message ?? "Selected provider is unavailable."
-      : "Selected providers are unavailable. Reconnect at least one provider from Settings."
+      ? selectedProviderDiagnostics[0]?.message ?? "This auction site isn't available right now."
+      : "The selected auction sites need attention. Reconnect at least one account in Settings."
     : null;
 
   const filteredMakes = catalog?.makes.filter((item) => matchesMakeQuery(item.name, makeQuery)) ?? [];
@@ -553,7 +566,7 @@ export function SearchPanel({
 
     try {
       const response = await onViewSavedSearch(savedSearch.id);
-      openSavedSearchModal(response, "Opened cached results. Live refresh stays available from this modal.");
+      openSavedSearchModal(response, "Showing saved results. You can check for updates from here.");
     } catch (error) {
       setSearchModal((current) => ({ ...current, isOpen: false }));
       setIsResultsOpen(false);
@@ -574,7 +587,7 @@ export function SearchPanel({
         totalResults: searchModal.totalResults,
       });
       setQuickFilter("all");
-      setSavedSearchNotice("Saved search ready.");
+      setSavedSearchNotice("Saved search created.");
       setHighlightedSavedSearchId(saved.id);
       setSearchModal((current) => ({
         ...current,
@@ -596,8 +609,8 @@ export function SearchPanel({
     setSavedSearchError(null);
     try {
       const response = await onRefreshSavedSearch(searchModal.savedSearchId);
-      openSavedSearchModal(response, "Live refresh completed. Cached results are now up to date.");
-      setSavedSearchNotice(`Live refresh completed for ${response.saved_search.label}.`);
+      openSavedSearchModal(response, "Results updated. You're now seeing the latest saved copy.");
+      setSavedSearchNotice(`Updated ${response.saved_search.label}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not refresh saved search.";
       setSearchModal((current) => ({
@@ -615,8 +628,8 @@ export function SearchPanel({
     setOpenSavedSearchMenuId(null);
     try {
       const response = await onRefreshSavedSearch(savedSearch.id);
-      openSavedSearchModal(response, "Live refresh completed. Cached results are now up to date.");
-      setSavedSearchNotice(`Live refresh completed for ${response.saved_search.label}.`);
+      openSavedSearchModal(response, "Results updated. You're now seeing the latest saved copy.");
+      setSavedSearchNotice(`Updated ${response.saved_search.label}.`);
     } catch (error) {
       setSavedSearchError(error instanceof Error ? error.message : "Could not refresh saved search.");
     }
@@ -683,7 +696,7 @@ export function SearchPanel({
     });
     setSearchModal((current) => ({
       ...current,
-      statusMessage: `Added ${result.title} to watchlist.`,
+      statusMessage: `Added ${result.title} to your tracked lots.`,
       refreshError: null,
     }));
   }
@@ -708,8 +721,7 @@ export function SearchPanel({
             <p className="eyebrow">Inbox</p>
             <h2>Saved Searches</h2>
             <p className="muted search-panel__lede">
-              Open cached results from the title block, surface new matches first, and push manual search into a
-              secondary flow.
+              Open any saved search to see results quickly, then check for updates when you need them.
             </p>
           </div>
           <button
@@ -730,7 +742,7 @@ export function SearchPanel({
           <AsyncStatus tone="success" compact message={savedSearchNotice} className="panel-status" />
         ) : null}
         {savedSearchError ? (
-          <AsyncStatus tone="error" title="Saved-search action failed" message={savedSearchError} className="panel-status" />
+          <AsyncStatus tone="error" title="Couldn't update saved searches" message={savedSearchError} className="panel-status" />
         ) : null}
 
         <div className="saved-search-inbox-toolbar" aria-label="Saved search filters">
@@ -758,7 +770,7 @@ export function SearchPanel({
             aria-pressed={quickFilter === "needs-refresh"}
             onClick={() => setQuickFilter("needs-refresh")}
           >
-            Needs refresh
+            Needs attention
             <span aria-hidden="true">{quickFilterCounts["needs-refresh"]}</span>
           </button>
         </div>
@@ -767,7 +779,7 @@ export function SearchPanel({
           <AsyncStatus
             progress="spinner"
             title="Loading saved searches"
-            message="Your cached search runs and freshness metadata are loading."
+            message="Getting your saved searches ready."
             className="panel-status"
           />
         ) : null}
@@ -775,11 +787,11 @@ export function SearchPanel({
         {savedSearchesError ? (
           <AsyncStatus
             tone="error"
-            title="Saved searches unavailable"
+            title="Couldn't load saved searches"
             message={savedSearchesError}
             action={
               <button type="button" className="ghost-button" onClick={() => void onRetrySavedSearches()}>
-                Retry saved searches
+                Try again
               </button>
             }
             className="panel-status"
@@ -789,9 +801,9 @@ export function SearchPanel({
         <div className="result-list saved-search-inbox">
           {!isLoadingSavedSearches && savedSearches.length === 0 && !savedSearchesError ? (
             <div className="saved-search-empty-state">
-              <p className="saved-search-empty-state__title">No saved searches yet.</p>
+              <p className="saved-search-empty-state__title">You don't have any saved searches yet.</p>
               <p className="muted">
-                Start with a manual search, then save the result set you want this inbox to monitor.
+                Run a search and save it if you want to keep an eye on new matches.
               </p>
               <button type="button" onClick={onOpenManualSearch} disabled={areSelectedProvidersBlocked}>
                 New Search
@@ -801,8 +813,8 @@ export function SearchPanel({
 
           {!savedSearchesError && savedSearches.length > 0 && !hasVisibleSavedSearches ? (
             <div className="saved-search-empty-state saved-search-empty-state--filtered">
-              <p className="saved-search-empty-state__title">No searches match this filter.</p>
-              <p className="muted">Try another inbox filter or start a new saved search.</p>
+              <p className="saved-search-empty-state__title">Nothing matches this filter.</p>
+              <p className="muted">Choose another filter or create a new saved search.</p>
               <div className="saved-search-empty-state__actions">
                 <button type="button" className="ghost-button" onClick={() => setQuickFilter("all")}>
                   Show all
@@ -842,7 +854,7 @@ export function SearchPanel({
                         <p className="saved-search-card__criteria">{formatSavedSearchCriteriaSummary(item)}</p>
                       </div>
                       <span className="saved-search-card__open-label">
-                        {openingSavedSearchId === item.id ? "Opening..." : "Open cached results"}
+                        {openingSavedSearchId === item.id ? "Opening..." : "Open results"}
                       </span>
                       <span className="sr-only">{buildSavedSearchTitleButtonLabel(item)}</span>
                     </button>
@@ -852,7 +864,7 @@ export function SearchPanel({
                     </div>
                   </div>
 
-                  <p className="saved-search-card__filters">Filters: {formatSavedSearchFilterSummary(item)}</p>
+                  <p className="saved-search-card__filters">Extra filters: {formatSavedSearchFilterSummary(item)}</p>
 
                   <div className="saved-search-card__reliability">
                     <span className={`status-pill status-pill--${reliability.tone}`}>{reliability.label}</span>
@@ -870,11 +882,11 @@ export function SearchPanel({
 
                   <dl className="saved-search-card__metrics">
                     <div className="saved-search-card__metric">
-                      <dt className="detail-label">Matches</dt>
+                      <dt className="detail-label">Results</dt>
                       <dd className="detail-value">{formatLotCount(item.cached_result_count ?? item.result_count)}</dd>
                     </div>
                     <div className="saved-search-card__metric">
-                      <dt className="detail-label">Priority</dt>
+                      <dt className="detail-label">Update urgency</dt>
                       <dd className="detail-value">{formatPriorityLabel(item.refresh_state.priority_class)}</dd>
                     </div>
                   </dl>
@@ -903,10 +915,10 @@ export function SearchPanel({
                         disabled={refreshingSavedSearchId === item.id || allSavedSearchDiagnosticsBlocked}
                       >
                         {refreshingSavedSearchId === item.id
-                          ? "Refreshing..."
+                          ? "Updating..."
                           : allSavedSearchDiagnosticsBlocked
                             ? getBlockedSavedSearchActionLabel(blockedSavedSearchDiagnostics)
-                            : "Refresh Live"}
+                            : "Check for updates"}
                       </button>
                       {(item.external_links.length > 0 ? item.external_links : item.external_url ? [{ provider: "copart", label: "Open URL", url: item.external_url }] : []).map((link) => (
                         <a
@@ -945,7 +957,7 @@ export function SearchPanel({
             onClick={onOpenManualSearch}
             disabled={areSelectedProvidersBlocked}
           >
-            {areSelectedProvidersBlocked ? "Reconnect provider" : "New Search"}
+            {areSelectedProvidersBlocked ? "Reconnect account" : "New Search"}
           </button>
         </div>
       </section>

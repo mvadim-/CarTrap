@@ -25,7 +25,7 @@ function formatTimestamp(value: string | null | undefined, fallback = "the lates
 }
 
 function buildLastGoodSyncPrefix(syncedAt: string | null | undefined): string {
-  return syncedAt ? `Last good sync ${formatTimestamp(syncedAt)}.` : "No trusted sync yet.";
+  return syncedAt ? `Last updated ${formatTimestamp(syncedAt)}.` : "We haven't saved a trusted update yet.";
 }
 
 export function buildResourceReliability({
@@ -39,16 +39,16 @@ export function buildResourceReliability({
 
   if (isRefreshing) {
     return {
-      label: "Refreshing",
+      label: "Updating",
       tone: "refreshing",
-      detail: "Syncing live data now. Cached data stays visible while the update completes.",
+      detail: "Checking for the latest changes now. You can keep viewing the last saved info while this finishes.",
       needsAttention: false,
     };
   }
 
   if (refreshState?.status === "repair_pending") {
     return {
-      label: "Repair pending",
+      label: "Fixing",
       tone: "refreshing",
       detail: syncedAt ? `${repairPendingDetail} ${buildLastGoodSyncPrefix(syncedAt)}` : repairPendingDetail,
       needsAttention: true,
@@ -56,12 +56,12 @@ export function buildResourceReliability({
   }
 
   if (refreshState?.status === "retryable_failure") {
-    const retrySuffix = ` Retry after ${formatTimestamp(refreshState.next_retry_at, "the next worker run")}.`;
+    const retrySuffix = ` We'll try again ${formatTimestamp(refreshState.next_retry_at, "soon")}.`;
     return {
-      label: "Degraded",
+      label: "Update delayed",
       tone: "warning",
       detail: refreshState.error_message
-        ? `${refreshState.error_message} ${buildLastGoodSyncPrefix(syncedAt)}${retrySuffix}`.trim()
+        ? `We couldn't update this just now: ${refreshState.error_message}. ${buildLastGoodSyncPrefix(syncedAt)}${retrySuffix}`.trim()
         : `${buildLastGoodSyncPrefix(syncedAt)}${retrySuffix}`,
       needsAttention: true,
     };
@@ -69,11 +69,11 @@ export function buildResourceReliability({
 
   if (refreshState?.status === "failed") {
     return {
-      label: "Outdated",
+      label: "Needs attention",
       tone: "danger",
       detail: refreshState.error_message
-        ? `${refreshState.error_message} ${buildLastGoodSyncPrefix(syncedAt)} Manual attention is required.`.trim()
-        : `${buildLastGoodSyncPrefix(syncedAt)} Manual attention is required.`,
+        ? `We couldn't update this: ${refreshState.error_message}. ${buildLastGoodSyncPrefix(syncedAt)} Please try again or reconnect the account.`.trim()
+        : `${buildLastGoodSyncPrefix(syncedAt)} Please try again or reconnect the account.`,
       needsAttention: true,
     };
   }
@@ -81,41 +81,41 @@ export function buildResourceReliability({
   switch (freshness?.status) {
     case "live":
       return {
-        label: "Live",
+        label: "Up to date",
         tone: "live",
-        detail: `Synced ${formatTimestamp(syncedAt)}.`,
+        detail: `Updated ${formatTimestamp(syncedAt)}.`,
         needsAttention: false,
       };
     case "cached":
       return {
-        label: "Cached",
+        label: "Saved data",
         tone: "cached",
         detail: freshness.degraded_reason
-          ? `Using synced data from ${formatTimestamp(syncedAt)}. Live sync degraded: ${freshness.degraded_reason}`
-          : `Using synced data from ${formatTimestamp(syncedAt)}.`,
+          ? `Showing the last saved update from ${formatTimestamp(syncedAt)}. Live updates are having trouble: ${freshness.degraded_reason}`
+          : `Showing the last saved update from ${formatTimestamp(syncedAt)}.`,
         needsAttention: false,
       };
     case "degraded":
       return {
-        label: "Degraded",
+        label: "May be out of date",
         tone: "warning",
         detail: freshness.degraded_reason
           ? syncedAt
-            ? `Live sync degraded: ${freshness.degraded_reason} Last good sync ${formatTimestamp(syncedAt)}.`
-            : `Live sync degraded: ${freshness.degraded_reason}`
-          : "Live sync is degraded. Cached data remains available.",
+            ? `Live updates are having trouble: ${freshness.degraded_reason}. Last updated ${formatTimestamp(syncedAt)}.`
+            : `Live updates are having trouble: ${freshness.degraded_reason}.`
+          : "Live updates are having trouble right now. You can still view the last saved data.",
         needsAttention: true,
       };
     case "outdated":
       return {
-        label: "Outdated",
+        label: "Needs refresh",
         tone: "danger",
-        detail: `${buildLastGoodSyncPrefix(syncedAt)} Refresh Live to update now.`,
+        detail: `${buildLastGoodSyncPrefix(syncedAt)} Use "Check for updates" to refresh it now.`,
         needsAttention: true,
       };
     default:
       return {
-        label: "Awaiting sync",
+        label: "Not checked yet",
         tone: "warning",
         detail: unknownDetail,
         needsAttention: true,

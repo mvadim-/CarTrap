@@ -874,3 +874,10 @@
 ## [2026-03-27 14:05] Collapse expiring IAAI sessions in connector settings
 - Оновлено `frontend/src/features/integrations/ProviderConnectionCard.tsx`: compact connector state тепер застосовується не лише до `connected`, а й до `expiring`, бо така сесія ще придатна для live actions і не повинна показувати login form до явного `Disconnect`.
 - Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для IAAI-конектора зі статусом `expiring`, щоб у `Settings` лишалися тільки статус, метадані та `Disconnect`.
+
+## [2026-03-27 14:35] Rewrite UI copy in more user-friendly language
+- Оновлено `frontend/src/features/{shared/resourceReliability.ts,search/{SearchPanel.tsx,SearchResultsModal.tsx,ManualSearchScreen.tsx},watchlist/WatchlistPanel.tsx,integrations/ProviderConnectionCard.tsx,push/PushSettingsModal.tsx,dashboard/{AccountMenuSheet.tsx,DashboardShell.tsx},auth/LoginScreen.tsx,admin/AdminSearchCatalogPanel.tsx}` і `frontend/src/App.tsx`: прибрано внутрішній технічний жаргон (`priority_class`, `cached`, `degraded`, `refresh diagnostics`, `reconnect required`, `live sync` тощо) з user-facing copy, замінено на простіші пояснення й дружніші назви кнопок/статусів.
+- Окремо замаплено внутрішні urgency values на зрозумілі підписи в saved searches: `auction_imminent -> Sale coming up`, `recently_changed -> Recent changes`, `normal -> Normal`, `cold -> Low`, `manual -> Just updated`, а лейбл `Priority` замінено на `Update urgency`.
+- Додатково дочищено copy у `Settings`/connections: `connector` замінено на `account`, push permission status тепер відображається як `Allowed/Blocked/Not chosen yet`, а non-admin/admin notification labels синхронізовано з більш людяними текстами.
+- Оновлено `frontend/tests/app.test.tsx` під новий copy-pass, щоб regression suite перевіряв фінальні user-facing тексти замість старого технічного wording.
+- Verification: `cd frontend && npm test && npm run build` -> `52 passed`, production build успішний.

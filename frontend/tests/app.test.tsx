@@ -1014,7 +1014,7 @@ describe("CarTrap app", () => {
     expect(screen.getByText(/generate invites/i)).toBeTruthy();
     expect(searchHeading.compareDocumentPosition(invitesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(watchlistHeading.compareDocumentPosition(invitesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByText(/no saved searches yet/i)).toBeTruthy();
+    expect(screen.getByText(/you don't have any saved searches yet/i)).toBeTruthy();
   });
 
   it("renders invite acceptance screen from hash route", () => {
@@ -1047,13 +1047,13 @@ describe("CarTrap app", () => {
     expect(document.documentElement.style.overflow).toBe("hidden");
   });
 
-  it("runs manual search and adds result to watchlist", async () => {
+  it("runs manual search and adds result to tracked lots", async () => {
     render(<App />);
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
     await runDefaultManualSearch();
-    fireEvent.click(screen.getByRole("button", { name: /add to watchlist/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add to tracked lots/i }));
 
     await waitFor(() => {
       expect(screen.getAllByText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);
@@ -1061,18 +1061,18 @@ describe("CarTrap app", () => {
     const resultsDialog = screen.getByRole("dialog", { name: /search results/i });
     const lotLink = within(resultsDialog).getByRole("link", { name: /open copart lot 12345678/i });
     const trackedButton = within(resultsDialog).getByRole("button", {
-      name: /already in watchlist: 2020 toyota camry se/i,
+      name: /already in tracked lots: 2020 toyota camry se/i,
     });
     expect(lotLink.getAttribute("href")).toBe("https://www.copart.com/lot/12345678");
     expect(lotLink.getAttribute("target")).toBe("_blank");
     expect(trackedButton.getAttribute("disabled")).not.toBeNull();
-    expect(within(resultsDialog).getByText(/added 2020 toyota camry se to watchlist\./i)).toBeTruthy();
+    expect(within(resultsDialog).getByText(/added 2020 toyota camry se to your tracked lots\./i)).toBeTruthy();
     expect(screen.getByText(/Lot#: 12345678/i)).toBeTruthy();
-    expect(screen.getByText(/Odo: 12,345 ACTUAL/i)).toBeTruthy();
+    expect(screen.getByText(/Odometer: 12,345 ACTUAL/i)).toBeTruthy();
     expect(screen.getAllByAltText(/2020 TOYOTA CAMRY SE/i).length).toBeGreaterThan(1);
   });
 
-  it("supports IAAI-only manual search and adds IAAI result to watchlist", async () => {
+  it("supports IAAI-only manual search and adds IAAI result to tracked lots", async () => {
     providerConnections = [
       buildProviderConnection(),
       buildProviderConnection({
@@ -1102,7 +1102,7 @@ describe("CarTrap app", () => {
     expect(within(resultsDialog).getAllByText(/IAAI/i).length).toBeGreaterThan(0);
     expect(within(resultsDialog).getByRole("link", { name: /open iaai lot stk-44/i })).toBeTruthy();
 
-    fireEvent.click(within(resultsDialog).getByRole("button", { name: /add to watchlist: 2025 ford mustang mach-e premium/i }));
+    fireEvent.click(within(resultsDialog).getByRole("button", { name: /add to tracked lots: 2025 ford mustang mach-e premium/i }));
 
     await waitFor(() => {
       expect(screen.getAllByText(/2025 FORD MUSTANG MACH-E PREMIUM/i).length).toBeGreaterThan(1);
@@ -1199,7 +1199,7 @@ describe("CarTrap app", () => {
     await screen.findByRole("dialog", { name: /search results/i });
     expect(savedSearchViewCallCount).toBe(1);
     expect(liveSearchCallCount).toBe(1);
-    expect(screen.getAllByText(/synced/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/up to date/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/last synced/i)).toBeNull();
   });
 
@@ -1262,18 +1262,18 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    expect(screen.getByText(/^Degraded$/i)).toBeTruthy();
+    expect(screen.getByText(/^Update delayed$/i)).toBeTruthy();
     expect(screen.getByText(/gateway unavailable/i)).toBeTruthy();
-    expect(screen.getByText(/legacy lot enrichment is queued for repair/i)).toBeTruthy();
+    expect(screen.getByText(/we're fixing an issue with this vehicle entry/i)).toBeTruthy();
     expect(screen.queryByText(/^Last synced$/i)).toBeNull();
     expect(screen.queryByText(/^Last checked$/i)).toBeNull();
 
     openAccountMenu();
     await screen.findByRole("dialog", { name: /account menu/i });
-    expect(screen.getByText(/refresh diagnostics/i)).toBeTruthy();
-    expect(screen.getByText(/2 items need attention/i)).toBeTruthy();
-    expect(screen.getByText(/1 attention, 1 cached, 0 outdated/i)).toBeTruthy();
-    expect(screen.getByText(/1 attention, 0 cached, 1 outdated/i)).toBeTruthy();
+    expect(screen.getByText(/items to review/i)).toBeTruthy();
+    expect(screen.getByText(/2 items may need attention/i)).toBeTruthy();
+    expect(screen.getByText(/1 may need attention, 1 using saved data, 0 out of date/i)).toBeTruthy();
+    expect(screen.getByText(/1 may need attention, 0 using saved data, 1 out of date/i)).toBeTruthy();
   });
 
   it("refreshes a saved search from inside the cached modal", async () => {
@@ -1287,7 +1287,7 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i }));
 
     await screen.findByRole("dialog", { name: /search results/i });
-    fireEvent.click(screen.getByRole("button", { name: /refresh live/i }));
+    fireEvent.click(screen.getByRole("button", { name: /check for updates/i }));
 
     await screen.findByText(/2018 HONDA CIVIC EX/i);
     expect(savedSearchRefreshCallCount).toBe(1);
@@ -1308,11 +1308,11 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i }));
 
     await screen.findByRole("dialog", { name: /search results/i });
-    fireEvent.click(screen.getByRole("button", { name: /refresh live/i }));
+    fireEvent.click(screen.getByRole("button", { name: /check for updates/i }));
 
     expect(await screen.findAllByText(/gateway timeout/i)).toHaveLength(3);
     await waitFor(() => {
-      expect(screen.queryAllByText(/^degraded$/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryAllByText(/^update delayed$/i).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -1468,11 +1468,11 @@ describe("CarTrap app", () => {
     expect(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^fiat/i })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /needs refresh/i }));
+    fireEvent.click(screen.getByRole("button", { name: /needs attention/i }));
     expect(screen.getByRole("button", { name: /^fiat/i })).toBeTruthy();
   });
 
-  it("adds lot to watchlist by lot number", async () => {
+  it("adds lot to tracked lots by lot number", async () => {
     const localAuctionStart = formatExpectedLocalAuctionStart("2026-03-13T18:30:00Z");
     render(<App />);
     submitLoginForm();
@@ -1507,17 +1507,17 @@ describe("CarTrap app", () => {
     expect(lotLink.getAttribute("target")).toBe("_blank");
   });
 
-  it("refreshes a tracked lot live from the watchlist", async () => {
+  it("refreshes a tracked lot from the tracked lots list", async () => {
     watchlistItems = [buildTrackedLot()];
 
     render(<App />);
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.click(screen.getByRole("button", { name: /refresh live/i }));
+    fireEvent.click(screen.getByRole("button", { name: /check now/i }));
 
-    expect(await screen.findByText(/live refresh completed for 2020 toyota camry se\./i)).toBeTruthy();
-    expect(screen.getByText(/synced/i)).toBeTruthy();
+    expect(await screen.findByText(/updated 2020 toyota camry se\./i)).toBeTruthy();
+    expect(screen.getByText(/up to date/i)).toBeTruthy();
     expect(screen.queryByText(/^Last checked$/i)).toBeNull();
   });
 
@@ -1529,10 +1529,10 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.click(screen.getByRole("button", { name: /refresh live/i }));
+    fireEvent.click(screen.getByRole("button", { name: /check now/i }));
 
     expect(await screen.findAllByText(/gateway timeout/i)).toHaveLength(2);
-    expect(screen.getByText(/^Degraded$/i)).toBeTruthy();
+    expect(screen.getByText(/^Update delayed$/i)).toBeTruthy();
   });
 
   it("highlights updated tracked lots without breaking auction-date ordering", async () => {
@@ -1567,7 +1567,7 @@ describe("CarTrap app", () => {
     const watchlistCards = document.querySelectorAll(".watchlist-card");
     expect(watchlistCards[0]?.textContent).toContain("2025 FORD MUSTANG MACH-E PREMIUM");
     expect(watchlistCards[1]?.textContent).toContain("2020 TOYOTA CAMRY SE");
-    expect(screen.getByText(/^Updated$/i)).toBeTruthy();
+    expect(screen.getByText(/^Changed$/i)).toBeTruthy();
     expect(screen.getByText(/Status: On Approval -> Live/i)).toBeTruthy();
     expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
   });
@@ -1647,7 +1647,7 @@ describe("CarTrap app", () => {
     await screen.findByText(/cartrap dispatch board/i);
     openSettingsFromAccountMenu();
     await screen.findByRole("dialog", { name: /settings/i });
-    fireEvent.click(screen.getByRole("button", { name: /enable push on this device/i }));
+    fireEvent.click(screen.getByRole("button", { name: /turn on notifications/i }));
 
     expect(await screen.findByText(/push\.example\.test\/subscriptions\/device-1/i)).toBeTruthy();
     expect(subscribe).toHaveBeenCalledTimes(1);
@@ -1703,7 +1703,7 @@ describe("CarTrap app", () => {
     expect(document.body.style.position).toBe("fixed");
     expect(document.documentElement.style.overflow).toBe("hidden");
 
-    fireEvent.click(screen.getByRole("button", { name: /enable push on this device/i }));
+    fireEvent.click(screen.getByRole("button", { name: /turn on notifications/i }));
 
     expect(await screen.findByText(/^this browser$/i)).toBeTruthy();
     expect(await screen.findByText(/iphone-15-pro-max/i)).toBeTruthy();
@@ -1764,12 +1764,12 @@ describe("CarTrap app", () => {
 
     openAccountMenu();
     await screen.findByRole("dialog", { name: /account menu/i });
-    expect(screen.queryByText(/copart connector/i)).toBeNull();
+    expect(screen.queryByText(/copart account/i)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /^settings$/i }));
     await screen.findByRole("dialog", { name: /settings/i });
 
-    const getCopartSection = () => screen.getByText(/copart connector/i).closest("section")!;
+    const getCopartSection = () => screen.getAllByText(/^copart account$/i)[0]!.closest("section")!;
 
     expect(within(getCopartSection()).getByText(/copart-user@example\.com/i)).toBeTruthy();
     expect(within(getCopartSection()).queryByLabelText(/copart email/i)).toBeNull();
@@ -1801,8 +1801,8 @@ describe("CarTrap app", () => {
     openSettingsFromAccountMenu();
     await screen.findByRole("dialog", { name: /settings/i });
 
-    const iaaiSection = screen.getByText(/iaai connector/i).closest("section")!;
-    expect(within(iaaiSection).getByText(/^Expiring soon$/i)).toBeTruthy();
+    const iaaiSection = screen.getByText(/iaai account/i).closest("section")!;
+    expect(within(iaaiSection).getByText(/^Expires soon$/i)).toBeTruthy();
     expect(within(iaaiSection).queryByLabelText(/iaai email/i)).toBeNull();
     expect(within(iaaiSection).queryByLabelText(/iaai password/i)).toBeNull();
     expect(within(iaaiSection).queryByRole("button", { name: /connect iaai/i })).toBeNull();
@@ -1815,14 +1815,14 @@ describe("CarTrap app", () => {
     render(<App />);
     submitLoginForm();
 
-    await screen.findByText(/saved searches unavailable/i);
+    await screen.findByText(/couldn't load saved searches/i);
     savedSearchesShouldFail = false;
-    fireEvent.click(screen.getByRole("button", { name: /retry saved searches/i }));
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
 
     await waitFor(() => {
-      expect(screen.queryByText(/saved searches unavailable/i)).toBeNull();
+      expect(screen.queryByText(/couldn't load saved searches/i)).toBeNull();
     });
-    expect(screen.getByText(/no saved searches yet/i)).toBeTruthy();
+    expect(screen.getByText(/you don't have any saved searches yet/i)).toBeTruthy();
   });
 
   it("sends a push test from settings diagnostics", async () => {
@@ -1832,9 +1832,9 @@ describe("CarTrap app", () => {
     await screen.findByText(/cartrap dispatch board/i);
     openSettingsFromAccountMenu();
     await screen.findByRole("dialog", { name: /settings/i });
-    fireEvent.click(screen.getByRole("button", { name: /send test push/i }));
+    fireEvent.click(screen.getByRole("button", { name: /send test notification/i }));
 
-    expect(await screen.findByText(/push test finished: 1 delivered, 0 failed, 0 removed\./i)).toBeTruthy();
+    expect(await screen.findByText(/test notification finished: 1 delivered, 0 failed, 0 removed\./i)).toBeTruthy();
   });
 
   it("refreshes watchlist data after a push update message without reloading the page", async () => {
@@ -2021,7 +2021,7 @@ describe("CarTrap app", () => {
       touches: [{ clientY: 180 }],
     });
 
-    expect(screen.getByText(/release to refresh/i)).toBeTruthy();
+    expect(screen.getByText(/release to update/i)).toBeTruthy();
 
     fireEvent.touchEnd(window);
 
@@ -2031,7 +2031,7 @@ describe("CarTrap app", () => {
       expect(systemStatusCallCount).toBeGreaterThan(initialSystemStatusLoads);
     });
     await waitFor(() => {
-      expect(screen.queryByText(/refreshing dashboard/i)).toBeNull();
+      expect(screen.queryByText(/reloading saved searches, tracked lots, and connection status\./i)).toBeNull();
     });
   });
 
@@ -2079,17 +2079,17 @@ describe("CarTrap app", () => {
     await screen.findByText(/cartrap dispatch board/i);
     openAccountMenu();
     await screen.findByRole("dialog", { name: /account menu/i });
-    expect(screen.queryByText(/system status/i)).toBeNull();
+    expect(screen.queryByText(/^live updates$/i)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
     openSettingsFromAccountMenu();
     await screen.findByRole("dialog", { name: /settings/i });
 
-    expect(screen.queryByRole("button", { name: /send test push/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /retry diagnostics/i })).toBeNull();
-    expect(screen.queryByText(/server config:/i)).toBeNull();
-    expect(screen.queryByText(/current device:/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /send test notification/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /refresh info/i })).toBeNull();
+    expect(screen.queryByText(/server setup:/i)).toBeNull();
+    expect(screen.queryByText(/this browser:/i)).toBeNull();
     expect(screen.getByText(/permission:/i)).toBeTruthy();
-    expect(screen.getByText(/subscriptions:/i)).toBeTruthy();
+    expect(screen.getByText(/connected devices:/i)).toBeTruthy();
   });
 
   it("renders fallbacks for missing tracked lot detail fields", async () => {
@@ -2157,13 +2157,13 @@ describe("CarTrap app", () => {
     render(<App />);
     submitLoginForm();
 
-    expect((await screen.findAllByText(/connect copart to enable live search and watchlist refreshes\./i)).length).toBe(2);
-    const newSearchButtons = screen.getAllByRole("button", { name: /new search|copart required/i });
+    expect((await screen.findAllByText(/connect copart in settings to turn on live updates\./i)).length).toBe(2);
+    const newSearchButtons = screen.getAllByRole("button", { name: /new search|reconnect account/i });
     expect((newSearchButtons[0] as HTMLButtonElement).disabled).toBe(true);
 
     openSettingsFromAccountMenu();
     await screen.findByRole("dialog", { name: /settings/i });
-    const connectionCard = screen.getByText(/copart connector/i).closest("section")!;
+    const connectionCard = screen.getByText(/copart account/i).closest("section")!;
     expect(within(connectionCard).getByText(/^Disconnected$/i)).toBeTruthy();
     fireEvent.change(within(connectionCard).getByLabelText(/copart email/i), {
       target: { value: "buyer@example.com" },
@@ -2173,11 +2173,11 @@ describe("CarTrap app", () => {
     });
     fireEvent.click(within(connectionCard).getByRole("button", { name: /connect copart/i }));
 
-    expect(await within(connectionCard).findByText(/copart connected\./i)).toBeTruthy();
+    expect(await within(connectionCard).findByText(/copart account connected\./i)).toBeTruthy();
     await waitFor(() => {
       expect(within(connectionCard).getByText(/^Connected$/i)).toBeTruthy();
     });
-    expect(screen.queryByText(/connect copart to enable live search and watchlist refreshes\./i)).toBeNull();
+    expect(screen.queryByText(/connect copart in settings to turn on live updates\./i)).toBeNull();
     expect((screen.getAllByRole("button", { name: /^new search$/i })[0] as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -2199,20 +2199,20 @@ describe("CarTrap app", () => {
     render(<App />);
     submitLoginForm();
 
-    expect(await screen.findByText(/connector reconnect required/i)).toBeTruthy();
+    expect(await screen.findByText(/account sign-in needed/i)).toBeTruthy();
 
     openSettingsFromAccountMenu();
     await screen.findByRole("dialog", { name: /settings/i });
-    const connectionCard = screen.getByText(/copart connector/i).closest("section")!;
-    expect(within(connectionCard).getByText(/^Reconnect required$/i)).toBeTruthy();
+    const connectionCard = screen.getByText(/copart account/i).closest("section")!;
+    expect(within(connectionCard).getByText(/^Sign in again$/i)).toBeTruthy();
     fireEvent.change(within(connectionCard).getByLabelText(/copart password/i), {
       target: { value: "secret123" },
     });
     fireEvent.click(within(connectionCard).getByRole("button", { name: /reconnect copart/i }));
 
-    expect(await within(connectionCard).findByText(/copart connection restored\./i)).toBeTruthy();
+    expect(await within(connectionCard).findByText(/copart account is connected again\./i)).toBeTruthy();
     await waitFor(() => {
-      expect(screen.queryByText(/connector reconnect required/i)).toBeNull();
+      expect(screen.queryByText(/account sign-in needed/i)).toBeNull();
     });
     expect(within(connectionCard).getByText(/^Connected$/i)).toBeTruthy();
   });
@@ -2224,15 +2224,15 @@ describe("CarTrap app", () => {
     await screen.findByText(/cartrap dispatch board/i);
     openSettingsFromAccountMenu();
     await screen.findByRole("dialog", { name: /settings/i });
-    const connectionCard = screen.getByText(/copart connector/i).closest("section")!;
+    const connectionCard = screen.getByText(/copart account/i).closest("section")!;
     fireEvent.click(within(connectionCard).getByRole("button", { name: /^disconnect$/i }));
 
-    expect(await within(connectionCard).findByText(/copart connection removed\./i)).toBeTruthy();
+    expect(await within(connectionCard).findByText(/copart account disconnected\./i)).toBeTruthy();
     await waitFor(() => {
       expect(within(connectionCard).getByText(/^Disconnected$/i)).toBeTruthy();
     });
-    expect(screen.getAllByText(/connect copart to enable live search and watchlist refreshes\./i).length).toBe(2);
-    expect((screen.getAllByRole("button", { name: /new search|copart required/i })[0] as HTMLButtonElement).disabled).toBe(
+    expect(screen.getAllByText(/connect copart in settings to turn on live updates\./i).length).toBe(2);
+    expect((screen.getAllByRole("button", { name: /new search|reconnect account/i })[0] as HTMLButtonElement).disabled).toBe(
       true,
     );
   });
@@ -2260,10 +2260,10 @@ describe("CarTrap app", () => {
     expect(screen.getByText(/reconnect copart to refresh this tracked lot\./i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /more actions for ford mustang mach-e 2025-2027/i }));
-    const refreshSavedSearchButton = await screen.findByRole("menuitem", { name: /copart action blocked/i });
+    const refreshSavedSearchButton = await screen.findByRole("menuitem", { name: /reconnect copart/i });
     expect((refreshSavedSearchButton as HTMLButtonElement).disabled).toBe(true);
 
-    const refreshWatchlistButton = screen.getAllByRole("button", { name: /copart unavailable/i }).find((button) =>
+    const refreshWatchlistButton = screen.getAllByRole("button", { name: /reconnect copart/i }).find((button) =>
       button.className.includes("ghost-button--quiet"),
     );
     expect(refreshWatchlistButton).toBeTruthy();
@@ -2301,12 +2301,12 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    expect(screen.queryByText(/live copart sync is temporarily unavailable/i)).toBeNull();
+    expect(screen.queryByText(/live updates are temporarily unavailable/i)).toBeNull();
     openAccountMenu();
-    await screen.findByRole("dialog", { name: /account menu/i });
-    expect(screen.getByText(/system status/i)).toBeTruthy();
-    expect(screen.getByText(/live sync degraded/i)).toBeTruthy();
-    expect(screen.getByText(/gateway unavailable/i)).toBeTruthy();
+    const accountDialog = await screen.findByRole("dialog", { name: /account menu/i });
+    expect(within(accountDialog).getByText(/^Live updates$/i)).toBeTruthy();
+    expect(within(accountDialog).getByText(/^Needs attention$/i)).toBeTruthy();
+    expect(within(accountDialog).getByText(/gateway unavailable/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
 
     liveSyncStatus = buildLiveSyncStatus();
@@ -2314,7 +2314,7 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
 
     await screen.findByRole("dialog", { name: /search results/i });
-    expect(screen.queryByText(/live copart sync is temporarily unavailable/i)).toBeNull();
+    expect(screen.queryByText(/live updates are temporarily unavailable/i)).toBeNull();
   });
 
   it("shows degraded-mode message when manual search fails while live sync is offline", async () => {
@@ -2335,7 +2335,7 @@ describe("CarTrap app", () => {
 
     expect(
       await screen.findByText(
-        /search is unavailable right now because live copart sync is offline\. cached data remains available\./i,
+        /search isn't available right now because live updates are having trouble\. you can still view saved data\./i,
       ),
     ).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: /search results/i })).toBeNull();
@@ -2359,7 +2359,7 @@ describe("CarTrap app", () => {
 
     expect(
       await screen.findByText(
-        /adding a lot to the watchlist is unavailable right now because live copart sync is offline\. cached data remains available\./i,
+        /adding a lot to tracked lots isn't available right now because live updates are having trouble\. you can still view saved data\./i,
       ),
     ).toBeTruthy();
   });
@@ -2379,7 +2379,7 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
 
     expect(
-      await screen.findByText(/search is unavailable because this device is offline\. reconnect and try again\./i),
+      await screen.findByText(/search isn't available because this device is offline\. reconnect and try again\./i),
     ).toBeTruthy();
   });
 });
