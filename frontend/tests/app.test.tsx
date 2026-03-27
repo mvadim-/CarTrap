@@ -1756,6 +1756,33 @@ describe("CarTrap app", () => {
     expect(document.body.style.position).toBe("fixed");
   });
 
+  it("moves connector controls into settings and expands the form only after disconnect", async () => {
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+
+    openAccountMenu();
+    await screen.findByRole("dialog", { name: /account menu/i });
+    expect(screen.queryByText(/copart connector/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    await screen.findByRole("dialog", { name: /settings/i });
+
+    const getCopartSection = () => screen.getByText(/copart connector/i).closest("section")!;
+
+    expect(within(getCopartSection()).getByText(/copart-user@example\.com/i)).toBeTruthy();
+    expect(within(getCopartSection()).queryByLabelText(/copart email/i)).toBeNull();
+    expect(within(getCopartSection()).queryByRole("button", { name: /connect copart/i })).toBeNull();
+
+    fireEvent.click(within(getCopartSection()).getByRole("button", { name: /^disconnect$/i }));
+
+    await waitFor(() => {
+      expect(within(getCopartSection()).getByLabelText(/copart email/i)).toBeTruthy();
+    });
+    expect(within(getCopartSection()).getByRole("button", { name: /connect copart/i })).toBeTruthy();
+  });
+
   it("retries a partial bootstrap failure for saved searches without reloading the whole dashboard", async () => {
     savedSearchesShouldFail = true;
 
@@ -2108,8 +2135,9 @@ describe("CarTrap app", () => {
     const newSearchButtons = screen.getAllByRole("button", { name: /new search|copart required/i });
     expect((newSearchButtons[0] as HTMLButtonElement).disabled).toBe(true);
 
-    openAccountMenu();
-    const connectionCard = await screen.findByLabelText(/copart connection/i);
+    openSettingsFromAccountMenu();
+    await screen.findByRole("dialog", { name: /settings/i });
+    const connectionCard = screen.getByText(/copart connector/i).closest("section")!;
     expect(within(connectionCard).getByText(/^Disconnected$/i)).toBeTruthy();
     fireEvent.change(within(connectionCard).getByLabelText(/copart email/i), {
       target: { value: "buyer@example.com" },
@@ -2147,8 +2175,9 @@ describe("CarTrap app", () => {
 
     expect(await screen.findByText(/connector reconnect required/i)).toBeTruthy();
 
-    openAccountMenu();
-    const connectionCard = await screen.findByLabelText(/copart connection/i);
+    openSettingsFromAccountMenu();
+    await screen.findByRole("dialog", { name: /settings/i });
+    const connectionCard = screen.getByText(/copart connector/i).closest("section")!;
     expect(within(connectionCard).getByText(/^Reconnect required$/i)).toBeTruthy();
     fireEvent.change(within(connectionCard).getByLabelText(/copart password/i), {
       target: { value: "secret123" },
@@ -2162,13 +2191,14 @@ describe("CarTrap app", () => {
     expect(within(connectionCard).getByText(/^Connected$/i)).toBeTruthy();
   });
 
-  it("disconnects Copart from the account menu and surfaces the missing-connection guardrail", async () => {
+  it("disconnects Copart from settings and surfaces the missing-connection guardrail", async () => {
     render(<App />);
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    openAccountMenu();
-    const connectionCard = await screen.findByLabelText(/copart connection/i);
+    openSettingsFromAccountMenu();
+    await screen.findByRole("dialog", { name: /settings/i });
+    const connectionCard = screen.getByText(/copart connector/i).closest("section")!;
     fireEvent.click(within(connectionCard).getByRole("button", { name: /^disconnect$/i }));
 
     expect(await within(connectionCard).findByText(/copart connection removed\./i)).toBeTruthy();

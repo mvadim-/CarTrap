@@ -372,7 +372,7 @@ function buildProviderDiagnostic(
     return {
       provider,
       status: "reconnect_required",
-      message: `Reconnect ${label} from Account to restore live search and refresh actions.`,
+      message: `Reconnect ${label} from Settings to restore live search and refresh actions.`,
       connection_id: connection.id,
       reconnect_required: true,
     };
@@ -1592,7 +1592,7 @@ export function App() {
           <AsyncStatus
             tone="neutral"
             title="Connector reconnect required"
-            message="Some live search and refresh actions are blocked until you reconnect the affected provider from Account."
+            message="Some live search and refresh actions are blocked until you reconnect the affected provider from Settings."
             className="dashboard-status dashboard-grid__status"
           />
         ) : null}
@@ -1668,18 +1668,6 @@ export function App() {
         user={session.user!}
         liveSyncStatus={liveSyncStatus}
         diagnostics={reliabilityDiagnostics}
-        copartConnection={copartConnection}
-        iaaiConnection={iaaiConnection}
-        copartConnectionError={providerConnectionsError}
-        isLoadingCopartConnection={isLoadingProviderConnections}
-        isLoadingIaaiConnection={isLoadingProviderConnections}
-        isBrowserOffline={isBrowserOffline}
-        onConnectCopart={handleConnectCopart}
-        onReconnectCopart={handleReconnectCopart}
-        onDisconnectCopart={handleDisconnectCopart}
-        onConnectIaai={handleConnectIaai}
-        onReconnectIaai={handleReconnectIaai}
-        onDisconnectIaai={handleDisconnectIaai}
         onClose={() => setIsAccountMenuOpen(false)}
         onOpenSettings={handleOpenSettings}
         onLogout={handleLogout}
@@ -1687,6 +1675,10 @@ export function App() {
       <PushSettingsModal
         isOpen={isSettingsOpen}
         isAdmin={isAdmin}
+        providerConnectionsError={providerConnectionsError}
+        copartConnection={copartConnection}
+        iaaiConnection={iaaiConnection}
+        isLoadingProviderConnections={isLoadingProviderConnections}
         subscriptions={subscriptions}
         subscriptionsError={dashboardErrors.subscriptions}
         isLoadingSubscriptions={dashboardLoading.subscriptions}
@@ -1701,6 +1693,12 @@ export function App() {
         isSubscribing={actionState.isSubscribingPush}
         unsubscribingEndpoint={actionState.unsubscribingEndpoint}
         isSendingTestPush={actionState.isSendingPushTest}
+        onConnectCopart={handleConnectCopart}
+        onReconnectCopart={handleReconnectCopart}
+        onDisconnectCopart={handleDisconnectCopart}
+        onConnectIaai={handleConnectIaai}
+        onReconnectIaai={handleReconnectIaai}
+        onDisconnectIaai={handleDisconnectIaai}
         onRetryDiagnostics={() =>
           session.accessToken && isAdmin
             ? Promise.allSettled([

@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import type { ProviderConnection } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
@@ -77,8 +77,14 @@ export function ProviderConnectionCard({
   const [notice, setNotice] = useState<string | null>(null);
 
   const status = connection?.status ?? "missing";
+  const isConnected = connection?.status === "connected";
   const requiresReconnect = connection?.status === "reconnect_required";
   const canSubmit = username.trim().length > 0 && password.trim().length > 0 && !isBrowserOffline && !isLoading;
+
+  useEffect(() => {
+    setUsername(connection?.account_label ?? "");
+  }, [connection?.account_label]);
+
   const helperText = useMemo(() => {
     if (isBrowserOffline) {
       return "Connector changes are unavailable while this device is offline.";
@@ -138,11 +144,11 @@ export function ProviderConnectionCard({
   }
 
   return (
-    <section className="account-menu-sheet__card" aria-label={`${providerLabel} connection`}>
-      <div className="account-menu-sheet__status-header">
+    <section className="settings-section settings-section--card provider-connection-card" aria-label={`${providerLabel} connection`}>
+      <div className="provider-connection-card__header">
         <div>
           <p className="detail-label">{providerLabel} connector</p>
-          <p className="account-menu-sheet__status-value">{helperText}</p>
+          <p className="provider-connection-card__status-value">{helperText}</p>
         </div>
         <span className={`status-pill status-pill--${getConnectionTone(status)}`}>{getConnectionLabel(status)}</span>
       </div>
@@ -157,6 +163,10 @@ export function ProviderConnectionCard({
           <dd className="detail-value">{connection?.account_label ?? "Not connected"}</dd>
         </div>
         <div className="detail-item detail-item--stack">
+          <dt className="detail-label">Connected since</dt>
+          <dd className="detail-value">{formatTimestamp(connection?.connected_at ?? null)}</dd>
+        </div>
+        <div className="detail-item detail-item--stack">
           <dt className="detail-label">Last verified</dt>
           <dd className="detail-value">{formatTimestamp(connection?.last_verified_at ?? null)}</dd>
         </div>
@@ -166,32 +176,8 @@ export function ProviderConnectionCard({
         </div>
       </dl>
 
-      <form className="copart-connection-card__form" onSubmit={handleSubmit}>
-        <label className="copart-connection-card__field">
-          {credentialLabel}
-          <input
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            autoComplete="username"
-            placeholder="you@example.com"
-            disabled={isLoading || isSubmitting || isDisconnecting}
-          />
-        </label>
-        <label className="copart-connection-card__field">
-          {providerLabel} password
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete="current-password"
-            placeholder="••••••••"
-            disabled={isLoading || isSubmitting || isDisconnecting}
-          />
-        </label>
-        <div className="copart-connection-card__actions">
-          <button type="submit" disabled={!canSubmit || isSubmitting} aria-busy={isSubmitting}>
-            {isSubmitting ? "Submitting..." : requiresReconnect ? `Reconnect ${providerLabel}` : `Connect ${providerLabel}`}
-          </button>
+      {isConnected ? (
+        <div className="provider-connection-card__actions">
           {connection && connection.status !== "disconnected" ? (
             <button
               type="button"
@@ -204,7 +190,47 @@ export function ProviderConnectionCard({
             </button>
           ) : null}
         </div>
-      </form>
+      ) : (
+        <form className="provider-connection-card__form" onSubmit={handleSubmit}>
+          <label className="provider-connection-card__field">
+            {credentialLabel}
+            <input
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username"
+              placeholder="you@example.com"
+              disabled={isLoading || isSubmitting || isDisconnecting}
+            />
+          </label>
+          <label className="provider-connection-card__field">
+            {providerLabel} password
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              placeholder="••••••••"
+              disabled={isLoading || isSubmitting || isDisconnecting}
+            />
+          </label>
+          <div className="provider-connection-card__actions">
+            <button type="submit" disabled={!canSubmit || isSubmitting} aria-busy={isSubmitting}>
+              {isSubmitting ? "Submitting..." : requiresReconnect ? `Reconnect ${providerLabel}` : `Connect ${providerLabel}`}
+            </button>
+            {connection && connection.status !== "disconnected" ? (
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => void handleDisconnect()}
+                disabled={isDisconnecting || isSubmitting}
+                aria-busy={isDisconnecting}
+              >
+                {isDisconnecting ? "Disconnecting..." : "Disconnect"}
+              </button>
+            ) : null}
+          </div>
+        </form>
+      )}
     </section>
   );
 }

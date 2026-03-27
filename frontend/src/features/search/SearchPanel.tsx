@@ -328,7 +328,7 @@ export function SearchPanel({
   const searchDisabledReason = areSelectedProvidersBlocked
     ? selectedProviders.length === 1
       ? selectedProviderDiagnostics[0]?.message ?? "Selected provider is unavailable."
-      : "Selected providers are unavailable. Reconnect at least one provider from Account."
+      : "Selected providers are unavailable. Reconnect at least one provider from Settings."
     : null;
 
   const filteredMakes = catalog?.makes.filter((item) => matchesMakeQuery(item.name, makeQuery)) ?? [];

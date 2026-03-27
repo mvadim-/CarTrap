@@ -58,7 +58,7 @@ export function DashboardShell({
           <div className="dashboard-header__copy">
             <p className="eyebrow">Auction Control</p>
             <h1>CarTrap dispatch board</h1>
-            <p className="lede">Saved-search inbox, watchlist urgency, and account controls for this device.</p>
+            <p className="lede">Saved-search inbox, watchlist urgency, and settings-backed device controls.</p>
           </div>
           <div className="dashboard-header__actions">
             <button

@@ -864,3 +864,9 @@
 - Додано `docker/dockerfile` BuildKit syntax і `--mount=type=cache,target=/root/.cache/pip`, щоб повторні білди не качали Python dependencies з нуля, а зміни в коді більше не інвалідовували дорогий Chromium layer.
 - Очікуваний ефект: при зміні лише backend source має перевиконуватись фінальний lightweight install layer, тоді як кроки `pip install` залежностей і `python -m playwright install --with-deps chromium` мають братись із cache.
 - Verification: docker build локально не проганяв; зміна обмежена `Dockerfile` layer ordering і BuildKit cache semantics.
+
+## [2026-03-27 13:57] Move provider connectors into Settings and collapse connected forms
+- Оновлено `frontend/src/features/{dashboard/AccountMenuSheet.tsx,push/PushSettingsModal.tsx,integrations/ProviderConnectionCard.tsx}`: картки Copart/IAAI перенесено з account menu у `Settings`, а для `connected` стану форма логіну більше не показується, лишаються статусні деталі та `Disconnect`; після disconnect картка повертається до connect-режиму з полями вводу.
+- Оновлено `frontend/src/{App.tsx,styles.css}` і `frontend/src/features/{dashboard/DashboardShell.tsx,search/SearchPanel.tsx}`: синхронізовано нові пропси/settings layout, нейтральні стилі для connector cards і всі user-facing підказки, де reconnect раніше відсилав у Account.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression coverage, що конектори більше не рендеряться в account menu, у `Settings` для активного Copart-конектора ховається connect-форма, а після `Disconnect` вона з’являється назад.
+- Verification: `cd frontend && npm test && npm run build` -> `51 passed`, production build успішний.

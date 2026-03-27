@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-import type { PushDeliveryResult, PushSubscriptionConfig, PushSubscriptionItem } from "../../types";
+import type { ProviderConnection, PushDeliveryResult, PushSubscriptionConfig, PushSubscriptionItem } from "../../types";
+import { CopartConnectionCard } from "../integrations/CopartConnectionCard";
+import { ProviderConnectionCard } from "../integrations/ProviderConnectionCard";
 import { AsyncStatus } from "../shared/AsyncStatus";
 import { shouldUseMobileFullscreen } from "../shared/mobileFullscreen";
 import { useBodyScrollLock } from "../shared/useBodyScrollLock";
@@ -9,6 +11,10 @@ import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 type Props = {
   isOpen: boolean;
   isAdmin: boolean;
+  providerConnectionsError: string | null;
+  copartConnection: ProviderConnection | null;
+  iaaiConnection: ProviderConnection | null;
+  isLoadingProviderConnections: boolean;
   subscriptions: PushSubscriptionItem[];
   subscriptionsError: string | null;
   isLoadingSubscriptions: boolean;
@@ -23,6 +29,12 @@ type Props = {
   isSubscribing: boolean;
   unsubscribingEndpoint: string | null;
   isSendingTestPush: boolean;
+  onConnectCopart: (payload: { username: string; password: string }) => Promise<void>;
+  onReconnectCopart: (payload: { username: string; password: string }) => Promise<void>;
+  onDisconnectCopart: () => Promise<void>;
+  onConnectIaai: (payload: { username: string; password: string }) => Promise<void>;
+  onReconnectIaai: (payload: { username: string; password: string }) => Promise<void>;
+  onDisconnectIaai: () => Promise<void>;
   onRetryDiagnostics: () => Promise<void>;
   onSubscribe: () => Promise<PushSubscriptionItem>;
   onUnsubscribe: (endpoint: string) => Promise<void>;
@@ -48,6 +60,10 @@ function maskEndpoint(endpoint: string): string {
 export function PushSettingsModal({
   isOpen,
   isAdmin,
+  providerConnectionsError,
+  copartConnection,
+  iaaiConnection,
+  isLoadingProviderConnections,
   subscriptions,
   subscriptionsError,
   isLoadingSubscriptions,
@@ -62,6 +78,12 @@ export function PushSettingsModal({
   isSubscribing,
   unsubscribingEndpoint,
   isSendingTestPush,
+  onConnectCopart,
+  onReconnectCopart,
+  onDisconnectCopart,
+  onConnectIaai,
+  onReconnectIaai,
+  onDisconnectIaai,
   onRetryDiagnostics,
   onSubscribe,
   onUnsubscribe,
@@ -158,6 +180,37 @@ export function PushSettingsModal({
           </button>
         </div>
         <div className="modal-body settings-modal__body">
+          <section className="settings-section" aria-label="Connector settings">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Connectors</p>
+                <h3>Auction Accounts</h3>
+              </div>
+            </div>
+            <p className="muted settings-section__intro">
+              Manage the live Copart and IAAI sessions this device uses for search and watchlist refreshes.
+            </p>
+            <CopartConnectionCard
+              connection={copartConnection}
+              isLoading={isLoadingProviderConnections}
+              loadError={providerConnectionsError}
+              isBrowserOffline={isBrowserOffline}
+              onConnect={onConnectCopart}
+              onReconnect={onReconnectCopart}
+              onDisconnect={onDisconnectCopart}
+            />
+            <ProviderConnectionCard
+              providerLabel="IAAI"
+              credentialLabel="IAAI email"
+              connection={iaaiConnection}
+              isLoading={isLoadingProviderConnections}
+              loadError={providerConnectionsError}
+              isBrowserOffline={isBrowserOffline}
+              onConnect={onConnectIaai}
+              onReconnect={onReconnectIaai}
+              onDisconnect={onDisconnectIaai}
+            />
+          </section>
           <section className="settings-section settings-section--card">
             <div className="panel-header">
               <div>

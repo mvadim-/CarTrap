@@ -1319,6 +1319,10 @@ button:focus-visible,
   padding: 0.2rem;
 }
 
+.settings-section__intro {
+  margin: 0;
+}
+
 .settings-section--card {
   border: 1px solid rgba(19, 38, 47, 0.08);
   border-radius: 1.1rem;
@@ -1892,20 +1896,38 @@ button:focus-visible,
   color: #b13022;
 }
 
-.copart-connection-card__form {
+.provider-connection-card {
+  padding: 0.9rem;
+}
+
+.provider-connection-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.provider-connection-card__status-value {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.provider-connection-card__form {
   display: grid;
   gap: 0.7rem;
   margin-top: 0.35rem;
 }
 
-.copart-connection-card__field {
+.provider-connection-card__field {
   display: grid;
   gap: 0.3rem;
   font-size: 0.9rem;
   color: #36505c;
 }
 
-.copart-connection-card__actions {
+.provider-connection-card__actions {
   display: grid;
   gap: 0.6rem;
 }
