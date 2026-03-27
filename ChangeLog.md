@@ -858,3 +858,9 @@
 - У тому ж сервісі синхронізовано single-provider error detail у `fetch_result_count()`, щоб background poll зберігав provider-specific повідомлення на кшталт `Failed to fetch search results from Copart.` замість generic тексту.
 - Оновлено `backend/tests/search/test_search_api.py`: додано regression coverage для multi-provider search, яка перевіряє `120 + 35 -> total_results=155`.
 - Verification: `./.venv/bin/pytest backend/tests/search/test_search_api.py backend/tests/search/test_saved_search_monitoring.py` -> `34 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime).
+
+## [2026-03-27 13:39] Speed up backend Docker rebuilds with stable dependency layers
+- Оновлено `backend/Dockerfile`: dependency install і `playwright install --with-deps chromium` винесені в окремий шар, який залежить лише від `backend/{pyproject.toml,setup.py,README.md}`, а application install тепер окремо копіює тільки `backend/src` і ставиться через `pip install --no-deps /app/backend`.
+- Додано `docker/dockerfile` BuildKit syntax і `--mount=type=cache,target=/root/.cache/pip`, щоб повторні білди не качали Python dependencies з нуля, а зміни в коді більше не інвалідовували дорогий Chromium layer.
+- Очікуваний ефект: при зміні лише backend source має перевиконуватись фінальний lightweight install layer, тоді як кроки `pip install` залежностей і `python -m playwright install --with-deps chromium` мають братись із cache.
+- Verification: docker build локально не проганяв; зміна обмежена `Dockerfile` layer ordering і BuildKit cache semantics.
