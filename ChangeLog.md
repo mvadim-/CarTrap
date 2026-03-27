@@ -1,5 +1,9 @@
 # Change Log
 
+## [2026-03-27 17:40] Relax mobile header action stacking after Playwright review
+- Оновлено `frontend/src/styles.css`: прибрано агресивне mobile-правило, яке розтягувало `.panel-header__actions` у колонку на всю ширину; action buttons для `Saved Searches` і `Tracked Lots` тепер лишаються компактною inline-group на мобільному, без ламання композиції секцій.
+- Verification: Playwright mobile check проти `https://cartrapapp.pp.ua` підтвердив проблему на проді, після чого локальний frontend було перевірено в mobile viewport; `cd frontend && npm test -- app.test.tsx` -> `53 passed`, `cd frontend && npm run build` -> успішно.
+
 ## [2026-03-27 17:27] Add collapsible Saved Searches and Tracked Lots on mobile
 - Оновлено `frontend/src/{App.tsx,styles.css}`: додано mobile-layout detection для dashboard і стилі для panel header actions / collapse toggles, щоб мобільні секції можна було згортати без впливу на desktop layout.
 - Оновлено `frontend/src/features/{search/SearchPanel.tsx,watchlist/WatchlistPanel.tsx}`: `Saved Searches` і `Tracked Lots` тепер мають mobile-only toggle-кнопки з `aria-expanded` / `aria-controls`, а їхній вміст можна сховати або повернути назад без втрати внутрішнього стану панелей.

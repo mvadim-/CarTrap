@@ -2062,7 +2062,6 @@ button:focus-visible,
   }
 
   .search-panel__header,
-  .panel-header__actions,
   .account-menu-sheet__identity,
   .account-menu-sheet__status-header,
   .settings-section__actions,
@@ -2071,12 +2070,21 @@ button:focus-visible,
   }
 
   .dashboard-header__actions,
-  .panel-header__actions,
   .account-menu-sheet__actions button,
   .settings-section__actions button,
   .async-status__action button,
   .callout .ghost-button {
     width: 100%;
+  }
+
+  .panel-header__actions {
+    width: auto;
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+
+  .panel-header__actions .ghost-button {
+    width: auto;
   }
 
   .saved-search-card__actions,
