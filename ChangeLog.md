@@ -1,5 +1,10 @@
 # Change Log
 
+## [2026-03-27 17:55] Make mobile dashboard headers less bulky and safer
+- Оновлено `frontend/src/styles.css`: mobile `dashboard-header` став компактнішим за padding, radius і typography, а `Menu` button більше не виглядає як великий окремий блок у шапці.
+- Ті самі стилі перебудували mobile headers для `Saved Searches` і `Tracked Lots`: текстовий блок тепер має повну ширину, action buttons йдуть окремим compact row під ним, тому lede не зжимається і кнопки не вилазять за межі панелей.
+- Додатково ущільнено mobile chips для `All / New / Needs attention`, щоб вони лишалися в одному рядку всередині контейнера без overflow.
+
 ## [2026-03-27 17:49] Normalize dashboard button shape and sizing
 - Оновлено `frontend/src/styles.css`: для основних CTA, ghost buttons і filter chips введено спільні control tokens (`--control-height`, `--control-radius`), вирівняно мінімальну висоту, padding і округлення, щоб кнопки в dashboard більше не виглядали як суміш круглих, овальних і різновисоких елементів.
 - Окремо на mobile прибрано зайве full-width розтягування `Menu` button у header, щоб він залишався тим самим rounded-rectangle control, що й інші дії на екрані.
