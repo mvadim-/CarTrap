@@ -77,7 +77,7 @@ export function ProviderConnectionCard({
   const [notice, setNotice] = useState<string | null>(null);
 
   const status = connection?.status ?? "missing";
-  const isConnected = connection?.status === "connected";
+  const hasLiveSession = connection?.status === "connected" || connection?.status === "expiring";
   const requiresReconnect = connection?.status === "reconnect_required";
   const canSubmit = username.trim().length > 0 && password.trim().length > 0 && !isBrowserOffline && !isLoading;
 
@@ -176,7 +176,7 @@ export function ProviderConnectionCard({
         </div>
       </dl>
 
-      {isConnected ? (
+      {hasLiveSession ? (
         <div className="provider-connection-card__actions">
           {connection && connection.status !== "disconnected" ? (
             <button

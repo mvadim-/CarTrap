@@ -870,3 +870,7 @@
 - Оновлено `frontend/src/{App.tsx,styles.css}` і `frontend/src/features/{dashboard/DashboardShell.tsx,search/SearchPanel.tsx}`: синхронізовано нові пропси/settings layout, нейтральні стилі для connector cards і всі user-facing підказки, де reconnect раніше відсилав у Account.
 - Оновлено `frontend/tests/app.test.tsx`: додано regression coverage, що конектори більше не рендеряться в account menu, у `Settings` для активного Copart-конектора ховається connect-форма, а після `Disconnect` вона з’являється назад.
 - Verification: `cd frontend && npm test && npm run build` -> `51 passed`, production build успішний.
+
+## [2026-03-27 14:05] Collapse expiring IAAI sessions in connector settings
+- Оновлено `frontend/src/features/integrations/ProviderConnectionCard.tsx`: compact connector state тепер застосовується не лише до `connected`, а й до `expiring`, бо така сесія ще придатна для live actions і не повинна показувати login form до явного `Disconnect`.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для IAAI-конектора зі статусом `expiring`, щоб у `Settings` лишалися тільки статус, метадані та `Disconnect`.

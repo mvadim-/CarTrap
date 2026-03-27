@@ -1783,6 +1783,32 @@ describe("CarTrap app", () => {
     expect(within(getCopartSection()).getByRole("button", { name: /connect copart/i })).toBeTruthy();
   });
 
+  it("keeps IAAI expiring sessions collapsed like connected connectors", async () => {
+    providerConnections = [
+      buildProviderConnection(),
+      buildProviderConnection({
+        id: "provider-connection-iaai-1",
+        provider: "iaai",
+        status: "expiring",
+        account_label: "iaai-user@example.com",
+      }),
+    ];
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    openSettingsFromAccountMenu();
+    await screen.findByRole("dialog", { name: /settings/i });
+
+    const iaaiSection = screen.getByText(/iaai connector/i).closest("section")!;
+    expect(within(iaaiSection).getByText(/^Expiring soon$/i)).toBeTruthy();
+    expect(within(iaaiSection).queryByLabelText(/iaai email/i)).toBeNull();
+    expect(within(iaaiSection).queryByLabelText(/iaai password/i)).toBeNull();
+    expect(within(iaaiSection).queryByRole("button", { name: /connect iaai/i })).toBeNull();
+    expect(within(iaaiSection).getByRole("button", { name: /^disconnect$/i })).toBeTruthy();
+  });
+
   it("retries a partial bootstrap failure for saved searches without reloading the whole dashboard", async () => {
     savedSearchesShouldFail = true;
 
