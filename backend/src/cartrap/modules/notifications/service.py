@@ -177,7 +177,7 @@ class NotificationService:
             "notification_type": "saved_search_match",
             "refresh_targets": ["savedSearches", "liveSync"],
         }
-        dedupe_suffix = ",".join(event.get("new_lot_numbers", []))
+        dedupe_suffix = ",".join(self._dedupe_saved_search_matches(event))
         dedupe_key = f"saved_search_match:{event['saved_search_id']}:{event.get('result_count')}:{dedupe_suffix}"
         return self._send_payload_to_owner(event["owner_user_id"], payload, dedupe_key=dedupe_key)
 
@@ -359,6 +359,13 @@ class NotificationService:
         if reminder_offset_minutes == 60:
             return "Auction starts in 1 hour."
         return f"Auction starts in {reminder_offset_minutes} min."
+
+    @staticmethod
+    def _dedupe_saved_search_matches(event: dict) -> list[str]:
+        identifiers = event.get("new_lot_keys") or event.get("new_lot_numbers") or []
+        if not isinstance(identifiers, list):
+            return []
+        return [str(item) for item in identifiers if item]
 
     @staticmethod
     def _now() -> datetime:

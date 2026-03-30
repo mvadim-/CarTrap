@@ -276,6 +276,50 @@ def test_notification_delivery_dedupes_same_auction_reminder_per_endpoint() -> N
     assert database["push_delivery_receipts"].count_documents({}) == 1
 
 
+def test_saved_search_push_dedupe_uses_provider_aware_lot_keys() -> None:
+    database = mongomock.MongoClient(tz_aware=True)["cartrap_test"]
+    sender = FakeSender()
+    notification_service = NotificationService(database, sender=sender)
+    notification_service.upsert_subscription(
+        {"id": "user-7"},
+        {
+            "subscription": {
+                "endpoint": "https://push.example.test/subscriptions/7",
+                "expirationTime": None,
+                "keys": {"p256dh": "abc", "auth": "def"},
+            }
+        },
+    )
+    first_event = {
+        "saved_search_id": "saved-search-1",
+        "owner_user_id": "user-7",
+        "search_title": "FORD",
+        "result_count": 2,
+        "new_matches": 1,
+        "new_lot_keys": ["iaai:45107325~US"],
+        "new_lot_numbers": ["44610371"],
+    }
+    second_event = {
+        "saved_search_id": "saved-search-1",
+        "owner_user_id": "user-7",
+        "search_title": "FORD",
+        "result_count": 2,
+        "new_matches": 1,
+        "new_lot_keys": ["copart:44610371"],
+        "new_lot_numbers": ["44610371"],
+    }
+
+    first = notification_service.send_saved_search_match_notification(first_event)
+    second = notification_service.send_saved_search_match_notification(second_event)
+    duplicate_first = notification_service.send_saved_search_match_notification(first_event)
+
+    assert first["delivered"] == 1
+    assert second["delivered"] == 1
+    assert duplicate_first == {"delivered": 0, "failed": 0, "removed": 0, "endpoints": []}
+    assert len(sender.sent) == 2
+    assert database["push_delivery_receipts"].count_documents({}) == 2
+
+
 def test_web_push_sender_serializes_payload_and_vapid_claims(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict = {}
 

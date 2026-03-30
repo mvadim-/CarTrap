@@ -903,3 +903,7 @@
 - Додатково дочищено copy у `Settings`/connections: `connector` замінено на `account`, push permission status тепер відображається як `Allowed/Blocked/Not chosen yet`, а non-admin/admin notification labels синхронізовано з більш людяними текстами.
 - Оновлено `frontend/tests/app.test.tsx` під новий copy-pass, щоб regression suite перевіряв фінальні user-facing тексти замість старого технічного wording.
 - Verification: `cd frontend && npm test && npm run build` -> `52 passed`, production build успішний.
+## [2026-03-30 12:09] Fix provider-aware saved-search push dedupe
+- Оновлено `backend/src/cartrap/modules/notifications/service.py`: dedupe key для `saved_search_match` більше не будується з `new_lot_numbers`; тепер використовується provider-aware `new_lot_keys` з fallback на legacy numbers, щоб IAAI та mixed-provider результати не колапсували в один push receipt.
+- Оновлено `backend/tests/notifications/test_push_delivery.py`: додано regression coverage, що два saved-search push events з однаковим видимим `lot_number`, але різними `lot_key`, доставляються окремо, тоді як точний дубль все ще дедупиться.
+- Verification: `./.venv/bin/pytest backend/tests/notifications/test_push_delivery.py backend/tests/search/test_saved_search_monitoring.py` -> `16 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime).
