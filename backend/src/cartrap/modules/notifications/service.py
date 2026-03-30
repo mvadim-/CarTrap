@@ -5,12 +5,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import logging
+from pathlib import Path
 from typing import Protocol
 
 from fastapi import HTTPException, status
 from pymongo.database import Database
 from pywebpush import WebPushException, webpush
 
+from cartrap.core.logging import make_log_extra
 from cartrap.modules.notifications.repository import NotificationRepository
 
 
@@ -75,6 +77,16 @@ def build_web_push_sender(
     )
     if missing:
         return None
+    invalid_private_key_reason = _invalid_vapid_private_key_reason(vapid_private_key)
+    if invalid_private_key_reason is not None:
+        LOGGER.warning(
+            "Push sender is disabled because the VAPID private key is not readable.",
+            extra=make_log_extra(
+                "push.sender.disabled",
+                reason=invalid_private_key_reason,
+            ),
+        )
+        return None
     return WebPushSender(vapid_private_key=vapid_private_key.strip(), vapid_subject=vapid_subject.strip())
 
 
@@ -97,6 +109,21 @@ def _missing_vapid_fields(
     return missing
 
 
+def _invalid_vapid_private_key_reason(vapid_private_key: str | None) -> str | None:
+    if _is_missing_config_value(vapid_private_key):
+        return None
+    candidate = vapid_private_key.strip()
+    if not _looks_like_vapid_private_key_path(candidate):
+        return None
+    if Path(candidate).expanduser().is_file():
+        return None
+    return f"VAPID private key file is missing: {candidate}."
+
+
+def _looks_like_vapid_private_key_path(value: str) -> bool:
+    return value.endswith(".pem") or "/" in value or "\\" in value or value.startswith(".") or value.startswith("~")
+
+
 def build_subscription_config(
     vapid_public_key: str | None,
     vapid_private_key: str | None,
@@ -108,6 +135,13 @@ def build_subscription_config(
             "enabled": False,
             "public_key": None,
             "reason": f"Push notifications are not configured on the server. Missing: {', '.join(missing)}.",
+        }
+    invalid_private_key_reason = _invalid_vapid_private_key_reason(vapid_private_key)
+    if invalid_private_key_reason is not None:
+        return {
+            "enabled": False,
+            "public_key": None,
+            "reason": f"Push notifications are not configured on the server. {invalid_private_key_reason}",
         }
     return {"enabled": True, "public_key": vapid_public_key.strip(), "reason": None}
 
@@ -213,7 +247,11 @@ class NotificationService:
         if self._sender is None:
             LOGGER.warning(
                 "Push delivery skipped because sender is not configured.",
-                extra={"owner_user_id": owner_user_id, "payload_keys": sorted(payload.keys())},
+                extra=make_log_extra(
+                    "push.delivery.skipped_sender_missing",
+                    owner_user_id=owner_user_id,
+                    payload_keys=sorted(payload.keys()),
+                ),
             )
             return {
                 "delivered": 0,
@@ -234,11 +272,12 @@ class NotificationService:
                 if self.repository.has_delivery_receipt(endpoint_dedupe_key):
                     LOGGER.info(
                         "Skipped duplicate push delivery.",
-                        extra={
-                            "owner_user_id": owner_user_id,
-                            "endpoint": subscription["endpoint"],
-                            "dedupe_key": endpoint_dedupe_key,
-                        },
+                        extra=make_log_extra(
+                            "push.delivery.skipped_duplicate",
+                            owner_user_id=owner_user_id,
+                            endpoint=subscription["endpoint"],
+                            dedupe_key=endpoint_dedupe_key,
+                        ),
                     )
                     continue
             try:
@@ -257,38 +296,45 @@ class NotificationService:
                 delivered_endpoints.append(subscription["endpoint"])
                 LOGGER.info(
                     "Push notification delivered.",
-                    extra={
-                        "owner_user_id": owner_user_id,
-                        "endpoint": subscription["endpoint"],
-                        "payload_keys": sorted(payload.keys()),
-                    },
+                    extra=make_log_extra(
+                        "push.delivery.delivered",
+                        owner_user_id=owner_user_id,
+                        endpoint=subscription["endpoint"],
+                        payload_keys=sorted(payload.keys()),
+                    ),
                 )
             except PushDeliveryError as exc:
                 failed += 1
                 LOGGER.warning(
                     "Push delivery failed.",
-                    extra={
-                        "owner_user_id": owner_user_id,
-                        "endpoint": subscription["endpoint"],
-                        "unrecoverable": exc.unrecoverable,
-                        "reason": str(exc),
-                    },
+                    extra=make_log_extra(
+                        "push.delivery.failed",
+                        owner_user_id=owner_user_id,
+                        endpoint=subscription["endpoint"],
+                        unrecoverable=exc.unrecoverable,
+                        reason=str(exc),
+                    ),
                 )
                 if exc.unrecoverable:
                     self.repository.delete_subscription_by_id(str(subscription["_id"]))
                     removed += 1
                     LOGGER.info(
                         "Removed invalid push subscription after unrecoverable delivery failure.",
-                        extra={"owner_user_id": owner_user_id, "endpoint": subscription["endpoint"]},
+                        extra=make_log_extra(
+                            "push.delivery.subscription_removed",
+                            owner_user_id=owner_user_id,
+                            endpoint=subscription["endpoint"],
+                        ),
                     )
             except Exception:
                 failed += 1
                 LOGGER.exception(
                     "Unexpected push delivery failure.",
-                    extra={
-                        "owner_user_id": owner_user_id,
-                        "endpoint": subscription.get("endpoint"),
-                    },
+                    extra=make_log_extra(
+                        "push.delivery.failed_unexpected",
+                        owner_user_id=owner_user_id,
+                        endpoint=subscription.get("endpoint"),
+                    ),
                 )
 
         return {

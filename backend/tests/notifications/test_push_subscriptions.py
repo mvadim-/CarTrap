@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
 
 import cartrap.app as app_module
 from cartrap.config import Settings
+from cartrap.modules.notifications.service import build_subscription_config, build_web_push_sender
 
 
 class FakeMongoManager:
@@ -163,6 +164,33 @@ def test_subscription_config_returns_public_key_when_enabled(client_with_vapid: 
         "public_key": "BEl62iUYgUivTB1X4VQx-FakePublicKey1234567890",
         "reason": None,
     }
+
+
+def test_subscription_config_reports_disabled_when_vapid_private_key_path_is_missing(tmp_path: Path) -> None:
+    missing_key_path = tmp_path / "missing_private_key.pem"
+
+    config = build_subscription_config(
+        vapid_public_key="public-key",
+        vapid_private_key=str(missing_key_path),
+        vapid_subject="mailto:admin@example.com",
+    )
+
+    assert config == {
+        "enabled": False,
+        "public_key": None,
+        "reason": f"Push notifications are not configured on the server. VAPID private key file is missing: {missing_key_path}.",
+    }
+
+
+def test_build_web_push_sender_returns_none_when_vapid_private_key_path_is_missing(tmp_path: Path) -> None:
+    missing_key_path = tmp_path / "missing_private_key.pem"
+
+    sender = build_web_push_sender(
+        vapid_private_key=str(missing_key_path),
+        vapid_subject="mailto:admin@example.com",
+    )
+
+    assert sender is None
 
 
 def test_send_test_push_delivers_to_current_user_subscriptions(

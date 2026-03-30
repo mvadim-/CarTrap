@@ -903,6 +903,12 @@
 - Додатково дочищено copy у `Settings`/connections: `connector` замінено на `account`, push permission status тепер відображається як `Allowed/Blocked/Not chosen yet`, а non-admin/admin notification labels синхронізовано з більш людяними текстами.
 - Оновлено `frontend/tests/app.test.tsx` під новий copy-pass, щоб regression suite перевіряв фінальні user-facing тексти замість старого технічного wording.
 - Verification: `cd frontend && npm test && npm run build` -> `52 passed`, production build успішний.
+## [2026-03-30 12:15] Fix Dockerized VAPID key access and push diagnostics
+- Оновлено `docker-compose.yml`: `backend` і `worker` тепер монтують `./backend/keys` у `/app/backend/keys:ro`, щоб `VAPID_PRIVATE_KEY=backend/keys/private_key.pem` був доступний всередині контейнерів під час реальної push delivery.
+- Оновлено `backend/src/cartrap/modules/notifications/service.py`: push config більше не вважається `enabled`, якщо `VAPID_PRIVATE_KEY` вказує на `.pem` path, якого немає в runtime; startup sender тепер вимикається з явним warning, а push delivery logs пишуть `reason`, `endpoint` і `unrecoverable` через `structured` logging fields.
+- Оновлено `backend/tests/notifications/test_push_subscriptions.py`: додано regression coverage для missing VAPID private key path, щоб API не сигналізував "Push ready", коли контейнер не має PEM файла.
+- Verification: `./.venv/bin/pytest backend/tests/notifications/test_push_subscriptions.py backend/tests/notifications/test_push_delivery.py` -> `15 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime); `docker compose config` -> valid.
+
 ## [2026-03-30 12:15] Require per-cycle commits and deploy instructions in AGENTS
 - Оновлено `AGENTS.md`: зафіксовано обов'язковий окремий `git commit` після кожного завершеного циклу змін для багфикса, рефакторингу або нової фічі.
 - Додано вимогу, щоб у фінальній відповіді після кожного циклу змін завжди були короткі production deploy instructions, прив'язані до сервісів, яких торкнувся патч.
