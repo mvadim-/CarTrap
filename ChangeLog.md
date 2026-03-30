@@ -965,3 +965,8 @@
 - Оновлено `frontend/src/styles.css`: для watchlist composer додано окрему inset surface, нову desktop/mobile grid-композицію, cleaner provider toggle states, accent CTA treatment і tighter header rhythm, щоб секція не виглядала як випадковий набір controls.
 - Оновлено `frontend/tests/app.test.tsx`: regression suite тепер покриває dynamic copy для Copart/IAAI quick-add composer і новий CTA label `Track Lot`; також звужено manual-search selector, щоб тести не ламалися через нові provider buttons у watchlist.
 - Verification: `cd frontend && npm test -- app.test.tsx` -> `58 passed`; `cd frontend && npm run build` -> успішно.
+
+## [2026-03-30 19:10] Rebalance tracked-lots composer for desktop
+- Оновлено `frontend/src/styles.css`: desktop watchlist composer більше не розтягується на всю ширину panel без контролю; для нього задано збалансованіші desktop columns, `max-width`, нормальну висоту CTA і ширші provider toggles, щоб кнопка не виглядала як вертикальна плашка, а `Copart` / `IAAI` не обрізалися.
+- Оновлено `frontend/src/features/watchlist/WatchlistPanel.tsx`: provider badges у desktop quick-add composer більше не рендеряться з зайвим inner-pill chrome; selection лишається на outer toggle, тому control виглядає чистіше й читається краще на широких екранах.
+- Verification: `cd frontend && npm test -- app.test.tsx` -> `58 passed`; `cd frontend && npm run build` -> успішно.

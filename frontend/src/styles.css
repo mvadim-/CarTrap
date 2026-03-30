@@ -804,12 +804,13 @@ button:focus-visible,
 
 .watchlist-form {
   display: grid;
-  grid-template-columns: minmax(11.5rem, 0.92fr) minmax(0, 1.7fr) minmax(10.5rem, 11.5rem);
+  grid-template-columns: minmax(20rem, 21.5rem) minmax(18rem, 1fr) minmax(11rem, 12rem);
   grid-template-areas:
     "provider identifier actions"
     "hint hint hint";
   gap: 0.8rem;
   align-items: end;
+  max-width: 74rem;
   padding: 0.95rem;
   border: 1px solid rgba(19, 38, 47, 0.1);
   border-radius: 1.2rem;
@@ -858,7 +859,7 @@ button:focus-visible,
 .watchlist-form__provider-button {
   min-width: 0;
   min-height: calc(var(--control-height) - 0.1rem);
-  padding: 0.58rem 0.72rem;
+  padding: 0.68rem 0.9rem;
   border-radius: 1rem;
   border: 1px solid rgba(19, 38, 47, 0.12);
   background: rgba(255, 255, 255, 0.76);
@@ -888,14 +889,19 @@ button:focus-visible,
   justify-content: center;
 }
 
+.watchlist-form__provider-badge .auction-provider-badge__label {
+  font-size: 0.96rem;
+}
+
 .watchlist-form__actions {
   grid-area: actions;
   display: flex;
-  align-self: stretch;
+  align-self: end;
 }
 
 .watchlist-form__submit {
   width: 100%;
+  min-height: calc(var(--control-height) + 0.15rem);
   background: linear-gradient(135deg, #9b3d12 0%, #b35b30 100%);
   box-shadow: 0 16px 32px rgba(155, 61, 18, 0.2);
 }
@@ -908,6 +914,7 @@ button:focus-visible,
 .watchlist-form__hint {
   grid-area: hint;
   margin: 0;
+  max-width: 40rem;
   color: var(--ink-muted);
   font-size: 0.82rem;
 }

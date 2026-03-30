@@ -380,7 +380,7 @@ export function WatchlistPanel({
                       <AuctionProviderBadge
                         provider={option.value}
                         size="default"
-                        tone={isSelected ? "pill" : "plain"}
+                        tone="plain"
                         className="watchlist-form__provider-badge"
                       />
                     </button>
