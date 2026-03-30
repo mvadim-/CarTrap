@@ -59,6 +59,8 @@ export function DashboardShell({
           <div className="dashboard-header__copy">
             <div className="dashboard-header__kicker">
               <p className="eyebrow">Auction Control</p>
+            </div>
+            <div className="dashboard-header__title-row">
               <div className="dashboard-header__brand-lockup">
                 <img
                   className="dashboard-header__brand-lockup-image"
@@ -66,8 +68,8 @@ export function DashboardShell({
                   alt="CarTrap for Copart and IAAI"
                 />
               </div>
+              <h1>CarTrap dispatch board</h1>
             </div>
-            <h1>CarTrap dispatch board</h1>
             <p className="lede">Track searches, saved lots, and connected accounts in one place.</p>
           </div>
           <div className="dashboard-header__actions">

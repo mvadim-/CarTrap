@@ -948,3 +948,8 @@
 - Оновлено `frontend/src/features/dashboard/DashboardShell.tsx`: brand lockup перенесено в компактний kicker-row поруч з `Auction Control`, щоб логотип працював як невеликий header accent, а не окремий блок.
 - Оновлено `frontend/src/styles.css`: прибрано box/container styling навколо логотипа, зменшено його width на desktop/mobile і додано `mix-blend-mode: multiply`, щоб білий фон lockup не читався як окрема біла плашка.
 - Verification: `cd frontend && npm test -- app.test.tsx` -> `56 passed`; `cd frontend && npm run build` -> успішно.
+
+## [2026-03-30 16:12] Move header logo into the dashboard title row
+- Оновлено `frontend/src/features/dashboard/DashboardShell.tsx`: логотип перенесено з kicker-row прямо в `title-row`, тепер він стоїть зліва від `CarTrap dispatch board` і читається як частина самого заголовка.
+- Оновлено `frontend/src/styles.css`: додано layout для `dashboard-header__title-row` і зменшено lockup width на desktop/tablet/mobile, щоб заголовок лишався компактним і не розвалювався на вузьких екранах.
+- Verification: `cd frontend && npm test -- app.test.tsx` -> `56 passed`; `cd frontend && npm run build` -> успішно.

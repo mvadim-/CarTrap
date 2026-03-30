@@ -234,16 +234,23 @@ button:focus-visible,
 .dashboard-header__kicker {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  flex-wrap: wrap;
   min-width: 0;
+}
+
+.dashboard-header__title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.72rem;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .dashboard-header__brand-lockup {
   display: flex;
   align-items: center;
-  width: min(8.2rem, 42vw);
-  min-width: 5.5rem;
+  width: min(6.8rem, 34vw);
+  min-width: 4.75rem;
+  flex: 0 0 auto;
 }
 
 .dashboard-header__brand-lockup-image {
@@ -338,6 +345,7 @@ button:focus-visible,
   line-height: 1;
   letter-spacing: -0.03em;
   text-wrap: balance;
+  flex: 1 1 14rem;
 }
 
 .dashboard-header__copy .lede {
@@ -2213,8 +2221,8 @@ button:focus-visible,
   }
 
   .dashboard-header__brand-lockup {
-    width: min(7rem, 40vw);
-    min-width: 5rem;
+    width: min(5.9rem, 32vw);
+    min-width: 4.4rem;
   }
 
   .dashboard-header__copy .lede {
@@ -2450,8 +2458,8 @@ button:focus-visible,
   }
 
   .dashboard-header__brand-lockup {
-    width: min(6.2rem, 36vw);
-    min-width: 4.6rem;
+    width: min(5.4rem, 30vw);
+    min-width: 4rem;
   }
 
   .dashboard-header__copy .lede {
