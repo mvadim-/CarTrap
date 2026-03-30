@@ -69,7 +69,12 @@ export function DashboardShell({
               aria-label="Open account menu"
               onClick={onToggleAccountMenu}
             >
-              Menu
+              <span className="dashboard-header__menu-icon" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <span className="dashboard-header__menu-label">Menu</span>
             </button>
           </div>
         </header>

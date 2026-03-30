@@ -1072,6 +1072,36 @@ describe("CarTrap app", () => {
     expect(screen.getByText(/you haven't added any lots yet/i)).toBeTruthy();
   });
 
+  it("keeps mobile saved-search filter labels and counts visible", async () => {
+    mockMobileViewport();
+    savedSearches = [
+      buildSavedSearch({
+        id: "saved-1",
+        new_count: 1,
+        freshness: buildFreshness({
+          status: "outdated",
+          last_synced_at: "2026-03-16T10:00:00Z",
+          stale_after: "2026-03-16T10:15:00Z",
+        }),
+        refresh_state: buildRefreshState({
+          status: "retryable_failure",
+          error_message: "gateway unavailable",
+          retryable: true,
+          priority_class: "recently_changed",
+        }),
+      }),
+    ];
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    expect(screen.getByRole("button", { name: /all saved searches, 1/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /new saved searches, 1/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /attention needed, 1/i })).toBeTruthy();
+    expect(screen.getByText(/^1 new$/i)).toBeTruthy();
+  });
+
   it("runs manual search and adds result to tracked lots", async () => {
     render(<App />);
     submitLoginForm();
@@ -1237,13 +1267,13 @@ describe("CarTrap app", () => {
     await runDefaultManualSearch();
     fireEvent.click(screen.getByRole("button", { name: /save search/i }));
 
-    expect(await screen.findByText(/1 NEW/i)).toBeTruthy();
+    expect(await screen.findByText(/^1 new$/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i }));
 
     const resultsDialog = await screen.findByRole("dialog", { name: /search results/i });
     expect(within(resultsDialog).getByText(/^NEW$/i)).toBeTruthy();
     await waitFor(() => {
-      expect(screen.queryByText(/1 NEW/i)).toBeNull();
+      expect(screen.queryByText(/^1 new$/i)).toBeNull();
     });
   });
 
@@ -1489,11 +1519,11 @@ describe("CarTrap app", () => {
     expect(cardTitles[0]).toContain("FORD MUSTANG MACH-E 2025-2027");
     expect(cardTitles[1]).toContain("FIAT");
 
-    fireEvent.click(screen.getByRole("button", { name: /^new$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /new saved searches, 1/i }));
     expect(screen.getByRole("button", { name: /^ford mustang mach-e 2025-2027/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^fiat/i })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /needs attention/i }));
+    fireEvent.click(screen.getByRole("button", { name: /attention needed, 1/i }));
     expect(screen.getByRole("button", { name: /^fiat/i })).toBeTruthy();
   });
 

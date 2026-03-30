@@ -266,6 +266,17 @@ function getBlockedSavedSearchActionLabel(diagnostics: ProviderConnectionDiagnos
   return "Reconnect account";
 }
 
+function renderQuickFilterLabel(label: string, count: number) {
+  return (
+    <>
+      <span className="saved-search-filter-chip__label">{label}</span>
+      <span className="saved-search-filter-chip__count" aria-hidden="true">
+        {count}
+      </span>
+    </>
+  );
+}
+
 export function SearchPanel({
   isMobileLayout,
   catalog,
@@ -780,28 +791,28 @@ export function SearchPanel({
                   type="button"
                   className={`saved-search-filter-chip${quickFilter === "all" ? " is-active" : ""}`}
                   aria-pressed={quickFilter === "all"}
+                  aria-label={`All saved searches, ${quickFilterCounts.all}`}
                   onClick={() => setQuickFilter("all")}
                 >
-                  All
-                  <span aria-hidden="true">{quickFilterCounts.all}</span>
+                  {renderQuickFilterLabel("All", quickFilterCounts.all)}
                 </button>
                 <button
                   type="button"
                   className={`saved-search-filter-chip${quickFilter === "new" ? " is-active" : ""}`}
                   aria-pressed={quickFilter === "new"}
+                  aria-label={`New saved searches, ${quickFilterCounts.new}`}
                   onClick={() => setQuickFilter("new")}
                 >
-                  New
-                  <span aria-hidden="true">{quickFilterCounts.new}</span>
+                  {renderQuickFilterLabel("New", quickFilterCounts.new)}
                 </button>
                 <button
                   type="button"
                   className={`saved-search-filter-chip${quickFilter === "needs-refresh" ? " is-active" : ""}`}
                   aria-pressed={quickFilter === "needs-refresh"}
+                  aria-label={`Attention needed, ${quickFilterCounts["needs-refresh"]}`}
                   onClick={() => setQuickFilter("needs-refresh")}
                 >
-                  Needs attention
-                  <span aria-hidden="true">{quickFilterCounts["needs-refresh"]}</span>
+                  {renderQuickFilterLabel("Attention", quickFilterCounts["needs-refresh"])}
                 </button>
               </div>
 
@@ -891,7 +902,7 @@ export function SearchPanel({
                           </button>
                           <div className="saved-search-card__header-badges">
                             {isHighlighted ? <span className="saved-search-card__saved-badge">Just saved</span> : null}
-                            {item.new_count > 0 ? <span className="new-badge">{item.new_count} NEW</span> : null}
+                            {item.new_count > 0 ? <span className="new-badge new-badge--counted">{item.new_count} new</span> : null}
                           </div>
                         </div>
 

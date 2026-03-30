@@ -915,6 +915,12 @@
 - Зафіксовано deployment mapping: `backend` / `worker` / `frontend` -> AWS, `copart-gateway` / `iaai-gateway` -> NAS, а для shared backend/gateway змін треба явно вказувати деплой на обидва середовища.
 - Додано базові шаблони команд для AWS і NAS deploy flow з посиланням на `docs/private/aws-server-admin.md` як canonical AWS runbook.
 
+## [2026-03-30 12:37] Polish mobile dashboard controls for saved-search inbox
+- Оновлено `frontend/src/features/dashboard/DashboardShell.tsx` і `frontend/src/styles.css`: верхню кнопку меню перероблено в компактний icon-first control з нормальним mobile tap target, а на вузьких екранах header більше не розтягує action-row в широку прямокутну кнопку.
+- Оновлено `frontend/src/features/search/SearchPanel.tsx` і `frontend/src/styles.css`: quick filters для `Saved Searches` тепер мають окремі label/count wrappers, короткий mobile-friendly label `Attention` замість `Needs attention`, стабільну видимість count badge і щільніші мобільні відступи/типографіку без overflow за межі viewport.
+- Оновлено `frontend/src/features/search/SearchPanel.tsx`, `frontend/src/styles.css` і `frontend/tests/app.test.tsx`: counted `new` badge у saved-search cards перероблено на більш природний secondary pill (`1 new`), а regression tests тепер покривають мобільну видимість toolbar counts і нові accessible names filter buttons.
+- Verification: `cd frontend && npm test && npm run build` -> `54 passed`, production build успішний.
+
 ## [2026-03-30 12:09] Fix provider-aware saved-search push dedupe
 - Оновлено `backend/src/cartrap/modules/notifications/service.py`: dedupe key для `saved_search_match` більше не будується з `new_lot_numbers`; тепер використовується provider-aware `new_lot_keys` з fallback на legacy numbers, щоб IAAI та mixed-provider результати не колапсували в один push receipt.
 - Оновлено `backend/tests/notifications/test_push_delivery.py`: додано regression coverage, що два saved-search push events з однаковим видимим `lot_number`, але різними `lot_key`, доставляються окремо, тоді як точний дубль все ще дедупиться.
