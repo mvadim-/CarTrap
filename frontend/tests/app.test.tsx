@@ -290,6 +290,11 @@ async function openManualSearch() {
   await screen.findByRole("dialog", { name: /new search/i });
 }
 
+async function openTrackLotModal() {
+  fireEvent.click(screen.getByRole("button", { name: /^track lot$/i }));
+  await screen.findByRole("dialog", { name: /track lot/i });
+}
+
 async function runDefaultManualSearch() {
   await openManualSearch();
   fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
@@ -1106,7 +1111,7 @@ describe("CarTrap app", () => {
 
     await screen.findByText(/cartrap dispatch board/i);
     expect(screen.getByText(/you don't have any saved searches yet/i)).toBeTruthy();
-    expect(screen.getByLabelText(/lot number/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^track lot$/i })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /collapse saved searches/i }));
     fireEvent.click(screen.getByRole("button", { name: /collapse tracked lots/i }));
@@ -1119,23 +1124,46 @@ describe("CarTrap app", () => {
     fireEvent.click(screen.getByRole("button", { name: /expand tracked lots/i }));
 
     expect(screen.getByText(/you don't have any saved searches yet/i)).toBeTruthy();
-    expect(screen.getByLabelText(/lot number/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^track lot$/i })).toBeTruthy();
     expect(screen.getByText(/you haven't added any lots yet/i)).toBeTruthy();
   });
 
-  it("updates watchlist quick-add copy when switching auction site", async () => {
+  it("updates track-lot modal copy when switching auction site", async () => {
     render(<App />);
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    expect(screen.getByLabelText(/lot number/i)).toBeTruthy();
-    expect(screen.getByText(/enter the copart lot number from the listing\./i)).toBeTruthy();
+    await openTrackLotModal();
+    const trackLotDialog = screen.getByRole("dialog", { name: /track lot/i });
 
-    fireEvent.click(screen.getByRole("button", { name: /^iaai$/i }));
+    expect(within(trackLotDialog).getByLabelText(/lot number/i)).toBeTruthy();
+    expect(within(trackLotDialog).getByText(/enter the copart lot number from the listing\./i)).toBeTruthy();
 
-    expect(screen.getByLabelText(/stock or item id/i)).toBeTruthy();
-    expect(screen.getByPlaceholderText("STK-44 or 42153827")).toBeTruthy();
-    expect(screen.getByText(/enter the iaai stock number or item id from the listing\./i)).toBeTruthy();
+    fireEvent.click(within(trackLotDialog).getByRole("button", { name: /^iaai$/i }));
+
+    expect(within(trackLotDialog).getByLabelText(/stock or item id/i)).toBeTruthy();
+    expect(within(trackLotDialog).getByPlaceholderText("STK-44 or 42153827")).toBeTruthy();
+    expect(within(trackLotDialog).getByText(/enter the iaai stock number or item id from the listing\./i)).toBeTruthy();
+  });
+
+  it("renders track-lot modal as a fullscreen mobile overlay outside the app shell", async () => {
+    mockMobileViewport();
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 360,
+    });
+
+    await openTrackLotModal();
+
+    const trackLotDialog = screen.getByRole("dialog", { name: /track lot/i });
+    const appShell = document.querySelector(".app-shell");
+    expect(appShell?.contains(trackLotDialog)).toBe(false);
+    expect(trackLotDialog.className).toContain("modal-card--mobile-screen");
   });
 
   it("keeps mobile saved-search filter labels and counts visible", async () => {
@@ -1638,8 +1666,10 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "99251295" } });
-    fireEvent.click(screen.getByRole("button", { name: /track lot/i }));
+    await openTrackLotModal();
+    const trackLotDialog = screen.getByRole("dialog", { name: /track lot/i });
+    fireEvent.change(within(trackLotDialog).getByPlaceholderText("99251295"), { target: { value: "99251295" } });
+    fireEvent.click(within(trackLotDialog).getByRole("button", { name: /^track lot$/i }));
 
     await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
     expect(screen.getByText(/Current bid/i)).toBeTruthy();
@@ -2331,8 +2361,10 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "87654321" } });
-    fireEvent.click(screen.getByRole("button", { name: /track lot/i }));
+    await openTrackLotModal();
+    const trackLotDialog = screen.getByRole("dialog", { name: /track lot/i });
+    fireEvent.change(within(trackLotDialog).getByPlaceholderText("99251295"), { target: { value: "87654321" } });
+    fireEvent.click(within(trackLotDialog).getByRole("button", { name: /^track lot$/i }));
 
     await screen.findByText(/2018 HONDA CIVIC EX/i);
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
@@ -2343,8 +2375,10 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "99251295" } });
-    fireEvent.click(screen.getByRole("button", { name: /track lot/i }));
+    await openTrackLotModal();
+    const trackLotDialog = screen.getByRole("dialog", { name: /track lot/i });
+    fireEvent.change(within(trackLotDialog).getByPlaceholderText("99251295"), { target: { value: "99251295" } });
+    fireEvent.click(within(trackLotDialog).getByRole("button", { name: /^track lot$/i }));
 
     await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
     fireEvent.click(screen.getByRole("button", { name: /open gallery for 2025 ford mustang mach-e premium/i }));
@@ -2361,8 +2395,10 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "99251295" } });
-    fireEvent.click(screen.getByRole("button", { name: /track lot/i }));
+    await openTrackLotModal();
+    const trackLotDialog = screen.getByRole("dialog", { name: /track lot/i });
+    fireEvent.change(within(trackLotDialog).getByPlaceholderText("99251295"), { target: { value: "99251295" } });
+    fireEvent.click(within(trackLotDialog).getByRole("button", { name: /^track lot$/i }));
 
     await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
     Object.defineProperty(window, "scrollY", {
@@ -2588,8 +2624,10 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/cartrap dispatch board/i);
-    fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "12345678" } });
-    fireEvent.click(screen.getByRole("button", { name: /track lot/i }));
+    await openTrackLotModal();
+    const trackLotDialog = screen.getByRole("dialog", { name: /track lot/i });
+    fireEvent.change(within(trackLotDialog).getByPlaceholderText("99251295"), { target: { value: "12345678" } });
+    fireEvent.click(within(trackLotDialog).getByRole("button", { name: /^track lot$/i }));
 
     expect(
       await screen.findByText(

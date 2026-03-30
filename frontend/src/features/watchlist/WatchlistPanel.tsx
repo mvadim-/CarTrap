@@ -9,11 +9,12 @@ import type {
   WatchlistItem,
 } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
-import { AuctionProviderBadge, AUCTION_PROVIDER_OPTIONS, getAuctionProviderLabel } from "../shared/AuctionProviderBadge";
+import { AuctionProviderBadge, getAuctionProviderLabel } from "../shared/AuctionProviderBadge";
 import { LotThumbnail } from "../shared/LotThumbnail";
 import { buildResourceReliability } from "../shared/resourceReliability";
 import { LotChangeHistoryModal } from "./LotChangeHistoryModal";
 import { LotGalleryModal } from "./LotGalleryModal";
+import { TrackLotModal } from "./TrackLotModal";
 
 type Props = {
   isMobileLayout: boolean;
@@ -60,6 +61,7 @@ export function WatchlistPanel({
   const [lotNumber, setLotNumber] = useState("");
   const [selectedLot, setSelectedLot] = useState<WatchlistItem | null>(null);
   const [historyLot, setHistoryLot] = useState<WatchlistItem | null>(null);
+  const [isTrackLotModalOpen, setIsTrackLotModalOpen] = useState(false);
   const [historyEntries, setHistoryEntries] = useState<WatchlistHistoryEntry[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -71,12 +73,6 @@ export function WatchlistPanel({
   const isManualActionBlocked = Boolean(selectedDiagnostic && selectedDiagnostic.status !== "ready");
   const isSectionContentVisible = !isMobileLayout || !isSectionCollapsed;
   const manualProviderLabel = getAuctionProviderLabel(manualProvider);
-  const identifierLabel = manualProvider === "iaai" ? "Stock or item ID" : "Lot number";
-  const identifierPlaceholder = manualProvider === "copart" ? "99251295" : "STK-44 or 42153827";
-  const identifierHint =
-    manualProvider === "copart"
-      ? "Enter the Copart lot number from the listing."
-      : "Enter the IAAI stock number or item ID from the listing.";
 
   useEffect(() => {
     if (!isMobileLayout) {
@@ -95,9 +91,21 @@ export function WatchlistPanel({
       await onAddByIdentifier(manualProvider, lotNumber.trim());
       setActionNotice(`${manualProviderLabel} lot ${lotNumber.trim()} added to tracked lots.`);
       setLotNumber("");
+      setIsTrackLotModalOpen(false);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Couldn't add this lot.");
     }
+  }
+
+  function handleOpenTrackLotModal() {
+    setActionError(null);
+    setIsTrackLotModalOpen(true);
+  }
+
+  function handleCloseTrackLotModal() {
+    setIsTrackLotModalOpen(false);
+    setActionError(null);
+    setLotNumber("");
   }
 
   async function handleRemove(id: string) {
@@ -315,135 +323,79 @@ export function WatchlistPanel({
   const contextMessage = getWatchlistContextMessage();
 
   return (
-    <section className="panel panel--watchlist panel--operational">
-      <div className="panel-header">
-        <div>
-          <p className="eyebrow">Watchlist</p>
-          <h2>Tracked Lots</h2>
-          <p className="muted panel-header__lede">
-            Track a Copart or IAAI lot to watch bid, status, and sale-time changes.
-          </p>
-        </div>
-        {isMobileLayout ? (
-          <div className="panel-header__actions">
-            <button
-              type="button"
-              className="ghost-button ghost-button--quiet panel-collapse-toggle"
-              aria-controls="tracked-lots-panel-content"
-              aria-expanded={isSectionContentVisible}
-              aria-label={`${isSectionContentVisible ? "Collapse" : "Expand"} Tracked Lots`}
-              onClick={() => setIsSectionCollapsed((current) => !current)}
-            >
-              {isSectionContentVisible ? "Hide section" : "Show section"}
-            </button>
-          </div>
-        ) : null}
-      </div>
-      {isSectionContentVisible ? (
-        <div id="tracked-lots-panel-content">
-          {contextMessage ? <AsyncStatus compact message={contextMessage} className="panel-status" /> : null}
-          {isManualActionBlocked && selectedDiagnostic ? (
-            <AsyncStatus tone="neutral" compact message={selectedDiagnostic.message} className="panel-status" />
-          ) : null}
-          {loadError ? (
-            <AsyncStatus
-              tone="error"
-              title="Couldn't load tracked lots"
-              message={loadError}
-              action={
-                <button type="button" className="ghost-button" onClick={() => void onRetry()}>
-                  Try again
-                </button>
-              }
-              className="panel-status"
-            />
-          ) : null}
-          {actionError ? (
-            <AsyncStatus tone="error" title="Couldn't update tracked lots" message={actionError} className="panel-status" />
-          ) : null}
-          {actionNotice ? <AsyncStatus tone="success" compact message={actionNotice} className="panel-status" /> : null}
-          <form className="watchlist-form" onSubmit={handleSubmit} aria-busy={isAddingLot}>
-            <fieldset className="watchlist-form__field watchlist-form__field--provider">
-              <legend className="watchlist-form__field-label">Auction site</legend>
-              <div className="watchlist-form__provider-group">
-                {AUCTION_PROVIDER_OPTIONS.map((option) => {
-                  const isSelected = manualProvider === option.value;
-
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`watchlist-form__provider-button${isSelected ? " is-active" : ""}`}
-                      aria-pressed={isSelected}
-                      onClick={() => setManualProvider(option.value)}
-                    >
-                      <AuctionProviderBadge
-                        provider={option.value}
-                        size="default"
-                        tone="plain"
-                        className="watchlist-form__provider-badge"
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-            </fieldset>
-            <label className="watchlist-form__field watchlist-form__field--identifier">
-              <span className="watchlist-form__field-label">{identifierLabel}</span>
-              <input
-                name="lot_identifier"
-                value={lotNumber}
-                onChange={(event) => setLotNumber(event.target.value)}
-                inputMode={manualProvider === "copart" ? "numeric" : "text"}
-                pattern={manualProvider === "copart" ? "[0-9]*" : undefined}
-                autoComplete="off"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                placeholder={identifierPlaceholder}
-                aria-describedby="watchlist-form-hint"
-                disabled={isManualActionBlocked}
-              />
-            </label>
-            <div className="watchlist-form__actions">
-              <button
-                type="submit"
-                className="watchlist-form__submit"
-                disabled={!lotNumber.trim() || isAddingLot || isManualActionBlocked}
-                aria-busy={isAddingLot}
-              >
-                {isAddingLot ? "Tracking…" : "Track Lot"}
-              </button>
-            </div>
-            <p id="watchlist-form-hint" className="watchlist-form__hint">
-              {identifierHint}
+    <>
+      <section className="panel panel--watchlist panel--operational">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Watchlist</p>
+            <h2>Tracked Lots</h2>
+            <p className="muted panel-header__lede">
+              Track a Copart or IAAI lot to watch bid, status, and sale-time changes.
             </p>
-          </form>
-          {isAddingLot ? (
-            <AsyncStatus
-              compact
-              progress="bar"
-              title="Tracking lot"
-              message="We'll keep your current list visible while we load the details."
-              className="panel-status"
-            />
-          ) : null}
-          {isLoading && items.length === 0 ? (
-            <AsyncStatus
-              progress="spinner"
-              title="Loading tracked lots"
-              message="Getting your saved vehicle details ready."
-              className="panel-status"
-            />
-          ) : null}
-          {!isLoading && items.length === 0 && !loadError ? (
-            <p className="muted">You haven't added any lots yet.</p>
-          ) : (
-            <div className="result-list watchlist-list">
-              {items.map((item) => {
-                const urgency = getSaleUrgency(item.sale_date);
-                const isExpanded = expandedItems[item.id] ?? false;
-                const reliability = getReliabilityState(item);
+          </div>
+          <div className="panel-header__actions">
+            <button type="button" className="ghost-button" onClick={handleOpenTrackLotModal} disabled={isManualActionBlocked}>
+              Track Lot
+            </button>
+            {isMobileLayout ? (
+              <button
+                type="button"
+                className="ghost-button ghost-button--quiet panel-collapse-toggle"
+                aria-controls="tracked-lots-panel-content"
+                aria-expanded={isSectionContentVisible}
+                aria-label={`${isSectionContentVisible ? "Collapse" : "Expand"} Tracked Lots`}
+                onClick={() => setIsSectionCollapsed((current) => !current)}
+              >
+                {isSectionContentVisible ? "Hide section" : "Show section"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {isSectionContentVisible ? (
+          <div id="tracked-lots-panel-content">
+            {contextMessage ? <AsyncStatus compact message={contextMessage} className="panel-status" /> : null}
+            {isManualActionBlocked && selectedDiagnostic ? (
+              <AsyncStatus tone="neutral" compact message={selectedDiagnostic.message} className="panel-status" />
+            ) : null}
+            {loadError ? (
+              <AsyncStatus
+                tone="error"
+                title="Couldn't load tracked lots"
+                message={loadError}
+                action={
+                  <button type="button" className="ghost-button" onClick={() => void onRetry()}>
+                    Try again
+                  </button>
+                }
+                className="panel-status"
+              />
+            ) : null}
+            {!isTrackLotModalOpen && actionError ? (
+              <AsyncStatus tone="error" title="Couldn't update tracked lots" message={actionError} className="panel-status" />
+            ) : null}
+            {actionNotice ? <AsyncStatus tone="success" compact message={actionNotice} className="panel-status" /> : null}
+            {isLoading && items.length === 0 ? (
+              <AsyncStatus
+                progress="spinner"
+                title="Loading tracked lots"
+                message="Getting your saved vehicle details ready."
+                className="panel-status"
+              />
+            ) : null}
+            {!isLoading && items.length === 0 && !loadError ? (
+              <div className="saved-search-empty-state watchlist-empty-state">
+                <p className="saved-search-empty-state__title">You haven't added any lots yet.</p>
+                <p className="muted">Track a lot when you want auction changes to stay one tap away.</p>
+                <button type="button" onClick={handleOpenTrackLotModal} disabled={isManualActionBlocked}>
+                  Track your first lot
+                </button>
+              </div>
+            ) : (
+              <div className="result-list watchlist-list">
+                {items.map((item) => {
+                  const urgency = getSaleUrgency(item.sale_date);
+                  const isExpanded = expandedItems[item.id] ?? false;
+                  const reliability = getReliabilityState(item);
                 const hasChangeSummary = hasLatestChangeSummary(item);
                 const isUnreadChange = item.has_unseen_update && hasChangeSummary;
 
@@ -597,11 +549,12 @@ export function WatchlistPanel({
                     </div>
                   </article>
                 );
-              })}
-            </div>
-          )}
-        </div>
-      ) : null}
+                })}
+              </div>
+            )}
+          </div>
+        ) : null}
+      </section>
       <LotGalleryModal
         title={selectedLot?.title ?? ""}
         imageUrls={selectedLot?.image_urls ?? []}
@@ -621,6 +574,19 @@ export function WatchlistPanel({
           setIsHistoryLoading(false);
         }}
       />
-    </section>
+      <TrackLotModal
+        isOpen={isTrackLotModalOpen}
+        manualProvider={manualProvider}
+        lotNumber={lotNumber}
+        isAddingLot={isAddingLot}
+        isManualActionBlocked={isManualActionBlocked}
+        selectedDiagnostic={selectedDiagnostic}
+        actionError={actionError}
+        onClose={handleCloseTrackLotModal}
+        onManualProviderChange={setManualProvider}
+        onLotNumberChange={setLotNumber}
+        onSubmit={handleSubmit}
+      />
+    </>
   );
 }

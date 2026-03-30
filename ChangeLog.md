@@ -974,3 +974,10 @@
 ## [2026-03-30 19:14] Fix tracked-lots desktop CTA overflow
 - Оновлено `frontend/src/styles.css`: desktop composer для `Tracked Lots` переведено з жорстких `minmax` колонок на більш еластичні `fr` proportions з `width: min(100%, 70rem)`, а action-column / submit button тепер мають `min-width: 0`; це прибирає horizontal overflow, через який `Track Lot` вилазив за правий край секції.
 - Verification: `cd frontend && npm test -- app.test.tsx` -> `58 passed`; `cd frontend && npm run build` -> успішно.
+
+## [2026-03-30 19:25] Move tracked-lot add flow into modal
+- Додано `frontend/src/features/watchlist/TrackLotModal.tsx`: add-lot flow для watchlist тепер живе в окремому modal surface з provider toggle, dynamic identifier copy, inline validation/error states і mobile fullscreen поведінкою за аналогією з `New Search`.
+- Оновлено `frontend/src/features/watchlist/WatchlistPanel.tsx`: inline composer прибрано з panel, у header лишився компактний CTA `Track Lot`, а empty state тепер показує `Track your first lot`; сам список tracked lots став основним контентом секції.
+- Оновлено `frontend/src/styles.css`: прибрано старі inline-composer styles і додано окремий visual language для `track-lot-modal`, включно з desktop dialog sizing, mobile sticky actions та provider toggle states.
+- Оновлено `frontend/tests/app.test.tsx`: interaction tests переведено на flow `open Track Lot dialog -> fill -> submit`, а також додано regression coverage, що mobile `Track Lot` modal рендериться fullscreen і поза `.app-shell`.
+- Verification: `cd frontend && npm test -- app.test.tsx` -> `59 passed`; `cd frontend && npm run build` -> успішно.
