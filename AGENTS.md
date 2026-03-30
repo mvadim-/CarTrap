@@ -6,6 +6,12 @@
 - Перед стартом перевіряй останній блок у `ChangeLog.md`, щоби знати контекст.
 - Кожен цикл змін → окремий запис у `ChangeLog.md` (формат `## [YYYY-MM-DD HH:MM] ...` + перелік файлів/ключових пунктів).
 - Будь-які зміни коду чи конфігурацій фіксуй у `ChangeLog.md`.
+- Після кожного завершеного циклу змін для багфикса, рефакторингу або нової фічі обов'язково роби окремий `git commit` з коротким імперативним повідомленням.
+- Після кожного завершеного циклу змін у фінальній відповіді обов'язково давай короткі інструкції для production deploy, прив'язані до сервісів, яких торкнулися зміни.
+- Мапінг production deploy такий: `backend`, `worker`, `frontend` деплояться на AWS; `copart-gateway` і `iaai-gateway` деплояться на NAS.
+- Якщо зміни торкаються shared Python image, `backend/Dockerfile`, спільних backend-модулів для gateway flow або будь-якого коду, який виконується і на AWS, і на gateway, у фінальній відповіді треба явно сказати, що потрібен деплой і на AWS, і на NAS.
+- Для AWS-частини за замовчуванням орієнтуйся на `docs/private/aws-server-admin.md`: `ssh ubuntu@<aws-host>`, `cd /opt/cartrap`, `git pull --ff-only`, `docker compose build backend frontend worker`, `docker compose up -d`, `docker compose ps`, `curl http://127.0.0.1:8000/api/health`, `curl -I https://cartrapapp.pp.ua`.
+- Для NAS-частини давай команди, прив'язані до змінених gateway service names: `copart-gateway` і/або `iaai-gateway`; мінімальний шаблон: зайти на NAS host, перейти в `/opt/cartrap`, `git pull --ff-only`, `docker compose build <service>`, `docker compose up -d <service>`, `docker compose ps`, перевірити логи відповідного gateway.
 
 
 ## Project Structure & Module Organization
