@@ -127,18 +127,13 @@ class WatchlistService:
         }
 
     def list_watchlist(self, owner_user: dict) -> dict:
-        unseen_update_ids: list[str] = []
         hydrated_items: list[dict] = []
         for item in self.repository.list_tracked_lots_for_owner(owner_user["id"]):
             hydrated_item = self._schedule_legacy_backfill(item)
-            if hydrated_item.get("has_unseen_update"):
-                unseen_update_ids.append(str(hydrated_item["_id"]))
             hydrated_items.append(hydrated_item)
         hydrated_items.sort(key=self._watchlist_sort_key)
         live_sync_status = self._system_status_service.get_live_sync_status()
         items = [self.serialize_tracked_lot(item, live_sync_status=live_sync_status) for item in hydrated_items]
-        if unseen_update_ids:
-            self.repository.clear_unseen_updates(unseen_update_ids)
         return {"items": items}
 
     def remove_tracked_lot(self, owner_user: dict, tracked_lot_id: str) -> None:
@@ -212,6 +207,20 @@ class WatchlistService:
         if refreshed is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked lot not found.")
         return {"tracked_lot": self.serialize_tracked_lot(refreshed, live_sync_status=live_sync_status)}
+
+    def acknowledge_tracked_lot_update(self, owner_user: dict, tracked_lot_id: str) -> dict:
+        tracked_lot = self.repository.find_tracked_lot_by_id_for_owner(tracked_lot_id, owner_user["id"])
+        if tracked_lot is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked lot not found.")
+
+        acknowledged = tracked_lot
+        if tracked_lot.get("has_unseen_update"):
+            acknowledged = self.repository.acknowledge_tracked_lot_update(tracked_lot_id, self._now())
+            if acknowledged is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked lot not found.")
+
+        live_sync_status = self._system_status_service.get_live_sync_status()
+        return {"tracked_lot": self.serialize_tracked_lot(acknowledged, live_sync_status=live_sync_status)}
 
     def _fetch_snapshot(
         self,

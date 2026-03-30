@@ -435,6 +435,19 @@ describe("CarTrap app", () => {
           if ((init?.method ?? "GET") === "GET") {
             watchlistListCallCount += 1;
           }
+          if ((init?.method ?? "GET") === "POST" && url.endsWith("/acknowledge-update")) {
+            const id = url.split("/watchlist/")[1]?.replace("/acknowledge-update", "") ?? "";
+            const trackedLot = watchlistItems.find((item) => item.id === id);
+            if (!trackedLot) {
+              return new Response(JSON.stringify({ detail: "Tracked lot not found." }), { status: 404 });
+            }
+            const acknowledgedTrackedLot = {
+              ...trackedLot,
+              has_unseen_update: false,
+            };
+            watchlistItems = watchlistItems.map((item) => (item.id === id ? acknowledgedTrackedLot : item));
+            return new Response(JSON.stringify({ tracked_lot: acknowledgedTrackedLot }), { status: 200 });
+          }
           if ((init?.method ?? "GET") === "POST" && url.endsWith("/refresh-live")) {
             const id = url.split("/watchlist/")[1]?.replace("/refresh-live", "") ?? "";
             const trackedLot = watchlistItems.find((item) => item.id === id);
@@ -1623,6 +1636,34 @@ describe("CarTrap app", () => {
     expect(watchlistCards[0]?.textContent).toContain("2025 FORD MUSTANG MACH-E PREMIUM");
     expect(watchlistCards[1]?.textContent).toContain("2020 TOYOTA CAMRY SE");
     expect(screen.getByText(/^Changed$/i)).toBeTruthy();
+    expect(screen.getByText(/Status: On Approval -> Live/i)).toBeTruthy();
+    expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
+  });
+
+  it("keeps the latest change summary visible after marking a tracked-lot update as seen", async () => {
+    watchlistItems = [
+      buildTrackedLot({
+        has_unseen_update: true,
+        latest_change_at: "2026-03-17T15:40:00Z",
+        latest_changes: {
+          raw_status: { before: "On Approval", after: "Live" },
+          current_bid: { before: 4200, after: 5100 },
+        },
+      }),
+    ];
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    expect(screen.getByText(/^Changed$/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /mark seen/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/^Changed$/i)).toBeNull();
+    });
+    expect(screen.getByText(/^Last change$/i)).toBeTruthy();
     expect(screen.getByText(/Status: On Approval -> Live/i)).toBeTruthy();
     expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
   });

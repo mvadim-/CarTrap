@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request, status
 from cartrap.api.dependencies import get_current_user
 from cartrap.modules.provider_connections.service import ProviderConnectionService
 from cartrap.modules.watchlist.schemas import (
+    WatchlistAcknowledgeResponse,
     WatchlistCreateRequest,
     WatchlistCreateResponse,
     WatchlistListResponse,
@@ -76,6 +77,15 @@ def refresh_watchlist_lot_live(
     watchlist_service: WatchlistService = Depends(get_watchlist_service),
 ) -> dict:
     return watchlist_service.refresh_tracked_lot_live(current_user, tracked_lot_id)
+
+
+@router.post("/{tracked_lot_id}/acknowledge-update", response_model=WatchlistAcknowledgeResponse)
+def acknowledge_watchlist_lot_update(
+    tracked_lot_id: str,
+    current_user: dict = Depends(get_current_user),
+    watchlist_service: WatchlistService = Depends(get_watchlist_service),
+) -> dict:
+    return watchlist_service.acknowledge_tracked_lot_update(current_user, tracked_lot_id)
 
 
 @router.delete("/{tracked_lot_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -489,6 +489,14 @@ export async function refreshWatchlistLotLive(id: string, token: string): Promis
   return normalizeWatchlistItem(response.tracked_lot);
 }
 
+export async function acknowledgeWatchlistLotUpdate(id: string, token: string): Promise<WatchlistItem> {
+  const response = await request<{ tracked_lot: WatchlistItem }>(`/watchlist/${id}/acknowledge-update`, {
+    method: "POST",
+    token,
+  });
+  return normalizeWatchlistItem(response.tracked_lot);
+}
+
 export async function removeWatchlistItem(id: string, token: string): Promise<void> {
   await request<void>(`/watchlist/${id}`, { method: "DELETE", token });
 }

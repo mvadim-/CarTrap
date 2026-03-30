@@ -71,8 +71,17 @@ class FakeConnectorClient:
     def __init__(self, app) -> None:
         self._app = app
 
-    def bootstrap_connector_session(self, *, username: str, password: str) -> CopartConnectorBootstrapResult:
+    def bootstrap_connector_session(
+        self,
+        *,
+        username: str,
+        password: str,
+        client_ip: str | None = None,
+        correlation_id: str | None = None,
+    ) -> CopartConnectorBootstrapResult:
         del password
+        del client_ip
+        del correlation_id
         bundle = CopartEncryptedSessionBundle(
             encrypted_bundle=f"bundle:{username}",
             key_version="v1",
@@ -297,7 +306,7 @@ def test_watchlist_rejects_duplicate_lot(client: TestClient) -> None:
     assert duplicate_response.status_code == 409
 
 
-def test_watchlist_keeps_auction_date_order_when_updated_lot_has_unseen_changes(client: TestClient) -> None:
+def test_watchlist_keeps_update_marker_until_explicit_acknowledge(client: TestClient) -> None:
     with client:
         user_token = _create_user(client, "updates@example.com", "UpdatesPass123")
         older_id = client.post(
@@ -326,6 +335,11 @@ def test_watchlist_keeps_auction_date_order_when_updated_lot_has_unseen_changes(
 
         first_list_response = client.get("/api/watchlist", headers={"Authorization": f"Bearer {user_token}"})
         second_list_response = client.get("/api/watchlist", headers={"Authorization": f"Bearer {user_token}"})
+        acknowledge_response = client.post(
+            f"/api/watchlist/{older_id}/acknowledge-update",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        third_list_response = client.get("/api/watchlist", headers={"Authorization": f"Bearer {user_token}"})
 
     assert first_list_response.status_code == 200
     assert [item["id"] for item in first_list_response.json()["items"]] == [older_id, newer_id]
@@ -334,8 +348,18 @@ def test_watchlist_keeps_auction_date_order_when_updated_lot_has_unseen_changes(
 
     assert second_list_response.status_code == 200
     assert [item["id"] for item in second_list_response.json()["items"]] == [older_id, newer_id]
-    assert second_list_response.json()["items"][0]["has_unseen_update"] is False
-    assert second_list_response.json()["items"][0]["latest_changes"] == {}
+    assert second_list_response.json()["items"][0]["has_unseen_update"] is True
+    assert second_list_response.json()["items"][0]["latest_changes"]["current_bid"] == {"before": 4200.0, "after": 5100.0}
+
+    assert acknowledge_response.status_code == 200
+    acknowledged_tracked_lot = acknowledge_response.json()["tracked_lot"]
+    assert acknowledged_tracked_lot["has_unseen_update"] is False
+    assert acknowledged_tracked_lot["latest_changes"]["current_bid"] == {"before": 4200.0, "after": 5100.0}
+
+    assert third_list_response.status_code == 200
+    assert [item["id"] for item in third_list_response.json()["items"]] == [older_id, newer_id]
+    assert third_list_response.json()["items"][0]["has_unseen_update"] is False
+    assert third_list_response.json()["items"][0]["latest_changes"]["current_bid"] == {"before": 4200.0, "after": 5100.0}
 
 
 def test_watchlist_accepts_lot_number_input(client: TestClient) -> None:

@@ -14,6 +14,7 @@ import { AsyncStatus } from "./features/shared/AsyncStatus";
 import { WatchlistPanel } from "./features/watchlist/WatchlistPanel";
 import {
   acceptInvite,
+  acknowledgeWatchlistLotUpdate,
   addToWatchlist,
   addFromSearch,
   connectCopartConnection,
@@ -92,6 +93,7 @@ type ActionState = {
   addingFromSearchLotUrl: string | null;
   isAddingWatchlistLot: boolean;
   refreshingWatchlistId: string | null;
+  acknowledgingWatchlistId: string | null;
   removingWatchlistId: string | null;
   isSubscribingPush: boolean;
   unsubscribingEndpoint: string | null;
@@ -125,6 +127,7 @@ const INITIAL_ACTION_STATE: ActionState = {
   addingFromSearchLotUrl: null,
   isAddingWatchlistLot: false,
   refreshingWatchlistId: null,
+  acknowledgingWatchlistId: null,
   removingWatchlistId: null,
   isSubscribingPush: false,
   unsubscribingEndpoint: null,
@@ -1273,6 +1276,25 @@ export function App() {
     }
   }
 
+  async function handleAcknowledgeWatchlistLotUpdate(id: string): Promise<WatchlistItem> {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    setActionState((current) => ({ ...current, acknowledgingWatchlistId: id }));
+    try {
+      const trackedLot = await acknowledgeWatchlistLotUpdate(id, session.accessToken);
+      setWatchlist((current) => sortWatchlistItems([trackedLot, ...current.filter((item) => item.id !== trackedLot.id)]));
+      return trackedLot;
+    } catch (caught) {
+      await loadWatchlistResource(session.accessToken, { silent: true });
+      throw new Error(toErrorMessage(caught, "Could not mark tracked-lot update as seen"));
+    } finally {
+      setActionState((current) =>
+        current.acknowledgingWatchlistId === id ? { ...current, acknowledgingWatchlistId: null } : current,
+      );
+    }
+  }
+
   async function handleAddFromSearch(payload: {
     provider: AuctionProvider;
     provider_lot_id?: string;
@@ -1657,6 +1679,7 @@ export function App() {
           loadError={dashboardErrors.watchlist}
           isAddingLot={actionState.isAddingWatchlistLot}
           refreshingItemId={actionState.refreshingWatchlistId}
+          acknowledgingItemId={actionState.acknowledgingWatchlistId}
           removingItemId={actionState.removingWatchlistId}
           isBrowserOffline={isBrowserOffline}
           liveSyncStatus={liveSyncStatus}
@@ -1665,6 +1688,7 @@ export function App() {
           onRetry={() => (session.accessToken ? loadWatchlistResource(session.accessToken) : Promise.resolve())}
           onAddByIdentifier={handleAddByIdentifier}
           onRefreshItem={handleRefreshWatchlistLot}
+          onAcknowledgeItemUpdate={handleAcknowledgeWatchlistLotUpdate}
           onRemove={handleRemoveWatchlistItem}
         />
         {isAdmin ? (

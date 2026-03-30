@@ -13,6 +13,7 @@ type Props = {
   loadError: string | null;
   isAddingLot: boolean;
   refreshingItemId: string | null;
+  acknowledgingItemId: string | null;
   removingItemId: string | null;
   isBrowserOffline: boolean;
   liveSyncStatus: LiveSyncStatus | null;
@@ -21,6 +22,7 @@ type Props = {
   onRetry: () => Promise<void>;
   onAddByIdentifier: (provider: AuctionProvider, lotNumber: string) => Promise<void>;
   onRefreshItem: (id: string) => Promise<WatchlistItem>;
+  onAcknowledgeItemUpdate: (id: string) => Promise<WatchlistItem>;
   onRemove: (id: string) => Promise<void>;
 };
 
@@ -31,6 +33,7 @@ export function WatchlistPanel({
   loadError,
   isAddingLot,
   refreshingItemId,
+  acknowledgingItemId,
   removingItemId,
   isBrowserOffline,
   liveSyncStatus,
@@ -39,6 +42,7 @@ export function WatchlistPanel({
   onRetry,
   onAddByIdentifier,
   onRefreshItem,
+  onAcknowledgeItemUpdate,
   onRemove,
 }: Props) {
   const [manualProvider, setManualProvider] = useState<AuctionProvider>("copart");
@@ -93,6 +97,17 @@ export function WatchlistPanel({
       setActionNotice(`Updated ${title}.`);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Couldn't update this lot.");
+    }
+  }
+
+  async function handleAcknowledgeUpdate(id: string) {
+    setActionError(null);
+    setActionNotice(null);
+    try {
+      await onAcknowledgeItemUpdate(id);
+      setActionNotice("Update marked as seen.");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Couldn't mark this update as seen.");
     }
   }
 
@@ -219,6 +234,10 @@ export function WatchlistPanel({
       );
     }
     return summaries;
+  }
+
+  function hasLatestChangeSummary(item: WatchlistItem): boolean {
+    return Object.keys(item.latest_changes).length > 0;
   }
 
   function getReliabilityState(
@@ -358,11 +377,13 @@ export function WatchlistPanel({
                 const urgency = getSaleUrgency(item.sale_date);
                 const isExpanded = expandedItems[item.id] ?? false;
                 const reliability = getReliabilityState(item);
+                const hasChangeSummary = hasLatestChangeSummary(item);
+                const isUnreadChange = item.has_unseen_update && hasChangeSummary;
 
                 return (
                   <article
                     key={item.id}
-                    className={`result-card result-card--media watchlist-card${item.has_unseen_update ? " watchlist-card--updated" : ""}${urgency ? ` watchlist-card--${urgency.tone}` : ""}${reliability.needsAttention ? " watchlist-card--attention" : ""}`}
+                    className={`result-card result-card--media watchlist-card${isUnreadChange ? " watchlist-card--updated" : ""}${urgency ? ` watchlist-card--${urgency.tone}` : ""}${reliability.needsAttention ? " watchlist-card--attention" : ""}`}
                   >
                     <LotThumbnail
                       title={item.title}
@@ -401,7 +422,7 @@ export function WatchlistPanel({
                           </div>
                         </div>
                         <div className="watchlist-card__header-badges">
-                          {item.has_unseen_update ? <span className="watchlist-card__update-badge">Changed</span> : null}
+                          {isUnreadChange ? <span className="watchlist-card__update-badge">Changed</span> : null}
                         </div>
                       </div>
                       <dl className="watchlist-card__signals">
@@ -421,8 +442,13 @@ export function WatchlistPanel({
                       {item.connection_diagnostic && item.connection_diagnostic.status !== "ready" ? (
                         <AsyncStatus tone="neutral" compact message={item.connection_diagnostic.message} className="panel-status" />
                       ) : null}
-                      {item.has_unseen_update ? (
-                        <div className="watchlist-card__update-callout" role="status" aria-live="polite">
+                      {hasChangeSummary ? (
+                        <div
+                          className={`watchlist-card__update-callout${isUnreadChange ? "" : " watchlist-card__update-callout--seen"}`}
+                          role="status"
+                          aria-live="polite"
+                        >
+                          <p className="watchlist-card__update-kicker">{isUnreadChange ? "New change" : "Last change"}</p>
                           <p className="watchlist-card__update-summary">{formatLatestChangeSummary(item).join(" · ")}</p>
                           {item.latest_change_at ? (
                             <p className="watchlist-card__update-meta">Found {formatLastChecked(item.latest_change_at)}</p>
@@ -448,12 +474,24 @@ export function WatchlistPanel({
                       ) : null}
                     </div>
                     <div className="watchlist-card__actions">
+                      {isUnreadChange ? (
+                        <button
+                          type="button"
+                          className="ghost-button ghost-button--quiet"
+                          onClick={() => void handleAcknowledgeUpdate(item.id)}
+                          disabled={acknowledgingItemId === item.id}
+                          aria-busy={acknowledgingItemId === item.id}
+                        >
+                          {acknowledgingItemId === item.id ? "Saving..." : "Mark seen"}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="ghost-button ghost-button--quiet"
                         onClick={() => void handleRefresh(item.id, item.title)}
                         disabled={
                           refreshingItemId === item.id ||
+                          acknowledgingItemId === item.id ||
                           Boolean(item.connection_diagnostic && item.connection_diagnostic.status !== "ready")
                         }
                         aria-busy={refreshingItemId === item.id}

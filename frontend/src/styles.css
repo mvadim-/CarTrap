@@ -1240,9 +1240,23 @@ button:focus-visible,
   background: rgba(255, 242, 237, 0.88);
 }
 
+.watchlist-card__update-callout--seen {
+  border-color: rgba(19, 38, 47, 0.1);
+  background: rgba(244, 241, 235, 0.75);
+}
+
+.watchlist-card__update-kicker,
 .watchlist-card__update-summary,
 .watchlist-card__update-meta {
   margin: 0;
+}
+
+.watchlist-card__update-kicker {
+  color: rgba(19, 38, 47, 0.74);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .watchlist-card__update-summary {
@@ -1251,9 +1265,17 @@ button:focus-visible,
   font-weight: 600;
 }
 
+.watchlist-card__update-callout--seen .watchlist-card__update-summary {
+  color: var(--ink-strong);
+}
+
 .watchlist-card__update-meta {
   color: rgba(143, 44, 33, 0.76);
   font-size: 0.76rem;
+}
+
+.watchlist-card__update-callout--seen .watchlist-card__update-meta {
+  color: rgba(19, 38, 47, 0.62);
 }
 
 .watchlist-card__lot-link {

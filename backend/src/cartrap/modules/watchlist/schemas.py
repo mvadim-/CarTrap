@@ -104,3 +104,7 @@ class WatchlistListResponse(BaseModel):
 
 class WatchlistRefreshResponse(BaseModel):
     tracked_lot: WatchlistItemResponse
+
+
+class WatchlistAcknowledgeResponse(BaseModel):
+    tracked_lot: WatchlistItemResponse

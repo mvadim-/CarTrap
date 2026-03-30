@@ -7,6 +7,7 @@ import logging
 from typing import Optional
 
 from bson import ObjectId
+from pymongo import ReturnDocument
 from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
@@ -123,10 +124,9 @@ class WatchlistRepository:
             {"$set": {"repair_requested_at": requested_at, "updated_at": requested_at}},
         )
 
-    def clear_unseen_updates(self, tracked_lot_ids: list[str]) -> None:
-        if not tracked_lot_ids:
-            return
-        self.tracked_lots.update_many(
-            {"_id": {"$in": [ObjectId(tracked_lot_id) for tracked_lot_id in tracked_lot_ids]}},
-            {"$set": {"has_unseen_update": False, "latest_change_at": None, "latest_changes": {}}},
+    def acknowledge_tracked_lot_update(self, tracked_lot_id: str, acknowledged_at: datetime) -> Optional[dict]:
+        return self.tracked_lots.find_one_and_update(
+            {"_id": ObjectId(tracked_lot_id)},
+            {"$set": {"has_unseen_update": False, "updated_at": acknowledged_at}},
+            return_document=ReturnDocument.AFTER,
         )
