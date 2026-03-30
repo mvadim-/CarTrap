@@ -970,3 +970,7 @@
 - Оновлено `frontend/src/styles.css`: desktop watchlist composer більше не розтягується на всю ширину panel без контролю; для нього задано збалансованіші desktop columns, `max-width`, нормальну висоту CTA і ширші provider toggles, щоб кнопка не виглядала як вертикальна плашка, а `Copart` / `IAAI` не обрізалися.
 - Оновлено `frontend/src/features/watchlist/WatchlistPanel.tsx`: provider badges у desktop quick-add composer більше не рендеряться з зайвим inner-pill chrome; selection лишається на outer toggle, тому control виглядає чистіше й читається краще на широких екранах.
 - Verification: `cd frontend && npm test -- app.test.tsx` -> `58 passed`; `cd frontend && npm run build` -> успішно.
+
+## [2026-03-30 19:14] Fix tracked-lots desktop CTA overflow
+- Оновлено `frontend/src/styles.css`: desktop composer для `Tracked Lots` переведено з жорстких `minmax` колонок на більш еластичні `fr` proportions з `width: min(100%, 70rem)`, а action-column / submit button тепер мають `min-width: 0`; це прибирає horizontal overflow, через який `Track Lot` вилазив за правий край секції.
+- Verification: `cd frontend && npm test -- app.test.tsx` -> `58 passed`; `cd frontend && npm run build` -> успішно.

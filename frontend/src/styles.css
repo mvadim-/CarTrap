@@ -804,13 +804,13 @@ button:focus-visible,
 
 .watchlist-form {
   display: grid;
-  grid-template-columns: minmax(20rem, 21.5rem) minmax(18rem, 1fr) minmax(11rem, 12rem);
+  width: min(100%, 70rem);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr) minmax(10rem, 0.72fr);
   grid-template-areas:
     "provider identifier actions"
     "hint hint hint";
   gap: 0.8rem;
   align-items: end;
-  max-width: 74rem;
   padding: 0.95rem;
   border: 1px solid rgba(19, 38, 47, 0.1);
   border-radius: 1.2rem;
@@ -897,10 +897,12 @@ button:focus-visible,
   grid-area: actions;
   display: flex;
   align-self: end;
+  min-width: 0;
 }
 
 .watchlist-form__submit {
   width: 100%;
+  min-width: 0;
   min-height: calc(var(--control-height) + 0.15rem);
   background: linear-gradient(135deg, #9b3d12 0%, #b35b30 100%);
   box-shadow: 0 16px 32px rgba(155, 61, 18, 0.2);
