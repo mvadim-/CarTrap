@@ -1,10 +1,18 @@
 import { FormEvent, useEffect, useState } from "react";
 
-import type { AuctionProvider, LiveSyncStatus, ProviderConnectionDiagnostic, WatchlistItem } from "../../types";
+import type {
+  AuctionProvider,
+  LiveSyncStatus,
+  ProviderConnectionDiagnostic,
+  WatchlistHistoryEntry,
+  WatchlistHistoryResponse,
+  WatchlistItem,
+} from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
 import { AuctionProviderBadge } from "../shared/AuctionProviderBadge";
 import { LotThumbnail } from "../shared/LotThumbnail";
 import { buildResourceReliability } from "../shared/resourceReliability";
+import { LotChangeHistoryModal } from "./LotChangeHistoryModal";
 import { LotGalleryModal } from "./LotGalleryModal";
 
 type Props = {
@@ -23,6 +31,7 @@ type Props = {
   onRetry: () => Promise<void>;
   onAddByIdentifier: (provider: AuctionProvider, lotNumber: string) => Promise<void>;
   onRefreshItem: (id: string) => Promise<WatchlistItem>;
+  onLoadItemHistory: (id: string) => Promise<WatchlistHistoryResponse>;
   onAcknowledgeItemUpdate: (id: string) => Promise<WatchlistItem>;
   onRemove: (id: string) => Promise<void>;
 };
@@ -43,12 +52,17 @@ export function WatchlistPanel({
   onRetry,
   onAddByIdentifier,
   onRefreshItem,
+  onLoadItemHistory,
   onAcknowledgeItemUpdate,
   onRemove,
 }: Props) {
   const [manualProvider, setManualProvider] = useState<AuctionProvider>("copart");
   const [lotNumber, setLotNumber] = useState("");
   const [selectedLot, setSelectedLot] = useState<WatchlistItem | null>(null);
+  const [historyLot, setHistoryLot] = useState<WatchlistItem | null>(null);
+  const [historyEntries, setHistoryEntries] = useState<WatchlistHistoryEntry[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
@@ -109,6 +123,21 @@ export function WatchlistPanel({
       setActionNotice("Update marked as seen.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Couldn't mark this update as seen.");
+    }
+  }
+
+  async function handleOpenHistory(item: WatchlistItem) {
+    setHistoryLot(item);
+    setHistoryEntries([]);
+    setHistoryError(null);
+    setIsHistoryLoading(true);
+    try {
+      const response = await onLoadItemHistory(item.id);
+      setHistoryEntries(response.entries);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : "Couldn't load change history.");
+    } finally {
+      setIsHistoryLoading(false);
     }
   }
 
@@ -516,6 +545,9 @@ export function WatchlistPanel({
                       >
                         {isExpanded ? "Hide details" : "Show details"}
                       </button>
+                      <button type="button" className="ghost-button ghost-button--quiet" onClick={() => void handleOpenHistory(item)}>
+                        Change history
+                      </button>
                       <button
                         type="button"
                         className="ghost-button ghost-button--quiet"
@@ -538,6 +570,19 @@ export function WatchlistPanel({
         imageUrls={selectedLot?.image_urls ?? []}
         isOpen={selectedLot !== null}
         onClose={() => setSelectedLot(null)}
+      />
+      <LotChangeHistoryModal
+        title={historyLot?.title ?? ""}
+        isOpen={historyLot !== null}
+        isLoading={isHistoryLoading}
+        error={historyError}
+        entries={historyEntries}
+        onClose={() => {
+          setHistoryLot(null);
+          setHistoryEntries([]);
+          setHistoryError(null);
+          setIsHistoryLoading(false);
+        }}
       />
     </section>
   );

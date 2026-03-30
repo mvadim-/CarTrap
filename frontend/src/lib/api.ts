@@ -17,6 +17,7 @@ import type {
   SystemStatus,
   TokenPair,
   User,
+  WatchlistHistoryResponse,
   WatchlistItem,
 } from "../types";
 import { clearSession, loadTokens, saveTokens } from "./session";
@@ -495,6 +496,10 @@ export async function acknowledgeWatchlistLotUpdate(id: string, token: string): 
     token,
   });
   return normalizeWatchlistItem(response.tracked_lot);
+}
+
+export async function getWatchlistLotHistory(id: string, token: string): Promise<WatchlistHistoryResponse> {
+  return request<WatchlistHistoryResponse>(`/watchlist/${id}/history`, { token });
 }
 
 export async function removeWatchlistItem(id: string, token: string): Promise<void> {

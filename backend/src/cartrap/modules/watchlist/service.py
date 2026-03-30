@@ -11,8 +11,8 @@ from pymongo.database import Database
 
 from cartrap.modules.auction_domain.models import AuctionLotSnapshot, PROVIDER_COPART, build_lot_key, normalize_provider
 from cartrap.modules.copart_provider.service import CopartProvider
-from cartrap.modules.iaai_provider.service import IaaiProvider
 from cartrap.modules.monitoring.change_detection import detect_significant_changes
+from cartrap.modules.iaai_provider.service import IaaiProvider
 from cartrap.modules.monitoring.polling_policy import DEFAULT_INTERVAL_MINUTES, get_poll_interval_minutes
 from cartrap.modules.provider_connections.service import ProviderConnectionService
 from cartrap.modules.system_status.service import SystemStatusService, build_freshness_envelope
@@ -221,6 +221,29 @@ class WatchlistService:
 
         live_sync_status = self._system_status_service.get_live_sync_status()
         return {"tracked_lot": self.serialize_tracked_lot(acknowledged, live_sync_status=live_sync_status)}
+
+    def get_tracked_lot_history(self, owner_user: dict, tracked_lot_id: str) -> dict:
+        tracked_lot = self.repository.find_tracked_lot_by_id_for_owner(tracked_lot_id, owner_user["id"])
+        if tracked_lot is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked lot not found.")
+
+        snapshots = self.repository.list_snapshots_for_tracked_lot(tracked_lot_id)
+        entries: list[dict] = []
+        for index, snapshot in enumerate(snapshots[:-1]):
+            previous_snapshot = snapshots[index + 1]
+            changes = detect_significant_changes(previous_snapshot, snapshot)
+            if not changes:
+                continue
+            entries.append(
+                {
+                    "snapshot": self.serialize_snapshot(snapshot),
+                    "changes": changes,
+                }
+            )
+        return {
+            "tracked_lot_id": tracked_lot_id,
+            "entries": entries,
+        }
 
     def _fetch_snapshot(
         self,

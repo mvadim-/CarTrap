@@ -108,3 +108,13 @@ class WatchlistRefreshResponse(BaseModel):
 
 class WatchlistAcknowledgeResponse(BaseModel):
     tracked_lot: WatchlistItemResponse
+
+
+class WatchlistHistoryEntryResponse(BaseModel):
+    snapshot: LotSnapshotResponse
+    changes: dict[str, LotChangeValueResponse] = Field(default_factory=dict)
+
+
+class WatchlistHistoryResponse(BaseModel):
+    tracked_lot_id: str
+    entries: list[WatchlistHistoryEntryResponse] = Field(default_factory=list)

@@ -869,6 +869,12 @@
 - Оновлено `backend/tests/iaai/test_service.py`: додано regression coverage для production-like кейсу `62993275 -> 45107325~US`, де початковий reference є `itemId`, а не `stockNumber`, тому watchlist refresh/add має доходити до другого `GetInventoryDetails` замість падіння після одного `search`.
 - Verification: `./.venv/bin/pytest backend/tests/iaai/test_service.py backend/tests/iaai/test_normalizer.py backend/tests/iaai/test_gateway_connector_flow.py backend/tests/provider_connections/test_iaai_router.py` -> `16 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime).
 
+## [2026-03-30 18:11] Add tracked-lot change history modal
+- Оновлено `backend/src/cartrap/modules/watchlist/{router.py,schemas.py,service.py}`: додано `GET /watchlist/{id}/history`, який будує timeline change-entries із `lot_snapshots` через shared diff logic і повертає всі зафіксовані зміни лота в owner-scoped API.
+- Оновлено `frontend/src/{App.tsx,lib/api.ts,types.ts,styles.css}` і `frontend/src/features/watchlist/{WatchlistPanel.tsx,LotChangeHistoryModal.tsx}`: у watchlist action-row додано кнопку `Change history` одразу після `Show details`, а modal історії показує всі recorded changes як окремі timeline entries з timestamp-ами та diff summary.
+- Оновлено `backend/tests/watchlist/test_watchlist_api.py` і `frontend/tests/app.test.tsx`: додано regression coverage для нового history endpoint, порядку кнопок у watchlist action-row і відкриття modal з кількома change entries.
+- Verification: `./.venv/bin/pytest backend/tests/watchlist/test_watchlist_api.py` -> `13 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime); `cd frontend && npm test -- app.test.tsx` -> `57 passed`; `cd frontend && npm run build` -> успішно.
+
 ## [2026-03-30 12:51] Keep watchlist update highlights until explicit acknowledge
 - Оновлено `backend/src/cartrap/modules/watchlist/{repository.py,service.py,router.py,schemas.py}`: `GET /watchlist` більше не очищає `has_unseen_update` / `latest_changes` на першому ж рендері, додано explicit endpoint `POST /watchlist/{id}/acknowledge-update`, який скидає лише unread marker і лишає сам diff доступним для UI.
 - Оновлено `frontend/src/{App.tsx,lib/api.ts,styles.css}` і `frontend/src/features/watchlist/WatchlistPanel.tsx`: watchlist cards тепер не втрачають red highlight від background refresh/focus polling, отримали окрему дію `Mark seen`, а після acknowledge картка зберігає subdued `Last change` callout із тим самим summary diff.

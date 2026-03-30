@@ -1407,6 +1407,52 @@ button:focus-visible,
   font-weight: 600;
 }
 
+.history-modal {
+  width: min(760px, calc(100vw - 2rem));
+}
+
+.history-modal__body {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.history-modal__list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.history-entry {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(19, 38, 47, 0.1);
+  background: rgba(244, 241, 235, 0.7);
+}
+
+.history-entry__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.history-entry__time {
+  margin: 0;
+  color: var(--ink-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.history-entry__changes {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.35rem;
+  color: var(--ink-strong);
+}
+
 .watchlist-card__lot-link:hover {
   text-decoration-color: currentColor;
 }

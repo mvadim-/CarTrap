@@ -51,6 +51,31 @@ function buildTrackedLot(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function buildTrackedLotHistoryEntry(overrides: Record<string, unknown> = {}) {
+  return {
+    snapshot: {
+      id: "snapshot-2",
+      tracked_lot_id: "tracked-1",
+      provider: "copart",
+      provider_lot_id: "12345678",
+      lot_key: "copart:12345678",
+      lot_number: "12345678",
+      status: "live",
+      raw_status: "Live",
+      current_bid: 5100,
+      buy_now_price: null,
+      currency: "USD",
+      sale_date: null,
+      detected_at: "2026-03-17T15:40:00Z",
+    },
+    changes: {
+      raw_status: { before: "On Approval", after: "Live" },
+      current_bid: { before: 4200, after: 5100 },
+    },
+    ...overrides,
+  };
+}
+
 function buildFreshness(overrides: Record<string, unknown> = {}) {
   return {
     status: "live",
@@ -289,6 +314,7 @@ describe("CarTrap app", () => {
   let savedSearchRefreshCallCount: number;
   let nextSavedSearchSeedNewLotNumbers: string[];
   let watchlistItems: Array<ReturnType<typeof buildTrackedLot>>;
+  let watchlistHistoryById: Record<string, Array<ReturnType<typeof buildTrackedLotHistoryEntry>>>;
   let savedSearches: Array<ReturnType<typeof buildSavedSearch>>;
   let providerConnections: Array<ReturnType<typeof buildProviderConnection>>;
   let serviceWorkerMessageListener: ((event: MessageEvent) => void) | null;
@@ -312,6 +338,7 @@ describe("CarTrap app", () => {
     savedSearchRefreshCallCount = 0;
     nextSavedSearchSeedNewLotNumbers = [];
     watchlistItems = [];
+    watchlistHistoryById = {};
     providerConnections = [buildProviderConnection()];
     serviceWorkerMessageListener = null;
     savedSearchesShouldFail = false;
@@ -431,6 +458,16 @@ describe("CarTrap app", () => {
         if (url.includes("/watchlist") && !url.includes("/search/watchlist")) {
           if ((init?.method ?? "GET") === "GET" && authHeader === "Bearer expired-token") {
             return new Response(JSON.stringify({ detail: "Invalid access token." }), { status: 401 });
+          }
+          if ((init?.method ?? "GET") === "GET" && url.endsWith("/history")) {
+            const id = url.split("/watchlist/")[1]?.replace("/history", "") ?? "";
+            return new Response(
+              JSON.stringify({
+                tracked_lot_id: id,
+                entries: watchlistHistoryById[id] ?? [],
+              }),
+              { status: 200 },
+            );
           }
           if ((init?.method ?? "GET") === "GET") {
             watchlistListCallCount += 1;
@@ -1705,6 +1742,52 @@ describe("CarTrap app", () => {
     expect(screen.getByText(/^Last change$/i)).toBeTruthy();
     expect(screen.getByText(/Status: On Approval -> Live/i)).toBeTruthy();
     expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
+  });
+
+  it("opens tracked-lot change history from the action row right after show details", async () => {
+    watchlistItems = [buildTrackedLot()];
+    watchlistHistoryById["tracked-1"] = [
+      buildTrackedLotHistoryEntry(),
+      buildTrackedLotHistoryEntry({
+        snapshot: {
+          id: "snapshot-3",
+          tracked_lot_id: "tracked-1",
+          provider: "copart",
+          provider_lot_id: "12345678",
+          lot_key: "copart:12345678",
+          lot_number: "12345678",
+          status: "on_approval",
+          raw_status: "On Approval",
+          current_bid: 4200,
+          buy_now_price: null,
+          currency: "USD",
+          sale_date: "2026-03-20T17:00:00Z",
+          detected_at: "2026-03-16T14:10:00Z",
+        },
+        changes: {
+          sale_date: { before: "2026-03-21T17:00:00Z", after: "2026-03-20T17:00:00Z" },
+        },
+      }),
+    ];
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    const card = document.querySelector(".watchlist-card");
+    const actionButtons = within(card as HTMLElement).getAllByRole("button");
+    const showDetailsIndex = actionButtons.findIndex((button) => button.textContent?.match(/show details/i));
+    const changeHistoryIndex = actionButtons.findIndex((button) => button.textContent?.match(/change history/i));
+
+    expect(showDetailsIndex).toBeGreaterThanOrEqual(0);
+    expect(changeHistoryIndex).toBe(showDetailsIndex + 1);
+
+    fireEvent.click(actionButtons[changeHistoryIndex]!);
+
+    expect(await screen.findByRole("dialog", { name: /change history/i })).toBeTruthy();
+    expect(screen.getByText(/Status: On Approval -> Live/i)).toBeTruthy();
+    expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
+    expect(screen.getByText(/Sale:/i)).toBeTruthy();
   });
 
   it("marks near-auction tracked lots as sale soon", async () => {

@@ -362,6 +362,46 @@ def test_watchlist_keeps_update_marker_until_explicit_acknowledge(client: TestCl
     assert third_list_response.json()["items"][0]["latest_changes"]["current_bid"] == {"before": 4200.0, "after": 5100.0}
 
 
+def test_watchlist_history_returns_recorded_snapshot_changes(client: TestClient) -> None:
+    with client:
+        user_token = _create_user(client, "history@example.com", "HistoryPass123")
+        tracked_lot = client.post(
+            "/api/watchlist",
+            json={"lot_number": "12345678"},
+            headers={"Authorization": f"Bearer {user_token}"},
+        ).json()["tracked_lot"]
+        tracked_lot_id = tracked_lot["id"]
+        client.app.state.mongo.database["lot_snapshots"].insert_one(
+            {
+                "tracked_lot_id": tracked_lot_id,
+                "owner_user_id": "history@example.com",
+                "provider": "copart",
+                "provider_lot_id": "12345678",
+                "lot_key": "copart:12345678",
+                "lot_number": "12345678",
+                "status": "live",
+                "raw_status": "Live",
+                "sale_date": datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+                "current_bid": 5100.0,
+                "buy_now_price": 6500.0,
+                "currency": "USD",
+                "detected_at": datetime.now(timezone.utc) + timedelta(minutes=1),
+            }
+        )
+
+        history_response = client.get(
+            f"/api/watchlist/{tracked_lot_id}/history",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+    assert history_response.status_code == 200
+    payload = history_response.json()
+    assert payload["tracked_lot_id"] == tracked_lot_id
+    assert len(payload["entries"]) == 1
+    assert payload["entries"][0]["changes"]["raw_status"] == {"before": "On Approval", "after": "Live"}
+    assert payload["entries"][0]["changes"]["current_bid"] == {"before": 4200.0, "after": 5100.0}
+
+
 def test_watchlist_accepts_lot_number_input(client: TestClient) -> None:
     with client:
         user_token = _create_user(client, "lotnumber@example.com", "LotNumberPass123")

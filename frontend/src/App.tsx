@@ -25,6 +25,7 @@ import {
   disconnectCopartConnection,
   disconnectIaaiConnection,
   getPushSubscriptionConfig,
+  getWatchlistLotHistory,
   getSearchCatalog,
   getSystemStatus,
   listProviderConnections,
@@ -60,6 +61,7 @@ import type {
   SavedSearchResultsResponse,
   SearchCatalog,
   SearchResult,
+  WatchlistHistoryResponse,
   WatchlistItem,
 } from "./types";
 
@@ -1295,6 +1297,17 @@ export function App() {
     }
   }
 
+  async function handleLoadWatchlistLotHistory(id: string): Promise<WatchlistHistoryResponse> {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    try {
+      return await getWatchlistLotHistory(id, session.accessToken);
+    } catch (caught) {
+      throw new Error(toErrorMessage(caught, "Could not load tracked-lot history"));
+    }
+  }
+
   async function handleAddFromSearch(payload: {
     provider: AuctionProvider;
     provider_lot_id?: string;
@@ -1688,6 +1701,7 @@ export function App() {
           onRetry={() => (session.accessToken ? loadWatchlistResource(session.accessToken) : Promise.resolve())}
           onAddByIdentifier={handleAddByIdentifier}
           onRefreshItem={handleRefreshWatchlistLot}
+          onLoadItemHistory={handleLoadWatchlistLotHistory}
           onAcknowledgeItemUpdate={handleAcknowledgeWatchlistLotUpdate}
           onRemove={handleRemoveWatchlistItem}
         />

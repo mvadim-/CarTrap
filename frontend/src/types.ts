@@ -134,6 +134,30 @@ export type WatchlistItem = {
   latest_changes: Record<string, { before: unknown; after: unknown }>;
 };
 
+export type WatchlistHistoryEntry = {
+  snapshot: {
+    id: string;
+    tracked_lot_id: string;
+    provider: AuctionProvider;
+    provider_lot_id: string;
+    lot_key: string;
+    lot_number: string;
+    status: string;
+    raw_status: string;
+    current_bid: number | null;
+    buy_now_price: number | null;
+    currency: string;
+    sale_date: string | null;
+    detected_at: string;
+  };
+  changes: Record<string, { before: unknown; after: unknown }>;
+};
+
+export type WatchlistHistoryResponse = {
+  tracked_lot_id: string;
+  entries: WatchlistHistoryEntry[];
+};
+
 export type SearchResult = {
   provider: AuctionProvider;
   auction_label: string;
