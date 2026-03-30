@@ -804,13 +804,112 @@ button:focus-visible,
 
 .watchlist-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(9rem, 11rem);
-  gap: 0.65rem;
+  grid-template-columns: minmax(11.5rem, 0.92fr) minmax(0, 1.7fr) minmax(10.5rem, 11.5rem);
+  grid-template-areas:
+    "provider identifier actions"
+    "hint hint hint";
+  gap: 0.8rem;
   align-items: end;
+  padding: 0.95rem;
+  border: 1px solid rgba(19, 38, 47, 0.1);
+  border-radius: 1.2rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 248, 240, 0.74) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 14px 28px rgba(19, 38, 47, 0.05);
 }
 
 .watchlist-form__field {
   margin: 0;
+  min-width: 0;
+}
+
+.watchlist-form__field--provider {
+  grid-area: provider;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.watchlist-form__field--identifier {
+  grid-area: identifier;
+}
+
+.watchlist-form__field-label {
+  display: block;
+  margin: 0 0 0.45rem;
+  color: rgba(19, 38, 47, 0.86);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.watchlist-form__field--identifier input {
+  margin-top: 0;
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.watchlist-form__provider-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.watchlist-form__provider-button {
+  min-width: 0;
+  min-height: calc(var(--control-height) - 0.1rem);
+  padding: 0.58rem 0.72rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(19, 38, 47, 0.12);
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--ink-strong);
+  box-shadow: none;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.watchlist-form__provider-button:hover:not(:disabled) {
+  border-color: rgba(19, 38, 47, 0.22);
+  background: rgba(255, 255, 255, 0.92);
+  transform: translateY(-1px);
+}
+
+.watchlist-form__provider-button.is-active {
+  border-color: rgba(155, 61, 18, 0.24);
+  background: linear-gradient(135deg, rgba(255, 244, 236, 0.98) 0%, rgba(255, 238, 225, 0.92) 100%);
+  box-shadow: 0 10px 22px rgba(155, 61, 18, 0.1);
+}
+
+.watchlist-form__provider-badge {
+  width: 100%;
+  justify-content: center;
+}
+
+.watchlist-form__actions {
+  grid-area: actions;
+  display: flex;
+  align-self: stretch;
+}
+
+.watchlist-form__submit {
+  width: 100%;
+  background: linear-gradient(135deg, #9b3d12 0%, #b35b30 100%);
+  box-shadow: 0 16px 32px rgba(155, 61, 18, 0.2);
+}
+
+.watchlist-form__submit:hover:not(:disabled) {
+  background: linear-gradient(135deg, #8e3510 0%, #a95328 100%);
+  transform: translateY(-1px);
+}
+
+.watchlist-form__hint {
+  grid-area: hint;
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
 }
 
 .search-grid,
@@ -954,6 +1053,18 @@ button:focus-visible,
 .panel-header h2,
 .panel-header h3 {
   letter-spacing: -0.02em;
+}
+
+.panel--watchlist .panel-header {
+  align-items: start;
+}
+
+.panel--watchlist .panel-header h2 {
+  text-wrap: balance;
+}
+
+.panel--watchlist .panel-header__lede {
+  max-width: 30rem;
 }
 
 .eyebrow {
@@ -2302,6 +2413,13 @@ button:focus-visible,
 
   .watchlist-form {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "provider"
+      "identifier"
+      "actions"
+      "hint";
+    gap: 0.75rem;
+    padding: 0.85rem;
   }
 
   .saved-search-card__metrics,

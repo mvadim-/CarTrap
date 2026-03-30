@@ -1106,21 +1106,36 @@ describe("CarTrap app", () => {
 
     await screen.findByText(/cartrap dispatch board/i);
     expect(screen.getByText(/you don't have any saved searches yet/i)).toBeTruthy();
-    expect(screen.getByLabelText(/lot or stock number/i)).toBeTruthy();
+    expect(screen.getByLabelText(/lot number/i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /collapse saved searches/i }));
     fireEvent.click(screen.getByRole("button", { name: /collapse tracked lots/i }));
 
     expect(screen.queryByText(/you don't have any saved searches yet/i)).toBeNull();
-    expect(screen.queryByLabelText(/lot or stock number/i)).toBeNull();
+    expect(screen.queryByLabelText(/lot number/i)).toBeNull();
     expect(screen.queryByText(/you haven't added any lots yet/i)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /expand saved searches/i }));
     fireEvent.click(screen.getByRole("button", { name: /expand tracked lots/i }));
 
     expect(screen.getByText(/you don't have any saved searches yet/i)).toBeTruthy();
-    expect(screen.getByLabelText(/lot or stock number/i)).toBeTruthy();
+    expect(screen.getByLabelText(/lot number/i)).toBeTruthy();
     expect(screen.getByText(/you haven't added any lots yet/i)).toBeTruthy();
+  });
+
+  it("updates watchlist quick-add copy when switching auction site", async () => {
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    expect(screen.getByLabelText(/lot number/i)).toBeTruthy();
+    expect(screen.getByText(/enter the copart lot number from the listing\./i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /^iaai$/i }));
+
+    expect(screen.getByLabelText(/stock or item id/i)).toBeTruthy();
+    expect(screen.getByPlaceholderText("STK-44 or 42153827")).toBeTruthy();
+    expect(screen.getByText(/enter the iaai stock number or item id from the listing\./i)).toBeTruthy();
   });
 
   it("keeps mobile saved-search filter labels and counts visible", async () => {
@@ -1231,14 +1246,15 @@ describe("CarTrap app", () => {
 
     await screen.findByText(/cartrap dispatch board/i);
     await openManualSearch();
+    const manualSearchDialog = screen.getByRole("dialog", { name: /new search/i });
 
-    fireEvent.click(screen.getByRole("button", { name: /^iaai$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^copart$/i }));
+    fireEvent.click(within(manualSearchDialog).getByRole("button", { name: /^iaai$/i }));
+    fireEvent.click(within(manualSearchDialog).getByRole("button", { name: /^copart$/i }));
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /providers unavailable/i })).toBeNull();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /search lots/i }));
+    fireEvent.click(within(manualSearchDialog).getByRole("button", { name: /search lots/i }));
 
     const resultsDialog = await screen.findByRole("dialog", { name: /search results/i });
     expect(lastSearchPayload?.providers).toEqual(["iaai"]);
@@ -1623,7 +1639,7 @@ describe("CarTrap app", () => {
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "99251295" } });
-    fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
+    fireEvent.click(screen.getByRole("button", { name: /track lot/i }));
 
     await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
     expect(screen.getByText(/Current bid/i)).toBeTruthy();
@@ -2316,7 +2332,7 @@ describe("CarTrap app", () => {
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "87654321" } });
-    fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
+    fireEvent.click(screen.getByRole("button", { name: /track lot/i }));
 
     await screen.findByText(/2018 HONDA CIVIC EX/i);
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
@@ -2328,7 +2344,7 @@ describe("CarTrap app", () => {
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "99251295" } });
-    fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
+    fireEvent.click(screen.getByRole("button", { name: /track lot/i }));
 
     await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
     fireEvent.click(screen.getByRole("button", { name: /open gallery for 2025 ford mustang mach-e premium/i }));
@@ -2346,7 +2362,7 @@ describe("CarTrap app", () => {
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "99251295" } });
-    fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
+    fireEvent.click(screen.getByRole("button", { name: /track lot/i }));
 
     await screen.findByText(/2025 FORD MUSTANG MACH-E PREMIUM/i);
     Object.defineProperty(window, "scrollY", {
@@ -2573,7 +2589,7 @@ describe("CarTrap app", () => {
 
     await screen.findByText(/cartrap dispatch board/i);
     fireEvent.change(screen.getByPlaceholderText("99251295"), { target: { value: "12345678" } });
-    fireEvent.click(screen.getByRole("button", { name: /add lot/i }));
+    fireEvent.click(screen.getByRole("button", { name: /track lot/i }));
 
     expect(
       await screen.findByText(

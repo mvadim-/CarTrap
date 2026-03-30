@@ -9,7 +9,7 @@ import type {
   WatchlistItem,
 } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
-import { AuctionProviderBadge } from "../shared/AuctionProviderBadge";
+import { AuctionProviderBadge, AUCTION_PROVIDER_OPTIONS, getAuctionProviderLabel } from "../shared/AuctionProviderBadge";
 import { LotThumbnail } from "../shared/LotThumbnail";
 import { buildResourceReliability } from "../shared/resourceReliability";
 import { LotChangeHistoryModal } from "./LotChangeHistoryModal";
@@ -70,6 +70,13 @@ export function WatchlistPanel({
   const selectedDiagnostic = manualProvider === "iaai" ? iaaiConnectionDiagnostic : copartConnectionDiagnostic;
   const isManualActionBlocked = Boolean(selectedDiagnostic && selectedDiagnostic.status !== "ready");
   const isSectionContentVisible = !isMobileLayout || !isSectionCollapsed;
+  const manualProviderLabel = getAuctionProviderLabel(manualProvider);
+  const identifierLabel = manualProvider === "iaai" ? "Stock or item ID" : "Lot number";
+  const identifierPlaceholder = manualProvider === "copart" ? "99251295" : "STK-44 or 42153827";
+  const identifierHint =
+    manualProvider === "copart"
+      ? "Enter the Copart lot number from the listing."
+      : "Enter the IAAI stock number or item ID from the listing.";
 
   useEffect(() => {
     if (!isMobileLayout) {
@@ -86,7 +93,7 @@ export function WatchlistPanel({
     setActionNotice(null);
     try {
       await onAddByIdentifier(manualProvider, lotNumber.trim());
-      setActionNotice(`${manualProvider === "iaai" ? "IAAI" : "Copart"} lot ${lotNumber.trim()} added to tracked lots.`);
+      setActionNotice(`${manualProviderLabel} lot ${lotNumber.trim()} added to tracked lots.`);
       setLotNumber("");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Couldn't add this lot.");
@@ -314,7 +321,7 @@ export function WatchlistPanel({
           <p className="eyebrow">Watchlist</p>
           <h2>Tracked Lots</h2>
           <p className="muted panel-header__lede">
-            Keep the lots you care about close by, then check for changes when you need them.
+            Track a Copart or IAAI lot to watch bid, status, and sale-time changes.
           </p>
         </div>
         {isMobileLayout ? (
@@ -356,16 +363,35 @@ export function WatchlistPanel({
           ) : null}
           {actionNotice ? <AsyncStatus tone="success" compact message={actionNotice} className="panel-status" /> : null}
           <form className="watchlist-form" onSubmit={handleSubmit} aria-busy={isAddingLot}>
-            <label className="watchlist-form__field">
-              Auction site
-              <select value={manualProvider} onChange={(event) => setManualProvider(event.target.value as AuctionProvider)}>
-                <option value="copart">Copart</option>
-                <option value="iaai">IAAI</option>
-              </select>
-            </label>
-            <label className="watchlist-form__field">
-              Lot or stock number
+            <fieldset className="watchlist-form__field watchlist-form__field--provider">
+              <legend className="watchlist-form__field-label">Auction site</legend>
+              <div className="watchlist-form__provider-group">
+                {AUCTION_PROVIDER_OPTIONS.map((option) => {
+                  const isSelected = manualProvider === option.value;
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`watchlist-form__provider-button${isSelected ? " is-active" : ""}`}
+                      aria-pressed={isSelected}
+                      onClick={() => setManualProvider(option.value)}
+                    >
+                      <AuctionProviderBadge
+                        provider={option.value}
+                        size="default"
+                        tone={isSelected ? "pill" : "plain"}
+                        className="watchlist-form__provider-badge"
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+            <label className="watchlist-form__field watchlist-form__field--identifier">
+              <span className="watchlist-form__field-label">{identifierLabel}</span>
               <input
+                name="lot_identifier"
                 value={lotNumber}
                 onChange={(event) => setLotNumber(event.target.value)}
                 inputMode={manualProvider === "copart" ? "numeric" : "text"}
@@ -374,19 +400,30 @@ export function WatchlistPanel({
                 autoCapitalize="off"
                 autoCorrect="off"
                 spellCheck={false}
-                placeholder={manualProvider === "copart" ? "99251295" : "STK-44 or item ID"}
+                placeholder={identifierPlaceholder}
+                aria-describedby="watchlist-form-hint"
                 disabled={isManualActionBlocked}
               />
             </label>
-            <button type="submit" disabled={!lotNumber.trim() || isAddingLot || isManualActionBlocked} aria-busy={isAddingLot}>
-              {isAddingLot ? "Adding..." : isManualActionBlocked ? "Reconnect account" : "Add Lot"}
-            </button>
+            <div className="watchlist-form__actions">
+              <button
+                type="submit"
+                className="watchlist-form__submit"
+                disabled={!lotNumber.trim() || isAddingLot || isManualActionBlocked}
+                aria-busy={isAddingLot}
+              >
+                {isAddingLot ? "Tracking…" : "Track Lot"}
+              </button>
+            </div>
+            <p id="watchlist-form-hint" className="watchlist-form__hint">
+              {identifierHint}
+            </p>
           </form>
           {isAddingLot ? (
             <AsyncStatus
               compact
               progress="bar"
-              title="Adding lot"
+              title="Tracking lot"
               message="We'll keep your current list visible while we load the details."
               className="panel-status"
             />

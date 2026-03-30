@@ -959,3 +959,9 @@
 - Оновлено `frontend/src/features/dashboard/DashboardShell.tsx`: логотип перенесено з kicker-row прямо в `title-row`, тепер він стоїть зліва від `CarTrap dispatch board` і читається як частина самого заголовка.
 - Оновлено `frontend/src/styles.css`: додано layout для `dashboard-header__title-row` і зменшено lockup width на desktop/tablet/mobile, щоб заголовок лишався компактним і не розвалювався на вузьких екранах.
 - Verification: `cd frontend && npm test -- app.test.tsx` -> `56 passed`; `cd frontend && npm run build` -> успішно.
+
+## [2026-03-30 19:04] Refine tracked-lots quick-add composer
+- Оновлено `frontend/src/features/watchlist/WatchlistPanel.tsx`: quick-add форму для `Tracked Lots` перероблено з базового dropdown+input у чіткий composer з provider toggle `Copart | IAAI`, коротшим utility copy, dynamic label/placeholder для lot identifier і компактним primary CTA `Track Lot`.
+- Оновлено `frontend/src/styles.css`: для watchlist composer додано окрему inset surface, нову desktop/mobile grid-композицію, cleaner provider toggle states, accent CTA treatment і tighter header rhythm, щоб секція не виглядала як випадковий набір controls.
+- Оновлено `frontend/tests/app.test.tsx`: regression suite тепер покриває dynamic copy для Copart/IAAI quick-add composer і новий CTA label `Track Lot`; також звужено manual-search selector, щоб тести не ламалися через нові provider buttons у watchlist.
+- Verification: `cd frontend && npm test -- app.test.tsx` -> `58 passed`; `cd frontend && npm run build` -> успішно.
