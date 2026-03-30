@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import type { AuctionProvider } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
+import { AUCTION_PROVIDER_OPTIONS, AuctionProviderBadge } from "../shared/AuctionProviderBadge";
 import { useBodyScrollLock } from "../shared/useBodyScrollLock";
 
 export type SearchableOption = {
@@ -236,9 +237,8 @@ export function ManualSearchScreen({
           <fieldset className="search-grid__provider-group">
             <legend>Auctions</legend>
             <div className="saved-search-inbox-toolbar" aria-label="Auction providers">
-              {(["copart", "iaai"] as AuctionProvider[]).map((provider) => {
+              {AUCTION_PROVIDER_OPTIONS.map(({ value: provider, label }) => {
                 const isSelected = selectedProviders.includes(provider);
-                const label = provider === "copart" ? "Copart" : "IAAI";
                 return (
                   <button
                     key={provider}
@@ -247,7 +247,7 @@ export function ManualSearchScreen({
                     aria-pressed={isSelected}
                     onClick={() => onToggleProvider(provider)}
                   >
-                    {label}
+                    <AuctionProviderBadge provider={provider} label={label} size="default" tone="plain" />
                   </button>
                 );
               })}

@@ -451,6 +451,17 @@ button:focus-visible,
   line-height: 1.2;
 }
 
+.saved-search-card__criteria-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.saved-search-card__providers {
+  flex: 0 0 auto;
+}
+
 .saved-search-card__criteria,
 .saved-search-card__filters {
   margin: 0;
@@ -1081,6 +1092,83 @@ button:focus-visible,
   color: #296ca6;
 }
 
+.auction-provider-badge-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.auction-provider-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--ink-strong);
+}
+
+.auction-provider-badge--pill {
+  padding: 0.18rem 0.48rem 0.18rem 0.18rem;
+  border-radius: 999px;
+  border: 1px solid rgba(19, 38, 47, 0.08);
+  background: rgba(19, 38, 47, 0.04);
+}
+
+.auction-provider-badge--plain {
+  padding: 0;
+}
+
+.auction-provider-badge__logo-frame {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 1.32rem;
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(19, 38, 47, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  overflow: hidden;
+}
+
+.auction-provider-badge__logo {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.auction-provider-badge__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.auction-provider-badge--default .auction-provider-badge__logo-frame {
+  min-width: 2.35rem;
+  height: 1.48rem;
+  padding-inline: 0.42rem;
+}
+
+.auction-provider-badge--default .auction-provider-badge__label {
+  font-size: 0.85rem;
+}
+
+.auction-provider-badge--logo-only {
+  gap: 0;
+}
+
+.auction-provider-badge--logo-only.auction-provider-badge--pill {
+  padding-right: 0.18rem;
+}
+
 .result-card--media {
   align-items: stretch;
 }
@@ -1679,6 +1767,10 @@ button:focus-visible,
 }
 
 .search-result-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
   font-weight: 500;
 }
 

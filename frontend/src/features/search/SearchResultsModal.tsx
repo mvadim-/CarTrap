@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import type { FreshnessEnvelope, ProviderConnectionDiagnostic, RefreshState, SearchResult } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
+import { AuctionProviderBadge } from "../shared/AuctionProviderBadge";
 import { LotThumbnail } from "../shared/LotThumbnail";
 import { shouldUseMobileFullscreen } from "../shared/mobileFullscreen";
 import { buildResourceReliability } from "../shared/resourceReliability";
@@ -534,9 +535,10 @@ export function SearchResultsModal({
                           )}
                           {result.is_new ? <span className="new-badge">NEW</span> : null}
                         </div>
-                        <p className="search-result-row__meta">
-                          <span className="status-pill">{result.auction_label}</span> Lot#: {result.lot_number}
-                        </p>
+                        <div className="search-result-row__meta">
+                          <AuctionProviderBadge provider={result.provider} label={result.auction_label} />
+                          <span>Lot#: {result.lot_number}</span>
+                        </div>
                         <p className="search-result-row__location">{result.location ?? "Location not listed"}</p>
                         <p className="search-result-row__odometer">Odometer: {result.odometer?.trim() || "Not listed"}</p>
                       </div>

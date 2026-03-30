@@ -931,3 +931,9 @@
 - Оновлено `backend/src/cartrap/modules/notifications/service.py`: dedupe key для `saved_search_match` більше не будується з `new_lot_numbers`; тепер використовується provider-aware `new_lot_keys` з fallback на legacy numbers, щоб IAAI та mixed-provider результати не колапсували в один push receipt.
 - Оновлено `backend/tests/notifications/test_push_delivery.py`: додано regression coverage, що два saved-search push events з однаковим видимим `lot_number`, але різними `lot_key`, доставляються окремо, тоді як точний дубль все ще дедупиться.
 - Verification: `./.venv/bin/pytest backend/tests/notifications/test_push_delivery.py backend/tests/search/test_saved_search_monitoring.py` -> `16 passed` (є лише `urllib3` `LibreSSL` warning у локальному Python runtime).
+
+## [2026-03-30 13:57] Add provider logos across search and tracked-lot UI
+- Додано `frontend/src/assets/provider-logos/{copart.png,iaai.png}` і новий shared-компонент `frontend/src/features/shared/AuctionProviderBadge.tsx`, який централізує branding Copart/IAAI для compact badges та logo groups.
+- Оновлено `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx,ManualSearchScreen.tsx}` і `frontend/src/features/watchlist/WatchlistPanel.tsx`: логотипи provider тепер видно в saved-search cards, manual-search auction toggles, live search results і tracked lots, тому mixed Copart/IAAI списки швидше скануються.
+- Оновлено `frontend/src/styles.css` і `frontend/tests/app.test.tsx`: додано стилі для provider logos/badges та regression coverage на брендинг у saved searches, search results і tracked lots.
+- Verification: `cd frontend && npm test -- app.test.tsx` -> `56 passed`; `cd frontend && npm run build` -> успішно.

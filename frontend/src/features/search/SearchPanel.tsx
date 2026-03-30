@@ -14,6 +14,7 @@ import type {
   SearchResult,
 } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
+import { AUCTION_PROVIDER_OPTIONS, AuctionProviderBadgeGroup } from "../shared/AuctionProviderBadge";
 import { buildResourceReliability } from "../shared/resourceReliability";
 import { ManualSearchScreen, type SearchableOption } from "./ManualSearchScreen";
 import { SearchFiltersModal } from "./SearchFiltersModal";
@@ -91,13 +92,9 @@ type SearchModalState = {
 };
 
 type SavedSearchQuickFilter = "all" | "new" | "needs-refresh";
-const PROVIDER_OPTIONS: Array<{ value: AuctionProvider; label: string }> = [
-  { value: "copart", label: "Copart" },
-  { value: "iaai", label: "IAAI" },
-];
 
 function formatProviderLabels(providers: AuctionProvider[]): string {
-  return PROVIDER_OPTIONS.filter((option) => providers.includes(option.value))
+  return AUCTION_PROVIDER_OPTIONS.filter((option) => providers.includes(option.value))
     .map((option) => option.label)
     .join(" + ");
 }
@@ -208,6 +205,12 @@ function formatSavedSearchYears(item: SavedSearch): string {
 function formatSavedSearchCriteriaSummary(item: SavedSearch): string {
   return [
     formatProviderLabels(item.criteria.providers ?? ["copart"]),
+    formatSavedSearchVehicleSummary(item),
+  ].join(" / ");
+}
+
+function formatSavedSearchVehicleSummary(item: SavedSearch): string {
+  return [
     item.criteria.make ?? "Any make",
     item.criteria.model ?? "Any model",
     formatSavedSearchYears(item),
@@ -893,7 +896,15 @@ export function SearchPanel({
                           >
                             <div className="saved-search-card__title-block">
                               <strong>{item.label}</strong>
-                              <p className="saved-search-card__criteria">{formatSavedSearchCriteriaSummary(item)}</p>
+                              <div className="saved-search-card__criteria-row">
+                                <AuctionProviderBadgeGroup
+                                  providers={item.criteria.providers ?? ["copart"]}
+                                  size="compact"
+                                  tone="plain"
+                                  className="saved-search-card__providers"
+                                />
+                                <p className="saved-search-card__criteria">{formatSavedSearchVehicleSummary(item)}</p>
+                              </div>
                             </div>
                             <span className="saved-search-card__open-label">
                               {openingSavedSearchId === item.id ? "Opening..." : "Open results"}

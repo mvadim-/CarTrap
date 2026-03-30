@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 
 import type { AuctionProvider, LiveSyncStatus, ProviderConnectionDiagnostic, WatchlistItem } from "../../types";
 import { AsyncStatus } from "../shared/AsyncStatus";
+import { AuctionProviderBadge } from "../shared/AuctionProviderBadge";
 import { LotThumbnail } from "../shared/LotThumbnail";
 import { buildResourceReliability } from "../shared/resourceReliability";
 import { LotGalleryModal } from "./LotGalleryModal";
@@ -417,7 +418,7 @@ export function WatchlistPanel({
                             ) : (
                               <span className="watchlist-card__lot-link">Lot {item.lot_number}</span>
                             )}
-                            <span className="status-pill">{item.auction_label}</span>
+                            <AuctionProviderBadge provider={item.provider} label={item.auction_label} />
                             <span className="status-pill">{item.raw_status || item.status}</span>
                           </div>
                         </div>

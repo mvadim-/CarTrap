@@ -1115,6 +1115,42 @@ describe("CarTrap app", () => {
     expect(screen.getByText(/^1 new$/i)).toBeTruthy();
   });
 
+  it("renders provider branding in saved searches and tracked lots", async () => {
+    savedSearches = [
+      buildSavedSearch({
+        criteria: {
+          providers: ["copart", "iaai"],
+          make: "FORD",
+          model: "MUSTANG MACH-E",
+          year_from: 2025,
+          year_to: 2027,
+        },
+      }),
+    ];
+    watchlistItems = [
+      buildTrackedLot({
+        provider: "iaai",
+        auction_label: "IAAI",
+        provider_lot_id: "STK-44",
+        lot_key: "iaai:STK-44",
+        lot_number: "STK-44",
+        url: "https://www.iaai.com/VehicleDetail/STK-44",
+        title: "2025 FORD MUSTANG MACH-E PREMIUM",
+      }),
+    ];
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    const savedSearchCard = screen.getAllByText(/FORD MUSTANG MACH-E 2025-2027/i)[0]!.closest(".saved-search-card")!;
+    expect(savedSearchCard.querySelector('.auction-provider-badge[aria-label="Copart"]')).toBeTruthy();
+    expect(savedSearchCard.querySelector('.auction-provider-badge[aria-label="IAAI"]')).toBeTruthy();
+
+    const watchlistCard = screen.getByText(/2025 FORD MUSTANG MACH-E PREMIUM/i).closest(".watchlist-card")!;
+    expect(within(watchlistCard).getByText(/^IAAI$/i).closest(".auction-provider-badge")).toBeTruthy();
+  });
+
   it("runs manual search and adds result to tracked lots", async () => {
     render(<App />);
     submitLoginForm();
@@ -1131,6 +1167,7 @@ describe("CarTrap app", () => {
     const trackedButton = within(resultsDialog).getByRole("button", {
       name: /already in tracked lots: 2020 toyota camry se/i,
     });
+    expect(within(resultsDialog).getByText(/^Copart$/i).closest(".auction-provider-badge")).toBeTruthy();
     expect(lotLink.getAttribute("href")).toBe("https://www.copart.com/lot/12345678");
     expect(lotLink.getAttribute("target")).toBe("_blank");
     expect(trackedButton.getAttribute("disabled")).not.toBeNull();
@@ -1168,6 +1205,7 @@ describe("CarTrap app", () => {
     const resultsDialog = await screen.findByRole("dialog", { name: /search results/i });
     expect(lastSearchPayload?.providers).toEqual(["iaai"]);
     expect(within(resultsDialog).getAllByText(/IAAI/i).length).toBeGreaterThan(0);
+    expect(within(resultsDialog).getByText(/^IAAI$/i).closest(".auction-provider-badge")).toBeTruthy();
     expect(within(resultsDialog).getByRole("link", { name: /open iaai lot stk-44/i })).toBeTruthy();
 
     fireEvent.click(within(resultsDialog).getByRole("button", { name: /add to tracked lots: 2025 ford mustang mach-e premium/i }));
