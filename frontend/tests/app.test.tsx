@@ -1020,6 +1020,7 @@ describe("CarTrap app", () => {
     await screen.findByText(/cartrap dispatch board/i);
     expect(screen.queryByLabelText(/user summary/i)).toBeNull();
     expect(screen.getByRole("button", { name: /open account menu/i })).toBeTruthy();
+    expect(screen.getByAltText(/cartrap for copart and iaai/i)).toBeTruthy();
     expect(screen.queryByText(/^user$/i)).toBeNull();
     const searchHeading = screen.getByRole("heading", { name: /saved searches/i });
     const watchlistHeading = screen.getByRole("heading", { name: /tracked lots/i });

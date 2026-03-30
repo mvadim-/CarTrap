@@ -937,3 +937,9 @@
 - Оновлено `frontend/src/features/search/{SearchPanel.tsx,SearchResultsModal.tsx,ManualSearchScreen.tsx}` і `frontend/src/features/watchlist/WatchlistPanel.tsx`: логотипи provider тепер видно в saved-search cards, manual-search auction toggles, live search results і tracked lots, тому mixed Copart/IAAI списки швидше скануються.
 - Оновлено `frontend/src/styles.css` і `frontend/tests/app.test.tsx`: додано стилі для provider logos/badges та regression coverage на брендинг у saved searches, search results і tracked lots.
 - Verification: `cd frontend && npm test -- app.test.tsx` -> `56 passed`; `cd frontend && npm run build` -> успішно.
+
+## [2026-03-30 14:20] Add auction brand lockup to dashboard header
+- Додано `frontend/src/assets/header-brand/cartrap-auction-lockup.png` і підключено його в `frontend/src/features/dashboard/DashboardShell.tsx`: у header з'явився окремий brand lockup `CarTrap + Copart + IAAI`, розміщений у copy-зоні під eyebrow, щоб бренд був видимий одразу після входу.
+- Оновлено `frontend/src/styles.css`: додано glass-like container для header logo та окремі responsive width adjustments для tablet/mobile, щоб логотип не конфліктував з `Menu` control.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression assertion, що header lockup рендериться після login.
+- Verification: `cd frontend && npm test -- app.test.tsx` -> `56 passed`; `cd frontend && npm run build` -> успішно.

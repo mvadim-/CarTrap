@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 
+import headerBrandLockup from "../../assets/header-brand/cartrap-auction-lockup.png";
 import { AsyncStatus } from "../shared/AsyncStatus";
 
 type Props = {
@@ -57,6 +58,13 @@ export function DashboardShell({
         <header className="dashboard-header">
           <div className="dashboard-header__copy">
             <p className="eyebrow">Auction Control</p>
+            <div className="dashboard-header__brand-lockup">
+              <img
+                className="dashboard-header__brand-lockup-image"
+                src={headerBrandLockup}
+                alt="CarTrap for Copart and IAAI"
+              />
+            </div>
             <h1>CarTrap dispatch board</h1>
             <p className="lede">Track searches, saved lots, and connected accounts in one place.</p>
           </div>
