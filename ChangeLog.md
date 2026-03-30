@@ -943,3 +943,8 @@
 - Оновлено `frontend/src/styles.css`: додано glass-like container для header logo та окремі responsive width adjustments для tablet/mobile, щоб логотип не конфліктував з `Menu` control.
 - Оновлено `frontend/tests/app.test.tsx`: додано regression assertion, що header lockup рендериться після login.
 - Verification: `cd frontend && npm test -- app.test.tsx` -> `56 passed`; `cd frontend && npm run build` -> успішно.
+
+## [2026-03-30 14:23] Refine header logo to a smaller low-chrome accent
+- Оновлено `frontend/src/features/dashboard/DashboardShell.tsx`: brand lockup перенесено в компактний kicker-row поруч з `Auction Control`, щоб логотип працював як невеликий header accent, а не окремий блок.
+- Оновлено `frontend/src/styles.css`: прибрано box/container styling навколо логотипа, зменшено його width на desktop/mobile і додано `mix-blend-mode: multiply`, щоб білий фон lockup не читався як окрема біла плашка.
+- Verification: `cd frontend && npm test -- app.test.tsx` -> `56 passed`; `cd frontend && npm run build` -> успішно.
