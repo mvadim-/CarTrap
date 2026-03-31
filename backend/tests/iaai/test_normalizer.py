@@ -171,6 +171,44 @@ def test_normalize_lot_details_prefers_buy_now_price_from_bidding_payload() -> N
     assert snapshot.buy_now_price == 18400.0
 
 
+def test_normalize_lot_details_reads_buy_now_from_sibling_auction_information() -> None:
+    snapshot = normalize_lot_details_payload(
+        {
+            "auctionInformation": {
+                "itemID": "63189723",
+                "stockNumber": "44610371",
+                "currencyInd": "USD",
+                "biddingInformation": {
+                    "buyNowAmount": 19250,
+                    "buyNowPrice": "$19,250",
+                },
+                "prebidInformation": {
+                    "buyNowPrice": "$19,250",
+                },
+                "saleInformation": {
+                    "date": "3/26/2026 5:00:00 PM +00:00",
+                },
+            },
+            "data": {
+                "id": "45107325~US",
+                "itemId": "63189723",
+                "stockNumber": "44610371",
+                "year": "2025",
+                "make": "FORD",
+                "model": "MUSTANG MACH-E",
+                "series": "GT",
+                "auctionDateTime": "2026-03-26T17:00:00+00:00",
+                "currency": "USD",
+            },
+        }
+    )
+
+    assert snapshot.provider_lot_id == "45107325~US"
+    assert snapshot.lot_number == "44610371"
+    assert snapshot.title == "2025 FORD MUSTANG MACH-E GT"
+    assert snapshot.buy_now_price == 19250.0
+
+
 def test_normalize_lot_details_accepts_direct_inventory_shape_without_inventory_result_wrapper() -> None:
     snapshot = normalize_lot_details_payload(
         {

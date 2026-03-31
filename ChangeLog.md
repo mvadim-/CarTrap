@@ -985,3 +985,8 @@
 ## [2026-03-31 13:57] Fix IAAI watchlist buy-it-now price mapping
 - Оновлено `backend/src/cartrap/modules/iaai_provider/normalizer.py`: для IAAI `buy it now` тепер пріоритетно читається з `buyNowPrice`, а lot-details flow для watchlist додатково бере fallback із `biddingInformation` і `prebidInformation`, щоб нульовий `buyNowAmount` не затіняв реальну ціну.
 - Оновлено `backend/tests/iaai/test_normalizer.py`: додано regression coverage для search-result і lot-details payload-ів, де `buyNowAmount=0`, але коректне значення присутнє в `buyNowPrice`.
+
+## [2026-03-31 14:08] Fix IAAI sibling auctionInformation buy-now mapping
+- Оновлено `backend/src/cartrap/modules/iaai_provider/normalizer.py`: lot-details normalizer тепер підтягує `saleInformation` / `biddingInformation` / `prebidInformation` не лише з `inventoryResult`, а й із sibling-блоку `auctionInformation`, який IAAI повертає поруч із `data` у connector/detail payload-ах.
+- Оновлено `backend/tests/iaai/test_normalizer.py`: додано regression coverage для реального payload shape `auctionInformation + data`, де `buyNowAmount=19250` і ціна має потрапити у watchlist contract як `buy_now_price`.
+- Verification: `./.venv/bin/pytest backend/tests/iaai/test_normalizer.py backend/tests/iaai/test_service.py backend/tests/watchlist/test_watchlist_api.py -q` -> `26 passed` (локально є лише `urllib3` `LibreSSL` warning).

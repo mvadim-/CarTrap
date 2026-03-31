@@ -133,13 +133,26 @@ def normalize_lot_details_payload(payload: dict[str, Any]) -> AuctionLotSnapshot
     inventory_result = resolve_inventory_result(payload)
     if inventory_result is None:
         raise ValueError("IAAI lot payload is missing 'inventoryResult'.")
-    sale_information = flatten_field_map(inventory_result.get("saleInformation"))
-    bidding_information = flatten_field_map(inventory_result.get("biddingInformation"))
-    prebid_information = flatten_field_map(inventory_result.get("prebidInformation"))
+    auction_information_raw = resolve_auction_information(payload) or {}
+    sale_information = merge_field_maps(
+        flatten_field_map(inventory_result.get("saleInformation")),
+        flatten_field_map(auction_information_raw.get("saleInformation")),
+    )
+    bidding_information = merge_field_maps(
+        flatten_field_map(inventory_result.get("biddingInformation")),
+        flatten_field_map(auction_information_raw.get("biddingInformation")),
+    )
+    prebid_information = merge_field_maps(
+        flatten_field_map(inventory_result.get("prebidInformation")),
+        flatten_field_map(auction_information_raw.get("prebidInformation")),
+    )
     vehicle_information = flatten_field_map(inventory_result.get("vehicleInformation"))
     vehicle_description = flatten_field_map(inventory_result.get("vehicleDescription"))
     attributes = flatten_field_map(inventory_result.get("attributes"))
-    inventory_fields = flatten_field_map(inventory_result)
+    inventory_fields = merge_field_maps(
+        flatten_field_map(inventory_result),
+        flatten_field_map(auction_information_raw),
+    )
     provider_lot_id = str(
         first_present(attributes, "Id", "inventoryId", "SalvageId")
         or first_present(inventory_fields, "inventoryId", "Id", "SalvageId", "id", "itemId")
@@ -380,7 +393,14 @@ def extract_highlights(*containers: dict[str, Any]) -> list[str]:
 
 
 def resolve_inventory_result(payload: dict[str, Any]) -> dict[str, Any] | None:
+    data_candidate = payload.get("data")
+    if isinstance(data_candidate, dict) and looks_like_inventory_result(data_candidate):
+        return data_candidate
     return _find_inventory_result(payload, depth=0)
+
+
+def resolve_auction_information(payload: dict[str, Any]) -> dict[str, Any] | None:
+    return _find_auction_information(payload, depth=0)
 
 
 def looks_like_inventory_result(payload: dict[str, Any]) -> bool:
@@ -417,6 +437,32 @@ def _find_inventory_result(payload: dict[str, Any], *, depth: int) -> dict[str, 
             if resolved is not None:
                 return resolved
     return None
+
+
+def _find_auction_information(payload: dict[str, Any], *, depth: int) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    if looks_like_auction_information(payload):
+        return payload
+    if depth >= 4:
+        return None
+    for field_name, candidate in payload.items():
+        if not isinstance(candidate, dict):
+            continue
+        if str(field_name).strip().lower() == "auctioninformation":
+            return candidate if looks_like_auction_information(candidate) else _find_auction_information(candidate, depth=depth + 1)
+        resolved = _find_auction_information(candidate, depth=depth + 1)
+        if resolved is not None:
+            return resolved
+    return None
+
+
+def looks_like_auction_information(payload: dict[str, Any]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return any(field_name in payload for field_name in ("biddingInformation", "prebidInformation")) and any(
+        field_name in payload for field_name in ("stockNumber", "itemID", "itemId")
+    )
 
 
 def build_lot_title(
@@ -466,6 +512,15 @@ def flatten_field_map(source: Any) -> dict[str, Any]:
                 register_field_aliases(mapping, field_name, value)
         return mapping
     return {}
+
+
+def merge_field_maps(*mappings: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for mapping in mappings:
+        if not mapping:
+            continue
+        merged.update(mapping)
+    return merged
 
 
 def register_field_aliases(mapping: dict[str, Any], field_name: Any, value: Any) -> None:
