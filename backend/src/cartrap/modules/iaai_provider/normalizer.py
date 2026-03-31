@@ -315,6 +315,11 @@ def extract_buy_now_price(*containers: dict[str, Any]) -> Optional[float]:
         price = parse_money(first_present(container, "buyNowAmount"))
         if price is not None:
             return price
+    for container in containers:
+        has_buy_now_window = first_present(container, "BuyNowCloseDateTime", "buyNowCloseDateTime")
+        price = parse_money(first_present(container, "MinimumBidAmount", "minimumBidAmount"))
+        if has_buy_now_window and price is not None:
+            return price
     return None
 
 

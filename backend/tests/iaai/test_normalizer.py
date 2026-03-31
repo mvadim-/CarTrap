@@ -209,6 +209,38 @@ def test_normalize_lot_details_reads_buy_now_from_sibling_auction_information() 
     assert snapshot.buy_now_price == 19250.0
 
 
+def test_normalize_lot_details_reads_buy_now_from_attributes_minimum_bid_amount() -> None:
+    snapshot = normalize_lot_details_payload(
+        {
+            "inventoryResult": {
+                "attributes": {
+                    "Id": "45107325~US",
+                    "StockNumber": "44610371",
+                    "Year": "2025",
+                    "Make": "FORD",
+                    "Model": "MUSTANG MACH-E",
+                    "Series": "GT",
+                    "Currency": "USD",
+                    "AuctionDateTime": "4/2/2026 5:00:00 PM +00:00",
+                    "BuyNowCloseDateTime": "4/2/2026 1:00:00 AM +00:00",
+                    "MinimumBidAmount": "19250",
+                },
+                "saleInformation": [
+                    {"key": "AuctionDateTime", "value": "4/2/2026 5:00:00 PM +00:00"},
+                ],
+                "vehicleInformation": [
+                    {"key": "Odometer", "value": "2,728 mi (Actual)"},
+                ],
+            }
+        }
+    )
+
+    assert snapshot.provider_lot_id == "45107325~US"
+    assert snapshot.lot_number == "44610371"
+    assert snapshot.title == "2025 FORD MUSTANG MACH-E GT"
+    assert snapshot.buy_now_price == 19250.0
+
+
 def test_normalize_lot_details_accepts_direct_inventory_shape_without_inventory_result_wrapper() -> None:
     snapshot = normalize_lot_details_payload(
         {

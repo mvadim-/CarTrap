@@ -994,3 +994,7 @@
 ## [2026-03-31 14:26] Add IAAI watchlist API regression for buy-now tracing
 - Оновлено `backend/tests/watchlist/test_watchlist_api.py`: додано end-to-end regression test для шляху `IAAI connector payload -> POST /api/watchlist -> GET /api/watchlist`, який підтверджує, що `buy_now_price=19250.0` проходить через provider-connection flow, persistence і API response без втрати значення.
 - Це звужує live-debug scope: якщо UI все ще показує `—`, проблема найімовірніше не у фронтенді й не в поточному backend коді репозиторію, а в stale Mongo document, відсутньому deploy або відмінності реального runtime payload від уже покритого shape.
+
+## [2026-03-31 14:39] Map IAAI buy-now from production minimum-bid payload
+- Оновлено `backend/src/cartrap/modules/iaai_provider/normalizer.py`: для IAAI lot-details додано ще один production fallback, який трактує `attributes.MinimumBidAmount` як `buy_now_price`, якщо payload одночасно містить `BuyNowCloseDateTime`; саме такий live `inventoryResult` зараз повертає AWS backend для lot `45107325~US`.
+- Оновлено `backend/tests/iaai/test_normalizer.py`: додано regression coverage для `inventoryResult.attributes.MinimumBidAmount + BuyNowCloseDateTime`, щоб цей production shape більше не випадав у `buy_now_price = null`.
