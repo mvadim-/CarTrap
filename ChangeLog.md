@@ -990,3 +990,7 @@
 - Оновлено `backend/src/cartrap/modules/iaai_provider/normalizer.py`: lot-details normalizer тепер підтягує `saleInformation` / `biddingInformation` / `prebidInformation` не лише з `inventoryResult`, а й із sibling-блоку `auctionInformation`, який IAAI повертає поруч із `data` у connector/detail payload-ах.
 - Оновлено `backend/tests/iaai/test_normalizer.py`: додано regression coverage для реального payload shape `auctionInformation + data`, де `buyNowAmount=19250` і ціна має потрапити у watchlist contract як `buy_now_price`.
 - Verification: `./.venv/bin/pytest backend/tests/iaai/test_normalizer.py backend/tests/iaai/test_service.py backend/tests/watchlist/test_watchlist_api.py -q` -> `26 passed` (локально є лише `urllib3` `LibreSSL` warning).
+
+## [2026-03-31 14:26] Add IAAI watchlist API regression for buy-now tracing
+- Оновлено `backend/tests/watchlist/test_watchlist_api.py`: додано end-to-end regression test для шляху `IAAI connector payload -> POST /api/watchlist -> GET /api/watchlist`, який підтверджує, що `buy_now_price=19250.0` проходить через provider-connection flow, persistence і API response без втрати значення.
+- Це звужує live-debug scope: якщо UI все ще показує `—`, проблема найімовірніше не у фронтенді й не в поточному backend коді репозиторію, а в stale Mongo document, відсутньому deploy або відмінності реального runtime payload від уже покритого shape.

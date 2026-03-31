@@ -26,6 +26,11 @@ from cartrap.modules.copart_provider.client import (
 )
 from cartrap.modules.copart_provider.errors import CopartGatewayUnavailableError
 from cartrap.modules.copart_provider.models import CopartLotSnapshot
+from cartrap.modules.iaai_provider.client import (
+    IaaiConnectorBootstrapResult,
+    IaaiConnectorExecutionResult,
+    IaaiEncryptedSessionBundle,
+)
 
 
 class FakeMongoManager:
@@ -149,6 +154,98 @@ class FakeConnectorClient:
         return None
 
 
+class FakeIaaiConnectorClient:
+    def bootstrap_connector_session(
+        self,
+        *,
+        username: str,
+        password: str,
+        client_ip: str | None = None,
+        correlation_id: str | None = None,
+    ) -> IaaiConnectorBootstrapResult:
+        del password
+        del client_ip
+        del correlation_id
+        bundle = IaaiEncryptedSessionBundle(
+            encrypted_bundle=f"iaai:{username}",
+            key_version="v1",
+            captured_at=datetime.now(timezone.utc),
+            expires_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+        )
+        return IaaiConnectorBootstrapResult(
+            bundle=bundle,
+            account_label=username,
+            connection_status="connected",
+            verified_at=datetime.now(timezone.utc),
+        )
+
+    def search_with_connector_session(self, payload: dict, bundle: IaaiEncryptedSessionBundle) -> IaaiConnectorExecutionResult:
+        del payload
+        del bundle
+        raise RuntimeError("Search execution is not used in IAAI watchlist tests.")
+
+    def lot_details_with_connector_session(
+        self,
+        provider_lot_id: str,
+        bundle: IaaiEncryptedSessionBundle,
+        etag: str | None = None,
+    ) -> IaaiConnectorExecutionResult:
+        del bundle
+        del etag
+        payload = {
+            "auctionInformation": {
+                "itemID": "63189723",
+                "stockNumber": "44610371",
+                "currencyInd": "USD",
+                "biddingInformation": {
+                    "year": 2025,
+                    "make": "FORD",
+                    "model": "MUSTANG MACH-E",
+                    "buyNowAmount": 19250,
+                    "buyNowPrice": "$19,250",
+                },
+                "prebidInformation": {
+                    "buyNowPrice": "$19,250",
+                },
+                "saleInformation": {
+                    "date": "3/26/2026 5:00:00 PM +00:00",
+                },
+            },
+            "data": {
+                "id": provider_lot_id,
+                "itemId": "63189723",
+                "stockNumber": "44610371",
+                "year": "2025",
+                "make": "FORD",
+                "model": "MUSTANG MACH-E",
+                "series": "GT",
+                "auctionDateTime": "2026-03-26T17:00:00+00:00",
+                "currency": "USD",
+                "branchName": "Electric Vehicle Auctions",
+                "city": "Rancho Cordova",
+                "state": "CA",
+                "vehiclePrimaryImageUrl": "https://vis.iaai.com/resizer?imageKeys=45107325~SID~I1&width=400&height=300",
+            },
+        }
+        return IaaiConnectorExecutionResult(
+            payload=payload,
+            bundle=IaaiEncryptedSessionBundle(
+                encrypted_bundle="iaai:rotated",
+                key_version="v1",
+                captured_at=datetime.now(timezone.utc),
+                expires_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+            ),
+            etag='"iaai-lot-etag"',
+            not_modified=False,
+            connection_status="connected",
+            verified_at=datetime.now(timezone.utc),
+            used_at=datetime.now(timezone.utc),
+        )
+
+    def close(self) -> None:
+        return None
+
+
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(app_module, "MongoManager", FakeMongoManager)
@@ -210,6 +307,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     }
     app.state.copart_provider_factory = lambda: FakeProvider(snapshots)
     app.state.copart_connector_client_factory = lambda: FakeConnectorClient(app)
+    app.state.iaai_connector_client_factory = FakeIaaiConnectorClient
     return TestClient(app)
 
 
@@ -235,6 +333,15 @@ def _connect_copart(client: TestClient, token: str, username: str) -> None:
     response = client.post(
         "/api/provider-connections/copart/connect",
         json={"username": username, "password": "copart-secret"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+
+
+def _connect_iaai(client: TestClient, token: str, username: str) -> None:
+    response = client.post(
+        "/api/provider-connections/iaai/connect",
+        json={"username": username, "password": "iaai-secret"},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
@@ -304,6 +411,37 @@ def test_watchlist_rejects_duplicate_lot(client: TestClient) -> None:
         duplicate_response = client.post("/api/watchlist", json=payload, headers=headers)
 
     assert duplicate_response.status_code == 409
+
+
+def test_watchlist_returns_buy_now_price_for_iaai_connector_payload(client: TestClient) -> None:
+    with client:
+        admin_token = _login(client, "admin@example.com", "AdminPass123")
+        invite = client.post(
+            "/api/admin/invites",
+            json={"email": "iaai-buyer@example.com"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        ).json()
+        client.post("/api/auth/invites/accept", json={"token": invite["token"], "password": "BuyerPass123"})
+        user_token = _login(client, "iaai-buyer@example.com", "BuyerPass123")
+        _connect_iaai(client, user_token, "iaai-buyer@example.com")
+
+        create_response = client.post(
+            "/api/watchlist",
+            json={"provider": "iaai", "provider_lot_id": "45107325~US"},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        assert create_response.status_code == 201
+        tracked_lot = create_response.json()["tracked_lot"]
+        assert tracked_lot["provider"] == "iaai"
+        assert tracked_lot["provider_lot_id"] == "45107325~US"
+        assert tracked_lot["lot_number"] == "44610371"
+        assert tracked_lot["buy_now_price"] == 19250.0
+
+        list_response = client.get("/api/watchlist", headers={"Authorization": f"Bearer {user_token}"})
+
+    assert list_response.status_code == 200
+    assert list_response.json()["items"][0]["buy_now_price"] == 19250.0
 
 
 def test_watchlist_keeps_update_marker_until_explicit_acknowledge(client: TestClient) -> None:
