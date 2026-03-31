@@ -96,7 +96,7 @@ def normalize_search_results(payload: list[dict[str, Any]]) -> list[AuctionSearc
                 odometer=normalize_text(first_present(item, "odoValue", "odometer")),
                 sale_date=parse_datetime(first_present(item, "auctionDateTime", "saleDate")),
                 current_bid=parse_money(first_present(item, "currentBidAmount", "currentBid")),
-                buy_now_price=parse_money(first_present(item, "buyNowAmount", "buyNowPrice")),
+                buy_now_price=extract_buy_now_price(item),
                 currency=str(first_present(item, "currency") or "USD"),
                 status=normalize_status(raw_status),
                 raw_status=raw_status,
@@ -134,6 +134,8 @@ def normalize_lot_details_payload(payload: dict[str, Any]) -> AuctionLotSnapshot
     if inventory_result is None:
         raise ValueError("IAAI lot payload is missing 'inventoryResult'.")
     sale_information = flatten_field_map(inventory_result.get("saleInformation"))
+    bidding_information = flatten_field_map(inventory_result.get("biddingInformation"))
+    prebid_information = flatten_field_map(inventory_result.get("prebidInformation"))
     vehicle_information = flatten_field_map(inventory_result.get("vehicleInformation"))
     vehicle_description = flatten_field_map(inventory_result.get("vehicleDescription"))
     attributes = flatten_field_map(inventory_result.get("attributes"))
@@ -200,7 +202,13 @@ def normalize_lot_details_payload(payload: dict[str, Any]) -> AuctionLotSnapshot
             or first_present(attributes, "AuctionDateTime", "saleDate")
         ),
         current_bid=parse_money(first_present(sale_information, "CurrentBid", "currentBid", "currentBidAmount")),
-        buy_now_price=parse_money(first_present(sale_information, "buyNowAmount", "buyNowPrice")),
+        buy_now_price=extract_buy_now_price(
+            sale_information,
+            bidding_information,
+            prebid_information,
+            attributes,
+            inventory_fields,
+        ),
         currency=str(first_present(sale_information, "currency", "currencyCode") or first_present(attributes, "Currency") or "USD"),
         raw_status=raw_status,
         provider_metadata={
@@ -282,6 +290,18 @@ def parse_boolish(value: Any) -> Optional[bool]:
         return True
     if normalized in {"false", "0", "no", "n", "not available", "missing", "absent"}:
         return False
+    return None
+
+
+def extract_buy_now_price(*containers: dict[str, Any]) -> Optional[float]:
+    for container in containers:
+        price = parse_money(first_present(container, "buyNowPrice"))
+        if price is not None:
+            return price
+    for container in containers:
+        price = parse_money(first_present(container, "buyNowAmount"))
+        if price is not None:
+            return price
     return None
 
 

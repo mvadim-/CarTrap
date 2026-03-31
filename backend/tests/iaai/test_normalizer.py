@@ -80,6 +80,26 @@ def test_normalize_search_results_prefers_vehicle_identity_title_over_sale_docum
     assert results[0].lot_key == "iaai:45107325~US"
 
 
+def test_normalize_search_results_prefers_buy_now_price_over_zero_amount() -> None:
+    results = normalize_search_results(
+        [
+            {
+                "id": "55112233~US",
+                "stockNumber": "STK-55",
+                "description": "2024 HYUNDAI IONIQ 5",
+                "auctionDateTime": "2026-03-30T17:00:00Z",
+                "buyNowAmount": 0,
+                "buyNowPrice": "$19,750",
+                "currency": "USD",
+                "saleStatus": "Pre-Bid",
+            }
+        ]
+    )
+
+    assert len(results) == 1
+    assert results[0].buy_now_price == 19750.0
+
+
 def test_normalize_lot_details_extracts_images_and_status() -> None:
     snapshot = normalize_lot_details_payload(
         {
@@ -118,6 +138,37 @@ def test_normalize_lot_details_extracts_images_and_status() -> None:
         "https://img.iaai.com/99112233/1.jpg",
         "https://img.iaai.com/99112233/2.jpg",
     ]
+
+
+def test_normalize_lot_details_prefers_buy_now_price_from_bidding_payload() -> None:
+    snapshot = normalize_lot_details_payload(
+        {
+            "inventoryResult": {
+                "inventoryId": "62993275",
+                "vehicleInformation": {
+                    "stockNumber": "44610371",
+                    "yearMakeModel": "2025 FORD MUSTANG MACH-E GT",
+                },
+                "saleInformation": {
+                    "auctionDateTime": "2026-03-26T17:00:00Z",
+                    "currentBid": 9100,
+                    "currency": "USD",
+                    "saleStatus": "Pre-Bid",
+                },
+                "biddingInformation": {
+                    "buyNowAmount": 0.0,
+                    "buyNowPrice": "$18,400",
+                },
+                "prebidInformation": {
+                    "buyNowPrice": "$18,400",
+                },
+            }
+        }
+    )
+
+    assert snapshot.provider_lot_id == "62993275"
+    assert snapshot.lot_number == "44610371"
+    assert snapshot.buy_now_price == 18400.0
 
 
 def test_normalize_lot_details_accepts_direct_inventory_shape_without_inventory_result_wrapper() -> None:

@@ -981,3 +981,7 @@
 - Оновлено `frontend/src/styles.css`: прибрано старі inline-composer styles і додано окремий visual language для `track-lot-modal`, включно з desktop dialog sizing, mobile sticky actions та provider toggle states.
 - Оновлено `frontend/tests/app.test.tsx`: interaction tests переведено на flow `open Track Lot dialog -> fill -> submit`, а також додано regression coverage, що mobile `Track Lot` modal рендериться fullscreen і поза `.app-shell`.
 - Verification: `cd frontend && npm test -- app.test.tsx` -> `59 passed`; `cd frontend && npm run build` -> успішно.
+
+## [2026-03-31 13:57] Fix IAAI watchlist buy-it-now price mapping
+- Оновлено `backend/src/cartrap/modules/iaai_provider/normalizer.py`: для IAAI `buy it now` тепер пріоритетно читається з `buyNowPrice`, а lot-details flow для watchlist додатково бере fallback із `biddingInformation` і `prebidInformation`, щоб нульовий `buyNowAmount` не затіняв реальну ціну.
+- Оновлено `backend/tests/iaai/test_normalizer.py`: додано regression coverage для search-result і lot-details payload-ів, де `buyNowAmount=0`, але коректне значення присутнє в `buyNowPrice`.
