@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 CATALOG_DATA_DIR = Path(__file__).with_name("data")
 CATALOG_JSON_PATH = CATALOG_DATA_DIR / "copart_make_model_catalog.json"
 CATALOG_OVERRIDES_PATH = CATALOG_DATA_DIR / "copart_make_model_overrides.json"
+MARKET_CATALOG_SOURCE_PATH = CATALOG_DATA_DIR / "us_market_cars.json"
 SEARCH_PAGE_SIZE = 20
 DEFAULT_SAVED_SEARCH_POLL_INTERVAL_MINUTES = 15
 
@@ -68,7 +69,11 @@ class SearchService:
         self._refresh_job_runtime = refresh_job_runtime or JobRuntimeService(database)
         self._provider_connection_service = provider_connection_service
         self._catalog_refresh_factory = catalog_refresh_factory or (
-            lambda: SearchCatalogRefreshJob(provider_factory=self._provider_factories[PROVIDER_COPART], overrides_path=CATALOG_OVERRIDES_PATH)
+            lambda: SearchCatalogRefreshJob(
+                provider_factory=self._provider_factories[PROVIDER_COPART],
+                overrides_path=CATALOG_OVERRIDES_PATH,
+                source_path=MARKET_CATALOG_SOURCE_PATH,
+            )
         )
 
     def search(self, owner_user: dict | SearchRequest | None, payload: SearchRequest | None = None) -> dict:

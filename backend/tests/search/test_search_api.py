@@ -421,7 +421,8 @@ def test_search_catalog_endpoint_returns_seeded_catalog(client: TestClient) -> N
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["summary"]["make_count"] >= 300
+    assert payload["summary"]["make_count"] == 64
+    assert payload["summary"]["unassigned_model_count"] == 0
     assert any(make["slug"] == "ford" for make in payload["makes"])
 
 

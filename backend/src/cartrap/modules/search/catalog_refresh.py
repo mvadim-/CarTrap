@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from cartrap.modules.copart_provider.service import CopartProvider
-from cartrap.modules.search.catalog_builder import build_catalog, build_official_model_index, extract_catalog_candidates
+from cartrap.modules.search.catalog_builder import (
+    build_catalog,
+    build_catalog_from_market_source,
+    build_official_model_index,
+    extract_catalog_candidates,
+    load_market_source_payload,
+)
 
 
 VPIC_ENDPOINT = "https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMake/{make}?format=json"
@@ -74,13 +80,18 @@ class SearchCatalogRefreshJob:
         self,
         provider_factory: Optional[Callable[[], CopartProvider]] = None,
         overrides_path: Optional[Path] = None,
+        source_path: Optional[Path] = None,
         model_fetcher: Callable[[str], list[str]] = fetch_models_for_make,
     ) -> None:
         self._provider_factory = provider_factory or CopartProvider
         self._overrides_path = overrides_path
+        self._source_path = source_path
         self._model_fetcher = model_fetcher
 
     def refresh(self) -> dict[str, Any]:
+        if self._source_path is not None:
+            source_payload = load_market_source_payload(self._source_path)
+            return build_catalog_from_market_source(source_payload, f"local_repo:{self._source_path.name}")
         provider = self._provider_factory()
         try:
             keyword_payload = provider.fetch_search_keywords()

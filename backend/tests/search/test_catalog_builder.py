@@ -13,10 +13,12 @@ if str(ROOT) not in sys.path:
 
 from cartrap.modules.search.catalog_builder import (  # noqa: E402
     build_catalog,
+    build_catalog_from_market_source,
     build_official_model_index,
     extract_catalog_candidates,
     match_model_to_make,
 )
+from cartrap.modules.search.catalog_refresh import SearchCatalogRefreshJob  # noqa: E402
 
 
 SAMPLE_KEYWORDS = {
@@ -169,3 +171,75 @@ def test_build_catalog_applies_manual_overrides() -> None:
     tesla = next(item for item in catalog["makes"] if item["slug"] == "tesla")
     assert tesla["models"][0]["name"] == "MODEL 3"
     assert tesla["models"][0]["confidence"] == "manual_override"
+
+
+def test_build_catalog_from_market_source_uses_local_list_as_canonical_source() -> None:
+    catalog = build_catalog_from_market_source(
+        {
+            "meta": {"years": {"from": 2024, "to": 2026}},
+            "makes": [
+                {"make": "McLaren Automotive", "models": ["570S", "Artura"]},
+                {"make": "Fiat", "models": ["500X", "500e"]},
+            ],
+        },
+        "/tmp/us_market_cars.json",
+    )
+
+    assert catalog["summary"] == {
+        "make_count": 2,
+        "model_count": 4,
+        "assigned_model_count": 4,
+        "exact_match_count": 4,
+        "fuzzy_match_count": 0,
+        "unassigned_model_count": 0,
+        "year_count": 3,
+    }
+    assert catalog["years"] == [2024, 2025, 2026]
+    fiat = next(item for item in catalog["makes"] if item["name"] == "Fiat")
+    assert fiat["filter_queries"] == [
+        'lot_make_desc:"Fiat" OR lot_make_desc:"FIAT" OR manufacturer_make_desc:"Fiat" OR manufacturer_make_desc:"FIAT"'
+    ]
+    artura = next(item for item in next(item for item in catalog["makes"] if item["name"] == "McLaren Automotive")["models"] if item["name"] == "Artura")
+    assert (
+        artura["filter_query"]
+        == 'lot_model_desc:"Artura" OR lot_model_desc:"ARTURA" OR lot_model_group:"Artura" OR lot_model_group:"ARTURA" OR manufacturer_model_desc:"Artura" OR manufacturer_model_desc:"ARTURA"'
+    )
+
+
+def test_build_catalog_from_market_source_collapses_case_variants_into_aliases() -> None:
+    catalog = build_catalog_from_market_source(
+        {
+            "meta": {"years": {"from": 2025, "to": 2025}},
+            "makes": [{"make": "Audi", "models": ["A4 allroad", "A4 Allroad"]}],
+        },
+        "/tmp/us_market_cars.json",
+    )
+
+    model = catalog["makes"][0]["models"][0]
+    assert model["name"] == "A4 allroad"
+    assert model["aliases"] == ["A4 allroad", "A4 Allroad"]
+    assert 'lot_model_desc:"A4 allroad"' in model["filter_query"]
+    assert 'lot_model_desc:"A4 Allroad"' in model["filter_query"]
+
+
+def test_refresh_job_prefers_local_market_source_when_configured(tmp_path: Path) -> None:
+    source_path = tmp_path / "us_market_cars.json"
+    source_path.write_text(
+        """
+        {
+          "meta": {"years": {"from": 2026, "to": 2026}},
+          "makes": [{"make": "Tesla", "models": ["Model 3", "Model Y"]}]
+        }
+        """.strip()
+    )
+
+    job = SearchCatalogRefreshJob(
+        provider_factory=lambda: (_ for _ in ()).throw(AssertionError("provider should not be called")),
+        source_path=source_path,
+    )
+
+    catalog = job.refresh()
+
+    assert catalog["summary"]["make_count"] == 1
+    assert catalog["summary"]["model_count"] == 2
+    assert catalog["years"] == [2026]

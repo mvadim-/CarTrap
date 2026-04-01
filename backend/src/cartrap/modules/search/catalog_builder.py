@@ -1,7 +1,8 @@
-"""Helpers for building a static make/model catalog from Copart keywords."""
+"""Helpers for building static make/model catalogs from provider and local sources."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import re
 from pathlib import Path
@@ -14,6 +15,7 @@ FIELD_VALUE_PATTERN = re.compile(
     r'(manufacturer_make_desc|lot_make_desc|manufacturer_model_desc|lot_model_group|lot_model_desc):"([^"]+)"'
 )
 NON_ALNUM_PATTERN = re.compile(r"[^A-Z0-9]+")
+SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 
 
 def load_keyword_payload(path: Path) -> dict[str, dict[str, Any]]:
@@ -24,6 +26,16 @@ def load_keyword_payload(path: Path) -> dict[str, dict[str, Any]]:
     payload = json.loads(raw[start:])
     if not isinstance(payload, dict):
         raise ValueError("Copart keywords payload must be a JSON object.")
+    return payload
+
+
+def load_market_source_payload(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, dict):
+        raise ValueError("Market catalog payload must be a JSON object.")
+    makes = payload.get("makes")
+    if not isinstance(makes, list):
+        raise ValueError("Market catalog payload must contain a 'makes' list.")
     return payload
 
 
@@ -181,6 +193,61 @@ def build_catalog(
     }
 
 
+def build_catalog_from_market_source(
+    payload: dict[str, Any],
+    source_path: str,
+    *,
+    generated_at: datetime | None = None,
+) -> dict[str, Any]:
+    makes_by_slug: dict[str, dict[str, Any]] = {}
+    used_make_slugs: set[str] = set()
+    total_models = 0
+
+    for make_entry in sorted(payload.get("makes") or [], key=lambda item: str(item.get("make") or "")):
+        raw_make_name = str(make_entry.get("make") or "").strip()
+        if not raw_make_name:
+            continue
+        make_slug = _unique_slug(raw_make_name, used_make_slugs)
+        model_entries = _build_market_models(make_entry.get("models") or [])
+        total_models += len(model_entries)
+        makes_by_slug[make_slug] = {
+            "slug": make_slug,
+            "name": raw_make_name,
+            "source": "local_us_market_catalog",
+            "aliases": [],
+            "copart_make_slugs": [make_slug],
+            "filter_queries": [_build_filter_query(("lot_make_desc", "manufacturer_make_desc"), [raw_make_name])],
+            "models": model_entries,
+        }
+
+    year_values = _extract_market_years(payload.get("meta") or {})
+    generated_value = generated_at or datetime.now(timezone.utc)
+    return {
+        "source_keywords_path": source_path,
+        "source_reference": "local_us_market_catalog",
+        "matching_strategy": {
+            "exact": "Catalog is built directly from the curated local US-market make/model source.",
+            "fuzzy": "No fuzzy provider/NHTSA matching is used for this catalog source.",
+            "manual_override": "Model aliases are collapsed from duplicate source rows when names normalize identically.",
+            "unassigned": "All listed models are assigned directly to their source make.",
+        },
+        "summary": {
+            "make_count": len(makes_by_slug),
+            "model_count": total_models,
+            "assigned_model_count": total_models,
+            "exact_match_count": total_models,
+            "fuzzy_match_count": 0,
+            "unassigned_model_count": 0,
+            "year_count": len(year_values),
+        },
+        "years": year_values,
+        "makes": [makes_by_slug[slug] for slug in sorted(makes_by_slug, key=lambda item: makes_by_slug[item]["name"])],
+        "unassigned_models": [],
+        "manual_override_count": 0,
+        "generated_at": generated_value.isoformat().replace("+00:00", "Z"),
+    }
+
+
 def match_model_to_make(
     model: dict[str, Any],
     official_models_by_make: dict[str, dict[str, Any]],
@@ -256,6 +323,97 @@ def _collect_model_names(values: dict[str, list[str]]) -> list[str]:
             if value not in ordered_names:
                 ordered_names.append(value)
     return ordered_names
+
+
+def _build_market_models(raw_models: Iterable[Any]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    used_model_slugs: set[str] = set()
+    for raw_model in raw_models:
+        model_name = str(raw_model).strip()
+        if not model_name:
+            continue
+        normalized_name = normalize_name(model_name)
+        if not normalized_name:
+            continue
+        existing = grouped.get(normalized_name)
+        if existing is None:
+            grouped[normalized_name] = {
+                "slug": _unique_slug(model_name, used_model_slugs),
+                "name": model_name,
+                "aliases": [model_name],
+            }
+            continue
+        if model_name not in existing["aliases"]:
+            existing["aliases"].append(model_name)
+
+    models: list[dict[str, Any]] = []
+    for item in grouped.values():
+        models.append(
+            {
+                "slug": item["slug"],
+                "name": item["name"],
+                "aliases": item["aliases"],
+                "filter_query": _build_filter_query(
+                    ("lot_model_desc", "lot_model_group", "manufacturer_model_desc"),
+                    item["aliases"],
+                ),
+                "confidence": "source_exact",
+            }
+        )
+    return sorted(models, key=lambda item: item["name"])
+
+
+def _build_filter_query(field_names: tuple[str, ...], values: Iterable[str]) -> str:
+    variants = _expand_filter_variants(values)
+    clauses = [f'{field_name}:"{_escape_filter_value(value)}"' for field_name in field_names for value in variants]
+    return " OR ".join(clauses)
+
+
+def _expand_filter_variants(values: Iterable[str]) -> list[str]:
+    variants: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        if not text:
+            continue
+        if text not in variants:
+            variants.append(text)
+        upper = text.upper()
+        if upper != text and upper not in variants:
+            variants.append(upper)
+    return variants
+
+
+def _extract_market_years(meta: dict[str, Any]) -> list[int]:
+    years = meta.get("years")
+    if not isinstance(years, dict):
+        return []
+    year_from = years.get("from")
+    year_to = years.get("to")
+    if not isinstance(year_from, int) or not isinstance(year_to, int):
+        return []
+    if year_from > year_to:
+        year_from, year_to = year_to, year_from
+    return list(range(year_from, year_to + 1))
+
+
+def _unique_slug(value: str, used_slugs: set[str]) -> str:
+    base_slug = _slugify(value)
+    slug = base_slug
+    suffix = 2
+    while slug in used_slugs:
+        slug = f"{base_slug}-{suffix}"
+        suffix += 1
+    used_slugs.add(slug)
+    return slug
+
+
+def _slugify(value: str) -> str:
+    normalized = SLUG_PATTERN.sub("-", str(value).strip().lower()).strip("-")
+    return normalized or "item"
+
+
+def _escape_filter_value(value: str) -> str:
+    return str(value).replace('"', '\\"')
 
 
 def _extract_field_values(filter_query: str) -> dict[str, list[str]]:

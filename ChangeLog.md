@@ -1,5 +1,11 @@
 # Change Log
 
+## [2026-04-01 15:40] Replace search catalog source with curated US market makes/models
+- Оновлено `backend/src/cartrap/modules/search/{catalog_builder.py,catalog_refresh.py,service.py}`: каталог марок/моделей тепер може будуватися напряму з локального curated source `us_market_cars.json`, а admin refresh більше не залежить від live Copart keywords/NHTSA matching для цього сценарію.
+- Додано `backend/src/cartrap/modules/search/data/us_market_cars.json` як canonical source списку марок/моделей та перегенеровано `backend/src/cartrap/modules/search/data/copart_make_model_catalog.json` у сумісний runtime seed з `64` марками, `852` унікальними моделями, year range `2010-2026` і zero `unassigned_models`.
+- Оновлено `backend/tests/search/{test_catalog_builder.py,test_search_api.py}`: додано покриття для local-source catalog builder, alias collapsing, refresh job з локального source і синхронізовано API expectations під новий catalog summary.
+- Verification: `./.venv/bin/pytest backend/tests/search/test_catalog_builder.py -q`, `./.venv/bin/pytest backend/tests/search/test_search_api.py -q`, `./.venv/bin/pytest backend/tests/copart/test_gateway_backed_services.py -q` (в обох останніх прогонах лишився лише відомий `urllib3`/`LibreSSL` warning).
+
 ## [2026-04-01 14:56] Tighten admin command center plan around non-admin isolation
 - Оновлено `docs/plans/20260401-admin-command-center-expansion.md`: план посилено явним інваріантом, що `role != admin` не повинен викликати нові `/api/admin/*` endpoints, чекати admin resources у bootstrap або отримувати нові loading/error states через admin feature set.
 - Додано окремі checklist/acceptance criteria для `App.tsx` і frontend integration coverage, які фіксують незмінність ordinary dashboard composition/request behavior для неадмінських акаунтів після інтеграції admin workspace.
