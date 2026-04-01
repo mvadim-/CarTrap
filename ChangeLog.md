@@ -1046,3 +1046,7 @@
 - Додано `backend/tests/{copart,iaai,provider_connections,watchlist}/__init__.py`: прибрано pytest import mismatch між однойменними test-модулями в різних каталогах, що дозволяє стабільно проганяти весь backend suite цілком.
 - Завершено інтеграцію документації та frontend admin workspace в поточний цикл; план `docs/plans/20260401-admin-command-center-expansion.md` позначено завершеним і перенесено в `docs/plans/completed/`.
 - Verification: `./.venv/bin/pytest backend/tests` -> `228 passed`; `npm --prefix frontend test` -> `62 passed`; `npm --prefix frontend run build` -> успішно. Локально лишається тільки відомий `urllib3` `LibreSSL` warning.
+
+## [2026-04-01 16:04] Plan admin runtime settings customization
+- Додано `docs/plans/20260401-admin-runtime-settings.md`: сформовано окремий implementation plan для винесення safe operational settings з `.env` у `admin command center` через Mongo-backed runtime settings overlay.
+- План охоплює backend runtime settings domain, effective settings resolution для web/worker, admin API для read/update/reset, frontend `Runtime Settings` panel, verification strategy і явний non-scope для secrets та infra-only config.
