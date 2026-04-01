@@ -1050,3 +1050,7 @@
 ## [2026-04-01 16:04] Plan admin runtime settings customization
 - Додано `docs/plans/20260401-admin-runtime-settings.md`: сформовано окремий implementation plan для винесення safe operational settings з `.env` у `admin command center` через Mongo-backed runtime settings overlay.
 - План охоплює backend runtime settings domain, effective settings resolution для web/worker, admin API для read/update/reset, frontend `Runtime Settings` panel, verification strategy і явний non-scope для secrets та infra-only config.
+
+## [2026-04-01 16:10] Refine runtime settings plan integration points
+- Оновлено `docs/plans/20260401-admin-runtime-settings.md`: додано пропущені integration points для runtime-aware `AuthService` (`invite_ttl_hours`), фактичних consumer-ів `job_retry_backoff_seconds` і `watchlist_auction_reminder_offsets_minutes`, а також boot-level regression coverage через `backend/tests/test_app_boot.py`.
+- План тепер явно покриває не лише admin API/UI, а й wiring у `app` dependencies, `search` / `monitoring` services та invite creation flow, щоб allowlisted settings не лишилися “мертвими” після імплементації.

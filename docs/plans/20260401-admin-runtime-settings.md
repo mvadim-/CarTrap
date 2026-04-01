@@ -10,10 +10,13 @@
 - files/components involved:
   - `backend/src/cartrap/config.py`
   - `backend/src/cartrap/app.py`
+  - `backend/src/cartrap/api/dependencies.py`
   - `backend/src/cartrap/worker/main.py`
   - `backend/src/cartrap/api/system.py`
   - `backend/src/cartrap/modules/admin/{router.py,service.py,schemas.py}`
+  - `backend/src/cartrap/modules/auth/service.py`
   - `backend/src/cartrap/modules/search/router.py`
+  - `backend/src/cartrap/modules/search/service.py`
   - `backend/src/cartrap/modules/watchlist/router.py`
   - `backend/src/cartrap/modules/monitoring/service.py`
   - `backend/src/cartrap/modules/monitoring/job_runtime.py`
@@ -27,8 +30,9 @@
 - related patterns found:
   - admin functionality already lives under `/api/admin/*`, so runtime settings should extend the existing admin surface instead of creating a new router tree.
   - current settings are read from `request.app.state.settings` in API services and once at worker startup in `backend/src/cartrap/worker/main.py`, so runtime override needs an explicit resolution layer.
+  - invite creation currently resolves TTL inside `AuthService` from startup `Settings`, so `invite_ttl_hours` needs runtime-aware wiring through app dependencies and not only through admin endpoints.
   - admin workspace already exists in frontend and can host a dedicated `Runtime Settings` panel without introducing new routing.
-  - current operational knobs are split between env-backed config (`saved_search_poll_interval_minutes`, watchlist polling windows, `invite_ttl_hours`) and hardcoded module constants (`LIVE_SYNC_STALE_AFTER`, `AUCTION_REMINDER_OFFSETS_MINUTES`, `DEFAULT_JOB_RETRY_BACKOFF_SECONDS`).
+  - current operational knobs are split between env-backed config (`saved_search_poll_interval_minutes`, watchlist polling windows, `invite_ttl_hours`) and hardcoded module constants (`LIVE_SYNC_STALE_AFTER`, `AUCTION_REMINDER_OFFSETS_MINUTES`, `DEFAULT_JOB_RETRY_BACKOFF_SECONDS`), with actual consumers spread across `auth`, `search`, `monitoring`, `system_status`, and `worker`.
 - dependencies identified:
   - changing effective settings affects `system/status`, admin overview freshness calculations, request-scoped service factories, and worker polling loop behavior.
   - runtime settings UI requires typed metadata: key, label, description, default value, current effective value, bounds, category, and mutability.
@@ -64,6 +68,8 @@
   - add admin API tests for list/update/reset endpoints and admin-only access control
   - extend `test_system_status.py` to verify freshness policies use effective runtime values
   - extend `test_worker_main.py` to verify each poll cycle resolves fresh runtime values instead of using only startup values
+  - extend `test_app_boot.py` to verify runtime settings resolver is registered on app state and wired into request-scoped services
+  - extend auth/admin invite tests to verify changed `invite_ttl_hours` affects newly created invites
 - **frontend integration tests**:
   - extend `frontend/tests/app.test.tsx` for runtime settings panel rendering, edit/save/reset flows, validation errors, and admin-only visibility
   - verify regular users do not trigger runtime settings API calls
@@ -109,20 +115,27 @@
 
 **Files:**
 - Modify: `backend/src/cartrap/app.py`
+- Modify: `backend/src/cartrap/api/dependencies.py`
 - Modify: `backend/src/cartrap/worker/main.py`
 - Modify: `backend/src/cartrap/api/system.py`
 - Modify: `backend/src/cartrap/modules/admin/router.py`
+- Modify: `backend/src/cartrap/modules/auth/service.py`
 - Modify: `backend/src/cartrap/modules/search/router.py`
+- Modify: `backend/src/cartrap/modules/search/service.py`
 - Modify: `backend/src/cartrap/modules/watchlist/router.py`
+- Modify: `backend/src/cartrap/modules/monitoring/service.py`
 - Modify: `backend/src/cartrap/modules/admin/service.py`
 - Modify: `backend/src/cartrap/modules/system_status/service.py`
+- Modify: `backend/tests/test_app_boot.py`
 - Modify: `backend/tests/test_system_status.py`
 - Modify: `backend/tests/test_worker_main.py`
 
 - [ ] add a runtime settings resolver/service to app state so request-scoped services can read effective values instead of raw startup env only
+- [ ] wire `AuthService` and app dependencies so `invite_ttl_hours` is resolved from effective runtime settings when creating new invites
 - [ ] update `worker` polling loop so each cycle uses current effective polling settings and does not require process restart for changed runtime overrides
-- [ ] replace hardcoded freshness/reminder/backoff reads in affected services with runtime settings resolution where the setting is in the allowlist
+- [ ] replace hardcoded freshness/reminder/backoff reads in affected services with runtime settings resolution where the setting is in the allowlist, including `JobRuntimeService` construction in search/monitoring flows
 - [ ] make `/api/system/status` and admin health/overview surfaces report effective values instead of static env-only values
+- [ ] write tests for app boot and dependency wiring so web runtime settings resolution cannot silently regress
 - [ ] write tests for system-status freshness policy output with overrides applied
 - [ ] write tests for worker cycle behavior when runtime settings change between cycles
 - [ ] run targeted API/worker tests - must pass before task 3
@@ -137,6 +150,7 @@
 - [ ] implement `GET /api/admin/runtime-settings` returning grouped setting metadata, default values, effective values, override state, and audit fields
 - [ ] implement admin-only bulk update endpoint for safe settings with server-side validation and partial-failure-safe behavior
 - [ ] implement reset-to-default endpoint for one setting or a defined set of keys without exposing non-allowlisted config
+- [ ] verify invite-related admin flows consume the effective `invite_ttl_hours` value after runtime settings updates
 - [ ] ensure responses distinguish `default`, `override`, and `effective` values so the UI can show what is actually active
 - [ ] write backend tests for admin-only access control, successful update flow, reset flow, and validation failures
 - [ ] run targeted admin runtime-settings API tests - must pass before task 4
@@ -184,6 +198,11 @@
   - `watchlist_auction_reminder_offsets_minutes`
   - `job_retry_backoff_seconds`
   - `invite_ttl_hours`
+- consumer mapping that must be covered during implementation:
+  - `invite_ttl_hours` -> `AuthService.create_invite()` and admin invite creation flow
+  - `job_retry_backoff_seconds` -> `JobRuntimeService` instances created inside search/monitoring services
+  - `watchlist_auction_reminder_offsets_minutes` -> `MonitoringService` reminder generation
+  - `live_sync_stale_after_minutes` -> `SystemStatusService.get_live_sync_status()`
 - likely storage shape:
   - collection: `admin_runtime_settings`
   - one document per key with `key`, `value`, `value_type`, `updated_by`, `updated_at`
