@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import List, Optional
+import json
+from typing import Annotated, Any, List, Optional
 
 import httpx
-from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 PRIVATE_NETWORK_CORS_REGEX = (
@@ -63,6 +64,12 @@ class Settings(BaseSettings):
         default=120,
         alias="WATCHLIST_NEAR_AUCTION_WINDOW_MINUTES",
         ge=1,
+    )
+    live_sync_stale_after_minutes: int = Field(default=10, alias="LIVE_SYNC_STALE_AFTER_MINUTES", ge=1)
+    job_retry_backoff_seconds: int = Field(default=60, alias="JOB_RETRY_BACKOFF_SECONDS", ge=1)
+    watchlist_auction_reminder_offsets_minutes: Annotated[list[int], NoDecode] = Field(
+        default_factory=lambda: [60, 15, 0],
+        alias="WATCHLIST_AUCTION_REMINDER_OFFSETS_MINUTES",
     )
     bootstrap_admin_email: Optional[str] = Field(default=None, alias="BOOTSTRAP_ADMIN_EMAIL")
     bootstrap_admin_password: Optional[str] = Field(default=None, alias="BOOTSTRAP_ADMIN_PASSWORD")
@@ -257,6 +264,25 @@ class Settings(BaseSettings):
     def iaai_gateway_enabled(self) -> bool:
         return bool(self.iaai_gateway_base_url)
 
+    @field_validator("watchlist_auction_reminder_offsets_minutes", mode="before")
+    @classmethod
+    def parse_watchlist_auction_reminder_offsets_minutes(cls, value: Any) -> list[int]:
+        if value is None or value == "":
+            return [60, 15, 0]
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return [60, 15, 0]
+            if text.startswith("["):
+                parsed = json.loads(text)
+                if not isinstance(parsed, list):
+                    raise ValueError("WATCHLIST_AUCTION_REMINDER_OFFSETS_MINUTES must be a list of integers.")
+                return [int(item) for item in parsed]
+            return [int(item.strip()) for item in text.split(",") if item.strip()]
+        if isinstance(value, (list, tuple, set)):
+            return [int(item) for item in value]
+        raise ValueError("WATCHLIST_AUCTION_REMINDER_OFFSETS_MINUTES must be a list of integers.")
+
     @model_validator(mode="after")
     def validate_copart_settings(self) -> "Settings":
         if self.copart_gateway_base_url:
@@ -278,6 +304,14 @@ class Settings(BaseSettings):
             raise ValueError("COPART_CONNECTOR_ENCRYPTION_KEY cannot be blank when set.")
         if self.iaai_connector_encryption_key is not None and not self.iaai_connector_encryption_key.strip():
             raise ValueError("IAAI_CONNECTOR_ENCRYPTION_KEY cannot be blank when set.")
+        if not self.watchlist_auction_reminder_offsets_minutes:
+            raise ValueError("WATCHLIST_AUCTION_REMINDER_OFFSETS_MINUTES cannot be empty.")
+        if any(offset < 0 for offset in self.watchlist_auction_reminder_offsets_minutes):
+            raise ValueError("WATCHLIST_AUCTION_REMINDER_OFFSETS_MINUTES cannot contain negative values.")
+        self.watchlist_auction_reminder_offsets_minutes = sorted(
+            {int(offset) for offset in self.watchlist_auction_reminder_offsets_minutes},
+            reverse=True,
+        )
         return self
 
 

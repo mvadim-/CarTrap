@@ -135,6 +135,24 @@ def test_system_status_endpoint_returns_available_state_by_default(client: TestC
     }
 
 
+def test_system_status_endpoint_uses_runtime_setting_overrides(client: TestClient) -> None:
+    with client:
+        client.app.state.runtime_settings_service.update_settings(
+            {
+                "saved_search_poll_interval_minutes": 5,
+                "watchlist_default_poll_interval_minutes": 7,
+            },
+            updated_by="admin-user-1",
+        )
+        response = client.get("/api/system/status")
+
+    assert response.status_code == 200
+    assert response.json()["freshness_policies"] == {
+        "saved_searches": {"stale_after_seconds": 300},
+        "watchlist": {"stale_after_seconds": 420},
+    }
+
+
 def test_system_status_endpoint_treats_stale_failure_marker_as_available(client: TestClient) -> None:
     stale_now = datetime(2026, 3, 16, 13, 0, tzinfo=timezone.utc)
     stale_failure = datetime(2026, 3, 16, 12, 40, tzinfo=timezone.utc)

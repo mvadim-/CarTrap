@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from cartrap.modules.auth.service import AuthService
+from cartrap.modules.runtime_settings.service import RuntimeSettingsService
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -23,6 +24,13 @@ def get_auth_service(request: Request) -> AuthService:
     if factory is None:
         raise RuntimeError("Auth service factory is not configured.")
     return factory()
+
+
+def get_runtime_settings_service(request: Request) -> RuntimeSettingsService:
+    service = getattr(request.app.state, "runtime_settings_service", None)
+    if service is None:
+        raise RuntimeError("Runtime settings service is not configured.")
+    return service
 
 
 def get_current_user(

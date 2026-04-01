@@ -172,6 +172,17 @@ function formatExpectedLocalAuctionStart(value: string) {
   }).format(new Date(value));
 }
 
+function addMinutes(value: string | null, minutes: number): string | null {
+  if (!value) {
+    return null;
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return null;
+  }
+  return new Date(timestamp.getTime() + minutes * 60 * 1000).toISOString().replace(".000Z", "Z");
+}
+
 function buildLiveSyncStatus(overrides: Record<string, unknown> = {}) {
   return {
     status: "available",
@@ -439,6 +450,137 @@ function buildAdminUserDetail(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function buildAdminRuntimeSettingsResponse() {
+  return {
+    groups: [
+      {
+        key: "polling",
+        label: "Polling",
+        items: [
+          {
+            key: "saved_search_poll_interval_minutes",
+            category: "polling",
+            label: "Saved search poll interval",
+            description: "Minutes between worker refresh checks for saved searches.",
+            value_type: "integer",
+            restart_required: false,
+            default_value: 15,
+            override_value: null,
+            effective_value: 15,
+            updated_by: null,
+            updated_at: null,
+            min_value: 1,
+            max_value: 240,
+            min_items: null,
+            max_items: null,
+            step: 1,
+            unit: "minutes",
+            is_overridden: false,
+          },
+          {
+            key: "watchlist_default_poll_interval_minutes",
+            category: "polling",
+            label: "Watchlist default poll interval",
+            description: "Minutes between refresh checks for tracked lots outside the near-auction window.",
+            value_type: "integer",
+            restart_required: false,
+            default_value: 15,
+            override_value: null,
+            effective_value: 15,
+            updated_by: null,
+            updated_at: null,
+            min_value: 1,
+            max_value: 240,
+            min_items: null,
+            max_items: null,
+            step: 1,
+            unit: "minutes",
+            is_overridden: false,
+          },
+        ],
+      },
+      {
+        key: "freshness",
+        label: "Freshness",
+        items: [
+          {
+            key: "watchlist_auction_reminder_offsets_minutes",
+            category: "freshness",
+            label: "Auction reminder offsets",
+            description: "Minutes before sale time when watchlist auction reminder notifications are sent.",
+            value_type: "integer_list",
+            restart_required: false,
+            default_value: [60, 15, 0],
+            override_value: null,
+            effective_value: [60, 15, 0],
+            updated_by: null,
+            updated_at: null,
+            min_value: 0,
+            max_value: 1440,
+            min_items: 1,
+            max_items: 8,
+            step: 1,
+            unit: "minutes",
+            is_overridden: false,
+          },
+        ],
+      },
+      {
+        key: "retries",
+        label: "Retries",
+        items: [
+          {
+            key: "job_retry_backoff_seconds",
+            category: "retries",
+            label: "Job retry backoff",
+            description: "Seconds to wait before retrying a failed worker-managed refresh job.",
+            value_type: "integer",
+            restart_required: false,
+            default_value: 60,
+            override_value: null,
+            effective_value: 60,
+            updated_by: null,
+            updated_at: null,
+            min_value: 1,
+            max_value: 3600,
+            min_items: null,
+            max_items: null,
+            step: 1,
+            unit: "seconds",
+            is_overridden: false,
+          },
+        ],
+      },
+      {
+        key: "invites",
+        label: "Invites",
+        items: [
+          {
+            key: "invite_ttl_hours",
+            category: "invites",
+            label: "Invite lifetime",
+            description: "Hours before a newly created invite expires.",
+            value_type: "integer",
+            restart_required: false,
+            default_value: 72,
+            override_value: null,
+            effective_value: 72,
+            updated_by: null,
+            updated_at: null,
+            min_value: 1,
+            max_value: 720,
+            min_items: null,
+            max_items: null,
+            step: 1,
+            unit: "hours",
+            is_overridden: false,
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function submitLoginForm() {
   fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "admin@example.com" } });
   fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "secret123" } });
@@ -543,10 +685,12 @@ describe("CarTrap app", () => {
   let adminOverviewCallCount: number;
   let adminUsersCallCount: number;
   let adminUserDetailCallCount: number;
+  let adminRuntimeSettingsCallCount: number;
   let adminOverviewData: ReturnType<typeof buildAdminOverview>;
   let adminSystemHealthData: ReturnType<typeof buildAdminSystemHealth>;
   let adminUsersData: ReturnType<typeof buildAdminUserRow>[];
   let adminUserDetailsById: Record<string, ReturnType<typeof buildAdminUserDetail>>;
+  let adminRuntimeSettingsData: ReturnType<typeof buildAdminRuntimeSettingsResponse>;
 
   beforeEach(() => {
     const storage = new Map<string, string>();
@@ -573,11 +717,57 @@ describe("CarTrap app", () => {
     adminOverviewCallCount = 0;
     adminUsersCallCount = 0;
     adminUserDetailCallCount = 0;
+    adminRuntimeSettingsCallCount = 0;
     adminOverviewData = buildAdminOverview();
     adminSystemHealthData = buildAdminSystemHealth();
     adminUsersData = [buildAdminUserRow()];
     adminUserDetailsById = {
       "managed-user-1": buildAdminUserDetail(),
+    };
+    adminRuntimeSettingsData = buildAdminRuntimeSettingsResponse();
+    const findRuntimeSetting = (key: string) =>
+      adminRuntimeSettingsData.groups.flatMap((group) => group.items).find((item) => item.key === key) ?? null;
+    const applyRuntimeSettingUpdate = (key: string, value: number | number[]) => {
+      const item = findRuntimeSetting(key);
+      if (!item) {
+        return false;
+      }
+      item.override_value = value;
+      item.effective_value = value;
+      item.updated_by = "user-1";
+      item.updated_at = "2026-04-01T12:05:00Z";
+      item.is_overridden = true;
+      if (key === "saved_search_poll_interval_minutes" && typeof value === "number") {
+        savedSearches = savedSearches.map((item) => ({
+          ...item,
+          freshness: {
+            ...item.freshness,
+            stale_after: addMinutes(item.last_synced_at, value),
+          },
+        }));
+      }
+      if (key === "watchlist_default_poll_interval_minutes" && typeof value === "number") {
+        watchlistItems = watchlistItems.map((item) => ({
+          ...item,
+          freshness: {
+            ...item.freshness,
+            stale_after: addMinutes(item.last_checked_at, value),
+          },
+        }));
+      }
+      return true;
+    };
+    const resetRuntimeSetting = (key: string) => {
+      const item = findRuntimeSetting(key);
+      if (!item) {
+        return false;
+      }
+      item.override_value = null;
+      item.effective_value = item.default_value;
+      item.updated_by = null;
+      item.updated_at = null;
+      item.is_overridden = false;
+      return true;
     };
     savedSearchesShouldFail = false;
     savedSearchRefreshShouldFail = false;
@@ -647,6 +837,45 @@ describe("CarTrap app", () => {
         }
         if (url.includes("/admin/system-health")) {
           return new Response(JSON.stringify(adminSystemHealthData), { status: 200 });
+        }
+        if (url.includes("/admin/runtime-settings/reset")) {
+          const body = init?.body ? JSON.parse(String(init.body)) : {};
+          for (const key of body.keys ?? []) {
+            resetRuntimeSetting(String(key));
+          }
+          return new Response(JSON.stringify(adminRuntimeSettingsData), { status: 200 });
+        }
+        if (url.includes("/admin/runtime-settings")) {
+          adminRuntimeSettingsCallCount += 1;
+          if ((init?.method ?? "GET") === "POST") {
+            const body = init?.body ? JSON.parse(String(init.body)) : {};
+            const updates = Array.isArray(body.updates) ? body.updates : [];
+            const invalidUpdate = updates.find((update) => {
+              if (update.key === "saved_search_poll_interval_minutes") {
+                return typeof update.value !== "number" || update.value < 1;
+              }
+              if (update.key === "watchlist_default_poll_interval_minutes") {
+                return typeof update.value !== "number" || update.value < 1;
+              }
+              if (update.key === "job_retry_backoff_seconds") {
+                return typeof update.value !== "number" || update.value < 1;
+              }
+              if (update.key === "invite_ttl_hours") {
+                return typeof update.value !== "number" || update.value < 1;
+              }
+              if (update.key === "watchlist_auction_reminder_offsets_minutes") {
+                return !Array.isArray(update.value) || update.value.length === 0;
+              }
+              return true;
+            });
+            if (invalidUpdate) {
+              return new Response(JSON.stringify({ detail: "Runtime setting validation failed." }), { status: 422 });
+            }
+            for (const update of updates) {
+              applyRuntimeSettingUpdate(update.key, update.value);
+            }
+          }
+          return new Response(JSON.stringify(adminRuntimeSettingsData), { status: 200 });
         }
         if (url.includes("/admin/users/") && url.includes("/actions/")) {
           const action = url.split("/actions/")[1] ?? "";
@@ -1230,6 +1459,10 @@ describe("CarTrap app", () => {
         }
         if (url.includes("/system/status")) {
           systemStatusCallCount += 1;
+          const savedSearchPollInterval =
+            (findRuntimeSetting("saved_search_poll_interval_minutes")?.effective_value as number | undefined) ?? 15;
+          const watchlistPollInterval =
+            (findRuntimeSetting("watchlist_default_poll_interval_minutes")?.effective_value as number | undefined) ?? 15;
           return new Response(
             JSON.stringify({
               status: "ok",
@@ -1237,8 +1470,8 @@ describe("CarTrap app", () => {
               environment: "test",
               live_sync: liveSyncStatus,
               freshness_policies: {
-                saved_searches: { stale_after_seconds: 900 },
-                watchlist: { stale_after_seconds: 900 },
+                saved_searches: { stale_after_seconds: savedSearchPollInterval * 60 },
+                watchlist: { stale_after_seconds: watchlistPollInterval * 60 },
               },
             }),
             { status: 200 },
@@ -1395,11 +1628,14 @@ describe("CarTrap app", () => {
     submitLoginForm();
 
     await screen.findByText(/command center/i);
+    await screen.findByRole("heading", { name: /^runtime settings$/i });
     expect(screen.getByText(/user directory/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /^runtime settings$/i })).toBeTruthy();
     expect(screen.getByText(/managed-user@example\.com/i)).toBeTruthy();
     expect(screen.getByText(/live sync degraded/i)).toBeTruthy();
     expect(adminOverviewCallCount).toBeGreaterThan(0);
     expect(adminUsersCallCount).toBeGreaterThan(0);
+    expect(adminRuntimeSettingsCallCount).toBeGreaterThan(0);
   });
 
   it("opens admin user detail and runs a confirmed root action", async () => {
@@ -1435,6 +1671,38 @@ describe("CarTrap app", () => {
     expect(adminOverviewCallCount).toBe(0);
     expect(adminUsersCallCount).toBe(0);
     expect(adminUserDetailCallCount).toBe(0);
+    expect(adminRuntimeSettingsCallCount).toBe(0);
+  });
+
+  it("edits, saves, and resets runtime settings from admin workspace", async () => {
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByRole("heading", { name: /^runtime settings$/i });
+    const savedSearchInput = screen.getByRole("textbox", { name: /saved search poll interval/i });
+    fireEvent.change(savedSearchInput, { target: { value: "6" } });
+    fireEvent.click(screen.getByRole("button", { name: /save runtime settings/i }));
+
+    expect(await screen.findByText(/runtime settings saved\./i)).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: /saved search poll interval/i }) as HTMLInputElement).value).toBe("6");
+
+    fireEvent.click(screen.getByRole("button", { name: /reset saved search poll interval/i }));
+
+    expect(await screen.findByText(/runtime setting reset to default\./i)).toBeTruthy();
+    await waitFor(() => {
+      expect((screen.getByRole("textbox", { name: /saved search poll interval/i }) as HTMLInputElement).value).toBe("15");
+    });
+  });
+
+  it("shows validation errors for invalid runtime setting drafts", async () => {
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByRole("heading", { name: /^runtime settings$/i });
+    fireEvent.change(screen.getByRole("textbox", { name: /saved search poll interval/i }), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: /save runtime settings/i }));
+
+    expect(await screen.findByText(/saved search poll interval must be at least 1\./i)).toBeTruthy();
   });
 
   it("renders invite acceptance screen from hash route", () => {

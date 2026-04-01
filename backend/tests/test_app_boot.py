@@ -74,6 +74,27 @@ def test_create_app_stores_settings_on_state() -> None:
     assert app.state.settings.mongo_db == "cartrap_test"
 
 
+def test_create_app_registers_runtime_settings_service_and_wires_auth_factory() -> None:
+    app = create_app(
+        Settings(
+            app_name="CarTrap Runtime Test",
+            environment="test",
+            MONGO_URI="mongodb://localhost:27017",
+            MONGO_DB="cartrap_test",
+            MONGO_PING_ON_STARTUP=False,
+        )
+    )
+
+    with TestClient(app) as client:
+        runtime_settings_service = client.app.state.runtime_settings_service
+        runtime_settings_service.update_settings({"invite_ttl_hours": 12}, updated_by="admin-user-1")
+        auth_service = client.app.state.auth_service_factory()
+        invite = auth_service.create_invite("runtime-test@example.com", "admin-user-1")
+
+    assert invite["created_by"] == "admin-user-1"
+    assert int((invite["expires_at"] - invite["created_at"]).total_seconds()) == 12 * 60 * 60
+
+
 def test_create_app_handles_cors_preflight() -> None:
     app = create_app(
         Settings(

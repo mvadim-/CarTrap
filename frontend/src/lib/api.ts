@@ -1,5 +1,8 @@
 import type {
   AdminOverview,
+  AdminRuntimeSettingsGroup,
+  AdminRuntimeSettingsResponse,
+  AdminRuntimeSettingUpdate,
   AdminSystemHealth,
   AdminUserActionPayload,
   AdminUserActionResponse,
@@ -339,6 +342,32 @@ export async function getAdminOverview(token: string): Promise<AdminOverview> {
 
 export async function getAdminSystemHealth(token: string): Promise<AdminSystemHealth> {
   return request<AdminSystemHealth>("/admin/system-health", { token });
+}
+
+export async function getAdminRuntimeSettings(token: string): Promise<AdminRuntimeSettingsGroup[]> {
+  const response = await request<AdminRuntimeSettingsResponse>("/admin/runtime-settings", { token });
+  return Array.isArray(response.groups) ? response.groups : [];
+}
+
+export async function updateAdminRuntimeSettings(
+  updates: AdminRuntimeSettingUpdate[],
+  token: string,
+): Promise<AdminRuntimeSettingsGroup[]> {
+  const response = await request<AdminRuntimeSettingsResponse>("/admin/runtime-settings", {
+    method: "POST",
+    body: { updates },
+    token,
+  });
+  return Array.isArray(response.groups) ? response.groups : [];
+}
+
+export async function resetAdminRuntimeSettings(keys: string[], token: string): Promise<AdminRuntimeSettingsGroup[]> {
+  const response = await request<AdminRuntimeSettingsResponse>("/admin/runtime-settings/reset", {
+    method: "POST",
+    body: { keys },
+    token,
+  });
+  return Array.isArray(response.groups) ? response.groups : [];
 }
 
 export async function listAdminUsers(filters: AdminUserFilters, token: string): Promise<AdminUsersResponse> {

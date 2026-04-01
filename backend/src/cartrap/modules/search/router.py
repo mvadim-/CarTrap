@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request, status
 
 from cartrap.api.dependencies import get_current_user
+from cartrap.modules.monitoring.job_runtime import JobRuntimeService
 from cartrap.modules.search.schemas import (
     AddFromSearchRequest,
     AddFromSearchResponse,
@@ -18,6 +19,7 @@ from cartrap.modules.search.schemas import (
 )
 from cartrap.modules.search.service import SearchService
 from cartrap.modules.provider_connections.service import ProviderConnectionService
+from cartrap.modules.system_status.service import SystemStatusService
 from cartrap.modules.watchlist.service import WatchlistService
 
 
@@ -40,6 +42,19 @@ def get_search_service(request: Request) -> SearchService:
     if iaai_connector_client_factory is not None:
         connector_client_factories["iaai"] = iaai_connector_client_factory
     settings = request.app.state.settings
+    runtime_settings_service = request.app.state.runtime_settings_service
+    runtime_values = runtime_settings_service.get_effective_values(
+        [
+            "saved_search_poll_interval_minutes",
+            "watchlist_default_poll_interval_minutes",
+            "job_retry_backoff_seconds",
+            "live_sync_stale_after_minutes",
+        ]
+    )
+    system_status_service = SystemStatusService(
+        request.app.state.mongo.database,
+        live_sync_stale_after_minutes=int(runtime_values["live_sync_stale_after_minutes"]),
+    )
     provider_connection_service = ProviderConnectionService(
         request.app.state.mongo.database,
         settings=settings,
@@ -55,9 +70,15 @@ def get_search_service(request: Request) -> SearchService:
             provider_factory=provider_factory,
             provider_factories=provider_factories,
             provider_connection_service=provider_connection_service,
-            default_poll_interval_minutes=settings.watchlist_default_poll_interval_minutes,
+            default_poll_interval_minutes=int(runtime_values["watchlist_default_poll_interval_minutes"]),
+            system_status_service=system_status_service,
         ),
-        saved_search_poll_interval_minutes=settings.saved_search_poll_interval_minutes,
+        saved_search_poll_interval_minutes=int(runtime_values["saved_search_poll_interval_minutes"]),
+        refresh_job_runtime=JobRuntimeService(
+            request.app.state.mongo.database,
+            retry_backoff_seconds=int(runtime_values["job_retry_backoff_seconds"]),
+        ),
+        system_status_service=system_status_service,
     )
 
 

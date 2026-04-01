@@ -28,12 +28,20 @@ from cartrap.modules.auth.models import (
     USER_STATUS_DISABLED,
 )
 from cartrap.modules.auth.repository import AuthRepository
+from cartrap.modules.runtime_settings.service import RuntimeSettingsService
 
 
 class AuthService:
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(
+        self,
+        database: Database,
+        settings: Settings,
+        *,
+        runtime_settings_service: RuntimeSettingsService | None = None,
+    ) -> None:
         self.repository = AuthRepository(database)
         self.settings = settings
+        self._runtime_settings_service = runtime_settings_service
         self.repository.ensure_indexes()
 
     def ensure_bootstrap_admin(self) -> None:
@@ -69,7 +77,7 @@ class AuthService:
                 "email": normalized_email,
                 "token": secrets.token_urlsafe(24),
                 "status": INVITE_PENDING,
-                "expires_at": now + timedelta(hours=self.settings.invite_ttl_hours),
+                "expires_at": now + timedelta(hours=self._get_invite_ttl_hours()),
                 "accepted_at": None,
                 "revoked_at": None,
                 "created_at": now,
@@ -242,6 +250,11 @@ class AuthService:
         else:
             detail = "User account is inactive."
         raise HTTPException(status_code=status_code, detail=detail)
+
+    def _get_invite_ttl_hours(self) -> int:
+        if self._runtime_settings_service is None:
+            return self.settings.invite_ttl_hours
+        return int(self._runtime_settings_service.get_effective_value("invite_ttl_hours"))
 
     @staticmethod
     def _now() -> datetime:

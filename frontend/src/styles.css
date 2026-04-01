@@ -2342,7 +2342,8 @@ button:focus-visible,
 }
 
 .admin-overview-panel,
-.admin-directory-panel {
+.admin-directory-panel,
+.admin-runtime-settings-panel {
   background:
     linear-gradient(180deg, rgba(255, 250, 244, 0.96) 0%, rgba(247, 241, 232, 0.92) 100%),
     rgba(255, 252, 248, 0.94);
@@ -2401,6 +2402,89 @@ button:focus-visible,
 
 .admin-overview-panel__health-list {
   margin: 0;
+}
+
+.admin-runtime-settings-panel__actions {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.admin-runtime-settings-groups {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.admin-runtime-settings-group {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.admin-runtime-settings-group__header {
+  padding-top: 0.15rem;
+  border-top: 1px solid rgba(143, 105, 69, 0.12);
+}
+
+.admin-runtime-settings-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-runtime-setting-card {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.95rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(150, 107, 68, 0.13);
+}
+
+.admin-runtime-setting-card__header {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.admin-runtime-setting-card__header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.admin-runtime-setting-card__header .muted {
+  margin: 0.35rem 0 0;
+}
+
+.admin-runtime-setting-card__field input {
+  width: 100%;
+}
+
+.admin-runtime-setting-card__meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 0.85rem;
+  margin: 0;
+}
+
+.admin-runtime-setting-card__meta dt {
+  color: #8e5e34;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-runtime-setting-card__meta dd {
+  margin: 0.2rem 0 0;
+  color: #3f2f22;
+  font-weight: 600;
+}
+
+.admin-runtime-setting-card__dirty {
+  margin: 0;
+  color: #8f2e12;
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 .admin-directory-toolbar {
@@ -2625,6 +2709,8 @@ button:focus-visible,
 
   .admin-metric-grid,
   .admin-system-health,
+  .admin-runtime-settings-list,
+  .admin-runtime-setting-card__meta,
   .admin-directory-toolbar,
   .admin-detail-list__item--split,
   .admin-confirm-dialog__actions,

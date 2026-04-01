@@ -48,6 +48,7 @@ class SearchService:
         saved_search_poll_interval_minutes: int = DEFAULT_SAVED_SEARCH_POLL_INTERVAL_MINUTES,
         refresh_job_runtime: JobRuntimeService | None = None,
         provider_connection_service: ProviderConnectionService | None = None,
+        system_status_service: SystemStatusService | None = None,
     ) -> None:
         self._database = database
         self._provider_factories: dict[str, Callable[[], object]] = {
@@ -64,7 +65,7 @@ class SearchService:
         self._saved_search_repository = SavedSearchRepository(database)
         self._saved_search_repository.ensure_indexes()
         self._notification_service = notification_service
-        self._system_status_service = SystemStatusService(database)
+        self._system_status_service = system_status_service or SystemStatusService(database)
         self._saved_search_poll_interval_minutes = saved_search_poll_interval_minutes
         self._refresh_job_runtime = refresh_job_runtime or JobRuntimeService(database)
         self._provider_connection_service = provider_connection_service

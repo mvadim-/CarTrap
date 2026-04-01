@@ -12,7 +12,7 @@ from cartrap.core.logging import make_log_extra, new_correlation_id
 from cartrap.modules.system_status.repository import SystemStatusRepository
 
 
-LIVE_SYNC_STALE_AFTER = timedelta(minutes=10)
+DEFAULT_LIVE_SYNC_STALE_AFTER_MINUTES = 10
 logger = logging.getLogger(__name__)
 
 
@@ -55,9 +55,12 @@ class SystemStatusService:
     def __init__(
         self,
         database: Database,
+        *,
+        live_sync_stale_after_minutes: int = DEFAULT_LIVE_SYNC_STALE_AFTER_MINUTES,
         now_provider: Optional[Callable[[], datetime]] = None,
     ) -> None:
         self._repository = SystemStatusRepository(database)
+        self._live_sync_stale_after = timedelta(minutes=live_sync_stale_after_minutes)
         self._now_provider = now_provider or self._now
 
     def mark_live_sync_available(self, source: str, checked_at: Optional[datetime] = None) -> dict:
@@ -115,7 +118,7 @@ class SystemStatusService:
         stale = bool(
             document.get("availability") == "degraded"
             and last_failure_at is not None
-            and current_time - last_failure_at > LIVE_SYNC_STALE_AFTER
+            and current_time - last_failure_at > self._live_sync_stale_after
             and (last_success_at is None or last_failure_at >= last_success_at)
         )
         effective_status = "available" if stale else document.get("availability", "available")

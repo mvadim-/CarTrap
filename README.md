@@ -38,6 +38,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart and IAAI lo
 ## Admin Command Center
 - Admin sessions load extra dashboard-only resources from `/api/admin/*` after role resolution; regular users do not wait on or call those endpoints during bootstrap.
 - Admin operators can review platform-wide counters, live-sync health, invite inventory, and a searchable user directory without leaving the main dashboard shell.
+- Admin operators can also tune allowlisted runtime settings from the dashboard: polling intervals, stale windows, auction reminder offsets, worker retry backoff, and invite TTL. These values are Mongo-backed overrides layered on top of `.env` defaults and apply to both API requests and worker cycles without a deploy.
 - User detail inspector surfaces account summary, invite history, provider connections, saved searches, tracked lots, push devices, and a danger zone for root actions.
 - Managed user lifecycle now supports `active`, `blocked`, and `disabled` statuses. `blocked`/`disabled` users cannot log in and existing token-backed access is rejected on the next authenticated request.
 - Root actions cover block/unblock, promote/demote, password reset, provider disconnects, resource cleanup, snapshot purge, and full user deletion with deterministic cascading cleanup across owned Mongo collections.
@@ -57,17 +58,18 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart and IAAI lo
 12. `COPART_HTTP_TIMEOUT_SECONDS`, `COPART_HTTP_CONNECT_TIMEOUT_SECONDS`, `COPART_HTTP_KEEPALIVE_EXPIRY_SECONDS`, `COPART_HTTP_MAX_CONNECTIONS`, and `COPART_HTTP_MAX_KEEPALIVE_CONNECTIONS` tune reusable HTTP clients for both direct Copart access and NAS gateway transport.
 13. `SAVED_SEARCH_POLL_INTERVAL_MINUTES` controls how often the worker refreshes cached results for saved searches.
 14. `WATCHLIST_DEFAULT_POLL_INTERVAL_MINUTES`, `WATCHLIST_NEAR_AUCTION_POLL_INTERVAL_MINUTES`, and `WATCHLIST_NEAR_AUCTION_WINDOW_MINUTES` control tracked-lot polling cadence, including the faster near-auction mode.
-15. On the primary backend, set `COPART_GATEWAY_BASE_URL` and `COPART_GATEWAY_TOKEN` to route all live Copart traffic through NAS. Leave `COPART_GATEWAY_BASE_URL` empty on the NAS gateway itself.
-16. Set `COPART_CONNECTOR_ENCRYPTION_KEY` on both AWS backend and NAS gateway so per-user Copart session bundles are stored encrypted at rest and can be re-used across live search/watchlist flows.
-17. Optional connector tuning lives under `COPART_CONNECTOR_*`: bootstrap/login/verify paths, expiring threshold minutes, mobile header defaults, and connect rate-limit knobs.
-18. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
-19. If you use backend-driven catalog refresh, `COPART_API_SEARCH_KEYWORDS_PATH` defaults to `/mcs/v2/public/data/search/keywords`.
-20. Configure IAAI connector/runtime settings in `.env` when enabling multi-auction mode: `IAAI_OIDC_*`, `IAAI_MOBILE_*`, `IAAI_CONNECTOR_ENCRYPTION_KEY_VERSION`, and `IAAI_CONNECTOR_SESSION_EXPIRING_THRESHOLD_MINUTES`.
-21. On the primary backend, set `IAAI_GATEWAY_BASE_URL` and `IAAI_GATEWAY_TOKEN` to route IAAI traffic through the dedicated NAS gateway. Leave `IAAI_GATEWAY_BASE_URL` empty on the NAS gateway itself.
-22. Set `IAAI_CONNECTOR_ENCRYPTION_KEY` on the IAAI NAS gateway so user-scoped IAAI bundles are encrypted at rest before they are returned to AWS as opaque ciphertext.
-23. Current IAAI defaults now match the captured native iOS profile more closely: `IAAI_MOBILE_REQUEST_TYPE=IAA-Buyer-App-iOS` and `IAAI_MOBILE_APP_VERSION=295` unless you override them explicitly.
-24. IAAI gateway bootstrap can now fall back to a real browser on NAS when Imperva does not issue `reese84` through plain HTTP replay. Tune this with `IAAI_BROWSER_BOOTSTRAP_ENABLED`, `IAAI_BROWSER_BOOTSTRAP_HEADLESS`, and `IAAI_BROWSER_BOOTSTRAP_TIMEOUT_SECONDS`.
-25. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
+15. `LIVE_SYNC_STALE_AFTER_MINUTES`, `WATCHLIST_AUCTION_REMINDER_OFFSETS_MINUTES`, `JOB_RETRY_BACKOFF_SECONDS`, and `INVITE_TTL_HOURS` provide env defaults for runtime-tunable operational settings. Admins can override these safe knobs later from the command center without editing `.env`.
+16. On the primary backend, set `COPART_GATEWAY_BASE_URL` and `COPART_GATEWAY_TOKEN` to route all live Copart traffic through NAS. Leave `COPART_GATEWAY_BASE_URL` empty on the NAS gateway itself.
+17. Set `COPART_CONNECTOR_ENCRYPTION_KEY` on both AWS backend and NAS gateway so per-user Copart session bundles are stored encrypted at rest and can be re-used across live search/watchlist flows.
+18. Optional connector tuning lives under `COPART_CONNECTOR_*`: bootstrap/login/verify paths, expiring threshold minutes, mobile header defaults, and connect rate-limit knobs.
+19. If you use direct lot lookup, `COPART_API_LOT_DETAILS_PATH` defaults to `/lots-api/v1/lot-details?services=bidIncrementsBySiteV2`.
+20. If you use backend-driven catalog refresh, `COPART_API_SEARCH_KEYWORDS_PATH` defaults to `/mcs/v2/public/data/search/keywords`.
+21. Configure IAAI connector/runtime settings in `.env` when enabling multi-auction mode: `IAAI_OIDC_*`, `IAAI_MOBILE_*`, `IAAI_CONNECTOR_ENCRYPTION_KEY_VERSION`, and `IAAI_CONNECTOR_SESSION_EXPIRING_THRESHOLD_MINUTES`.
+22. On the primary backend, set `IAAI_GATEWAY_BASE_URL` and `IAAI_GATEWAY_TOKEN` to route IAAI traffic through the dedicated NAS gateway. Leave `IAAI_GATEWAY_BASE_URL` empty on the NAS gateway itself.
+23. Set `IAAI_CONNECTOR_ENCRYPTION_KEY` on the IAAI NAS gateway so user-scoped IAAI bundles are encrypted at rest before they are returned to AWS as opaque ciphertext.
+24. Current IAAI defaults now match the captured native iOS profile more closely: `IAAI_MOBILE_REQUEST_TYPE=IAA-Buyer-App-iOS` and `IAAI_MOBILE_APP_VERSION=295` unless you override them explicitly.
+25. IAAI gateway bootstrap can now fall back to a real browser on NAS when Imperva does not issue `reese84` through plain HTTP replay. Tune this with `IAAI_BROWSER_BOOTSTRAP_ENABLED`, `IAAI_BROWSER_BOOTSTRAP_HEADLESS`, and `IAAI_BROWSER_BOOTSTRAP_TIMEOUT_SECONDS`.
+26. For browser push registration and delivery, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in `.env`.
 
 ## NAS Gateway
 
@@ -148,12 +150,12 @@ Set the printed `Application Server Key` value as `VAPID_PUBLIC_KEY`, point `VAP
 - `COPART_GATEWAY_ENABLE_GZIP=true` tells AWS-side gateway transport to advertise `Accept-Encoding: gzip`; actual compression should be terminated by the NAS gateway/reverse proxy layer.
 - Static make/model catalog generation lives in `scripts/generate_copart_make_model_catalog.py`, with manual fixes in `backend/src/cartrap/modules/search/data/copart_make_model_overrides.json`.
 - At runtime, the current make/model catalog is served from Mongo through `/api/search/catalog`, and admins can force a refresh via `/api/admin/search-catalog/refresh`.
-- Admin command-center APIs additionally expose `/api/admin/overview`, `/api/admin/system-health`, `/api/admin/users`, `/api/admin/users/{user_id}`, `/api/admin/users/{user_id}/actions/{action}`, and `/api/admin/invites`.
+- Admin command-center APIs additionally expose `/api/admin/overview`, `/api/admin/system-health`, `/api/admin/runtime-settings`, `/api/admin/runtime-settings/reset`, `/api/admin/users`, `/api/admin/users/{user_id}`, `/api/admin/users/{user_id}/actions/{action}`, and `/api/admin/invites`.
 - Structured operator log families include `search.execute.*`, `saved_search.refresh.*`, `saved_search.poll.*`, `watchlist.refresh.*`, `worker.poll_cycle.*`, `live_sync.*`, `copart_gateway.proxy.*`, and `copart_client.request.*`.
 
 ## Current Status
-- MVP backend flows are implemented: invite auth, managed admin/user lifecycle, admin command-center APIs, Copart API integration, watchlist, search, monitoring, and push subscription management.
-- MVP frontend flows are implemented: login, invite acceptance, admin command center, admin invite creation, backend-backed manual search catalog, per-user Copart/IAAI connector management, modal search results, saved-search rerun, watchlist thumbnails with gallery modal, client-side push registration UX, and degraded/offline live-sync messaging backed by `/api/system/status`.
+- MVP backend flows are implemented: invite auth, managed admin/user lifecycle, admin command-center APIs, Mongo-backed runtime settings overrides, Copart API integration, watchlist, search, monitoring, and push subscription management.
+- MVP frontend flows are implemented: login, invite acceptance, admin command center, admin invite creation, admin runtime settings panel, backend-backed manual search catalog, per-user Copart/IAAI connector management, modal search results, saved-search rerun, watchlist thumbnails with gallery modal, client-side push registration UX, and degraded/offline live-sync messaging backed by `/api/system/status`.
 - Docker images for `backend`, `worker`, and `frontend` are buildable and the compose stack passes a basic smoke check.
 
 ## Latest Verification

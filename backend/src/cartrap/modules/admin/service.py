@@ -47,6 +47,7 @@ from cartrap.modules.provider_connections.models import (
 )
 from cartrap.modules.provider_connections.repository import ProviderConnectionRepository
 from cartrap.modules.search.repository import SavedSearchRepository
+from cartrap.modules.runtime_settings.service import RuntimeSettingsService
 from cartrap.modules.system_status.service import SystemStatusService, build_freshness_envelope
 from cartrap.modules.watchlist.repository import WatchlistRepository
 
@@ -62,19 +63,47 @@ DIRECTORY_SORT_OPTIONS: dict[str, tuple[str, bool]] = {
 
 
 class AdminService:
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(
+        self,
+        database: Database,
+        settings: Settings,
+        *,
+        runtime_settings_service: RuntimeSettingsService | None = None,
+    ) -> None:
         self._settings = settings
+        self._runtime_settings_service = runtime_settings_service
         self._auth_repository = AuthRepository(database)
         self._saved_search_repository = SavedSearchRepository(database)
         self._watchlist_repository = WatchlistRepository(database)
         self._provider_connection_repository = ProviderConnectionRepository(database)
         self._notification_repository = NotificationRepository(database)
-        self._system_status_service = SystemStatusService(database)
+        self._system_status_service = SystemStatusService(
+            database,
+            live_sync_stale_after_minutes=self._get_runtime_value(
+                "live_sync_stale_after_minutes",
+                fallback=self._settings.live_sync_stale_after_minutes,
+            ),
+        )
 
     def list_invites(self) -> dict:
         return {
             "items": [AuthService.serialize_invite(invite) for invite in self._auth_repository.list_invites()]
         }
+
+    def get_runtime_settings(self) -> dict:
+        runtime_settings_service = self._require_runtime_settings_service()
+        return {"groups": runtime_settings_service.list_settings_grouped()}
+
+    def update_runtime_settings(self, updates: list[dict], *, updated_by: str) -> dict:
+        runtime_settings_service = self._require_runtime_settings_service()
+        normalized_updates = {item["key"]: item["value"] for item in updates}
+        runtime_settings_service.update_settings(normalized_updates, updated_by=updated_by)
+        return self.get_runtime_settings()
+
+    def reset_runtime_settings(self, keys: list[str]) -> dict:
+        runtime_settings_service = self._require_runtime_settings_service()
+        runtime_settings_service.reset_settings(keys)
+        return self.get_runtime_settings()
 
     def get_overview(self) -> dict:
         users = self._auth_repository.list_users()
@@ -676,6 +705,10 @@ class AdminService:
     def _serialize_saved_search(self, document: dict, cache_document: dict | None, live_sync_status: dict | None) -> dict:
         cache_new_count = self._get_cache_new_count(cache_document)
         last_synced_at = cache_document.get("last_synced_at") if cache_document else None
+        saved_search_poll_interval_minutes = self._get_runtime_value(
+            "saved_search_poll_interval_minutes",
+            fallback=self._settings.saved_search_poll_interval_minutes,
+        )
         return {
             "id": str(document["_id"]),
             "label": document["label"],
@@ -686,7 +719,7 @@ class AdminService:
             "last_synced_at": last_synced_at,
             "freshness": build_freshness_envelope(
                 last_synced_at=last_synced_at,
-                stale_after_window=timedelta(minutes=self._settings.saved_search_poll_interval_minutes),
+                stale_after_window=timedelta(minutes=saved_search_poll_interval_minutes),
                 live_sync_status=live_sync_status,
             ),
             "refresh_state": self._serialize_saved_search_refresh_state(document),
@@ -695,6 +728,10 @@ class AdminService:
 
     def _serialize_tracked_lot(self, document: dict, live_sync_status: dict | None) -> dict:
         current_time = self._now()
+        watchlist_default_poll_interval_minutes = self._get_runtime_value(
+            "watchlist_default_poll_interval_minutes",
+            fallback=self._settings.watchlist_default_poll_interval_minutes,
+        )
         return AdminTrackedLotSummaryResponse(
             id=str(document["_id"]),
             provider=document.get("provider") or PROVIDER_COPART,
@@ -765,22 +802,30 @@ class AdminService:
         }
 
     def _saved_search_needs_attention(self, document: dict, cache_document: dict | None, live_sync_status: dict | None) -> bool:
+        saved_search_poll_interval_minutes = self._get_runtime_value(
+            "saved_search_poll_interval_minutes",
+            fallback=self._settings.saved_search_poll_interval_minutes,
+        )
         freshness = build_freshness_envelope(
             last_synced_at=cache_document.get("last_synced_at") if cache_document else None,
-            stale_after_window=timedelta(minutes=self._settings.saved_search_poll_interval_minutes),
+            stale_after_window=timedelta(minutes=saved_search_poll_interval_minutes),
             live_sync_status=live_sync_status,
         )
         return freshness["status"] in {"degraded", "outdated", "unknown"} or (document.get("refresh_status") or "idle") != "idle"
 
     def _tracked_lot_needs_attention(self, document: dict, live_sync_status: dict | None) -> bool:
         current_time = self._now()
+        watchlist_default_poll_interval_minutes = self._get_runtime_value(
+            "watchlist_default_poll_interval_minutes",
+            fallback=self._settings.watchlist_default_poll_interval_minutes,
+        )
         freshness = build_freshness_envelope(
             last_synced_at=document.get("last_checked_at"),
             stale_after_window=timedelta(
                 minutes=get_poll_interval_minutes(
                     document,
                     current_time,
-                    default_interval_minutes=self._settings.watchlist_default_poll_interval_minutes,
+                    default_interval_minutes=watchlist_default_poll_interval_minutes,
                 )
             ),
             live_sync_status=live_sync_status,
@@ -875,6 +920,16 @@ class AdminService:
             generated_password=generated_password,
             counts=counts or {},
         ).model_dump(mode="json")
+
+    def _get_runtime_value(self, key: str, *, fallback: int) -> int:
+        if self._runtime_settings_service is None:
+            return fallback
+        return int(self._runtime_settings_service.get_effective_value(key))
+
+    def _require_runtime_settings_service(self) -> RuntimeSettingsService:
+        if self._runtime_settings_service is None:
+            raise RuntimeError("Runtime settings service is not configured.")
+        return self._runtime_settings_service
 
     @staticmethod
     def _now() -> datetime:

@@ -284,6 +284,44 @@ export type AdminUserActionResponse = {
   counts: Record<string, number>;
 };
 
+export type RuntimeSettingValue = number | number[];
+
+export type AdminRuntimeSetting = {
+  key: string;
+  category: string;
+  label: string;
+  description: string;
+  value_type: "integer" | "integer_list";
+  restart_required: boolean;
+  default_value: RuntimeSettingValue;
+  override_value: RuntimeSettingValue | null;
+  effective_value: RuntimeSettingValue;
+  updated_by: string | null;
+  updated_at: string | null;
+  min_value: number | null;
+  max_value: number | null;
+  min_items: number | null;
+  max_items: number | null;
+  step: number;
+  unit: string | null;
+  is_overridden: boolean;
+};
+
+export type AdminRuntimeSettingsGroup = {
+  key: string;
+  label: string;
+  items: AdminRuntimeSetting[];
+};
+
+export type AdminRuntimeSettingsResponse = {
+  groups: AdminRuntimeSettingsGroup[];
+};
+
+export type AdminRuntimeSettingUpdate = {
+  key: string;
+  value: RuntimeSettingValue;
+};
+
 export type TokenPair = {
   access_token: string;
   refresh_token: string;

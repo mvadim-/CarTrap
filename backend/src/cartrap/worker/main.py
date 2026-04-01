@@ -9,14 +9,67 @@ from typing import Optional
 from cartrap.config import get_settings
 from cartrap.core.logging import configure_logging, make_log_extra, new_correlation_id
 from cartrap.db.mongo import MongoManager
+from cartrap.modules.monitoring.job_runtime import JobRuntimeService
 from cartrap.modules.monitoring.service import MonitoringService
 from cartrap.modules.notifications.service import NotificationService, build_web_push_sender
 from cartrap.modules.provider_connections.service import ProviderConnectionService
+from cartrap.modules.runtime_settings.service import RuntimeSettingsService
 from cartrap.modules.search.service import SearchService
 from cartrap.modules.system_status.service import SystemStatusService
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def build_cycle_services(
+    *,
+    database,
+    settings,
+    notification_service: NotificationService,
+    provider_connection_service: ProviderConnectionService,
+    runtime_settings_service: RuntimeSettingsService,
+) -> tuple[MonitoringService, SearchService, SystemStatusService]:
+    runtime_values = runtime_settings_service.get_effective_values(
+        [
+            "watchlist_default_poll_interval_minutes",
+            "watchlist_near_auction_poll_interval_minutes",
+            "watchlist_near_auction_window_minutes",
+            "saved_search_poll_interval_minutes",
+            "watchlist_auction_reminder_offsets_minutes",
+            "job_retry_backoff_seconds",
+            "live_sync_stale_after_minutes",
+        ]
+    )
+    system_status_service = SystemStatusService(
+        database,
+        live_sync_stale_after_minutes=int(runtime_values["live_sync_stale_after_minutes"]),
+    )
+    monitoring_service = MonitoringService(
+        database,
+        notification_service=notification_service,
+        default_poll_interval_minutes=int(runtime_values["watchlist_default_poll_interval_minutes"]),
+        near_auction_poll_interval_minutes=int(runtime_values["watchlist_near_auction_poll_interval_minutes"]),
+        near_auction_window_minutes=int(runtime_values["watchlist_near_auction_window_minutes"]),
+        reminder_offsets_minutes=list(runtime_values["watchlist_auction_reminder_offsets_minutes"]),
+        refresh_job_runtime=JobRuntimeService(
+            database,
+            retry_backoff_seconds=int(runtime_values["job_retry_backoff_seconds"]),
+        ),
+        provider_connection_service=provider_connection_service,
+        system_status_service=system_status_service,
+    )
+    search_service = SearchService(
+        database,
+        notification_service=notification_service,
+        saved_search_poll_interval_minutes=int(runtime_values["saved_search_poll_interval_minutes"]),
+        refresh_job_runtime=JobRuntimeService(
+            database,
+            retry_backoff_seconds=int(runtime_values["job_retry_backoff_seconds"]),
+        ),
+        provider_connection_service=provider_connection_service,
+        system_status_service=system_status_service,
+    )
+    return monitoring_service, search_service, system_status_service
 
 
 def run_single_poll_cycle(
@@ -100,6 +153,7 @@ def run_polling_loop(sleep_seconds: int = 30) -> None:
     configure_logging(settings.log_level)
     mongo = MongoManager(settings.mongo_uri, settings.mongo_db, settings.mongo_ping_on_startup)
     mongo.connect()
+    runtime_settings_service = RuntimeSettingsService(mongo.database, settings)
     sender = build_web_push_sender(settings.vapid_private_key, settings.vapid_subject)
     notification_service = NotificationService(
         mongo.database,
@@ -108,25 +162,17 @@ def run_polling_loop(sleep_seconds: int = 30) -> None:
         vapid_private_key=settings.vapid_private_key,
         vapid_subject=settings.vapid_subject,
     )
-    system_status_service = SystemStatusService(mongo.database)
     provider_connection_service = ProviderConnectionService(mongo.database, settings=settings)
-    monitoring_service = MonitoringService(
-        mongo.database,
-        notification_service=notification_service,
-        default_poll_interval_minutes=settings.watchlist_default_poll_interval_minutes,
-        near_auction_poll_interval_minutes=settings.watchlist_near_auction_poll_interval_minutes,
-        near_auction_window_minutes=settings.watchlist_near_auction_window_minutes,
-        provider_connection_service=provider_connection_service,
-    )
-    search_service = SearchService(
-        mongo.database,
-        notification_service=notification_service,
-        saved_search_poll_interval_minutes=settings.saved_search_poll_interval_minutes,
-        provider_connection_service=provider_connection_service,
-    )
 
     try:
         while True:
+            monitoring_service, search_service, system_status_service = build_cycle_services(
+                database=mongo.database,
+                settings=settings,
+                notification_service=notification_service,
+                provider_connection_service=provider_connection_service,
+                runtime_settings_service=runtime_settings_service,
+            )
             run_single_poll_cycle(monitoring_service, search_service, system_status_service=system_status_service)
             time.sleep(sleep_seconds)
     finally:

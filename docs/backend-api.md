@@ -27,7 +27,7 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 - `access_token` is required for all protected endpoints.
 - `refresh_token` is used only by `POST /auth/refresh`.
 - Roles:
-  - `admin`: can create/revoke invites, refresh the search catalog, read platform-wide admin aggregates, and execute root-mode user/resource actions.
+  - `admin`: can create/revoke invites, refresh the search catalog, read platform-wide admin aggregates, manage allowlisted runtime settings, and execute root-mode user/resource actions.
   - `user`: can use search, watchlist, and notification endpoints.
 - User statuses:
   - `active`: normal access
@@ -78,6 +78,9 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 | `POST` | `/auth/invites/accept` | public | Accept invite and create user |
 | `GET` | `/admin/overview` | admin | Read platform-wide admin metrics |
 | `GET` | `/admin/system-health` | admin | Read operator-facing health signals |
+| `GET` | `/admin/runtime-settings` | admin | Read grouped allowlisted runtime settings with effective/default values |
+| `POST` | `/admin/runtime-settings` | admin | Bulk update allowlisted runtime settings |
+| `POST` | `/admin/runtime-settings/reset` | admin | Reset one or more allowlisted runtime settings back to env defaults |
 | `GET` | `/admin/invites` | admin | List invite records |
 | `POST` | `/admin/invites` | admin | Create invite |
 | `DELETE` | `/admin/invites/{invite_id}` | admin | Revoke pending invite |
@@ -296,6 +299,86 @@ Key fields:
 - `provider_reconnect_required`
 - `saved_search_attention`
 - `watchlist_attention`
+
+#### `GET /api/admin/runtime-settings`
+
+Returns grouped allowlisted runtime settings that admins can tune without editing `.env` or redeploying.
+
+Response shape:
+
+```json
+{
+  "groups": [
+    {
+      "key": "polling",
+      "label": "Polling",
+      "items": [
+        {
+          "key": "saved_search_poll_interval_minutes",
+          "category": "polling",
+          "label": "Saved search poll interval",
+          "description": "Minutes between worker refresh checks for saved searches.",
+          "value_type": "integer",
+          "restart_required": false,
+          "default_value": 15,
+          "override_value": null,
+          "effective_value": 15,
+          "updated_by": null,
+          "updated_at": null,
+          "min_value": 1,
+          "max_value": 240,
+          "unit": "minutes",
+          "is_overridden": false
+        }
+      ]
+    }
+  ]
+}
+```
+
+Phase-1 allowlist:
+
+- `saved_search_poll_interval_minutes`
+- `watchlist_default_poll_interval_minutes`
+- `watchlist_near_auction_poll_interval_minutes`
+- `watchlist_near_auction_window_minutes`
+- `live_sync_stale_after_minutes`
+- `watchlist_auction_reminder_offsets_minutes`
+- `job_retry_backoff_seconds`
+- `invite_ttl_hours`
+
+Secrets and infra-only settings remain env-only and are not exposed here.
+
+#### `POST /api/admin/runtime-settings`
+
+Bulk-updates allowlisted runtime settings. Validation happens server-side before any override is persisted, so mixed valid/invalid payloads fail atomically.
+
+Request:
+
+```json
+{
+  "updates": [
+    { "key": "saved_search_poll_interval_minutes", "value": 10 },
+    { "key": "watchlist_auction_reminder_offsets_minutes", "value": [45, 15, 0] }
+  ]
+}
+```
+
+Response is the same grouped payload as `GET /api/admin/runtime-settings`.
+
+#### `POST /api/admin/runtime-settings/reset`
+
+Deletes overrides for one or more allowlisted keys and restores their `.env` defaults as the effective values.
+
+Request:
+
+```json
+{
+  "keys": ["invite_ttl_hours"]
+}
+```
+
+Response is the same grouped payload as `GET /api/admin/runtime-settings`.
 
 #### `GET /api/admin/users`
 

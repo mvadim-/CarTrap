@@ -27,6 +27,9 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("WATCHLIST_DEFAULT_POLL_INTERVAL_MINUTES", "25")
     monkeypatch.setenv("WATCHLIST_NEAR_AUCTION_POLL_INTERVAL_MINUTES", "2")
     monkeypatch.setenv("WATCHLIST_NEAR_AUCTION_WINDOW_MINUTES", "180")
+    monkeypatch.setenv("LIVE_SYNC_STALE_AFTER_MINUTES", "12")
+    monkeypatch.setenv("JOB_RETRY_BACKOFF_SECONDS", "75")
+    monkeypatch.setenv("WATCHLIST_AUCTION_REMINDER_OFFSETS_MINUTES", "90,30,0")
     monkeypatch.setenv("COPART_API_BASE_URL", "https://mmember.copart.com")
     monkeypatch.setenv("COPART_API_SEARCH_PATH", "/srch/?services=bidIncrementsBySiteV2")
     monkeypatch.setenv("COPART_API_SEARCH_KEYWORDS_PATH", "/mcs/v2/public/data/search/keywords")
@@ -53,6 +56,9 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.watchlist_default_poll_interval_minutes == 25
     assert settings.watchlist_near_auction_poll_interval_minutes == 2
     assert settings.watchlist_near_auction_window_minutes == 180
+    assert settings.live_sync_stale_after_minutes == 12
+    assert settings.job_retry_backoff_seconds == 75
+    assert settings.watchlist_auction_reminder_offsets_minutes == [90, 30, 0]
     assert settings.copart_api_base_url == "https://mmember.copart.com"
     assert settings.copart_api_search_path == "/srch/?services=bidIncrementsBySiteV2"
     assert settings.copart_api_search_keywords_path == "/mcs/v2/public/data/search/keywords"
@@ -89,3 +95,8 @@ def test_settings_disable_default_cors_regex_in_production() -> None:
 def test_settings_reject_blank_connector_encryption_key() -> None:
     with pytest.raises(ValidationError):
         Settings(COPART_CONNECTOR_ENCRYPTION_KEY=" ")
+
+
+def test_settings_reject_negative_watchlist_reminder_offsets() -> None:
+    with pytest.raises(ValidationError):
+        Settings(WATCHLIST_AUCTION_REMINDER_OFFSETS_MINUTES="-15,0")

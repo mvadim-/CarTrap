@@ -16,6 +16,7 @@ Primary collections currently used by the backend:
 | `push_subscriptions` | Browser push subscriptions |
 | `search_catalog` | Current make/model/year catalog |
 | `saved_searches` | User-saved manual searches |
+| `admin_runtime_settings` | Mongo-backed overrides for allowlisted admin-tunable runtime settings |
 
 ## Relationship Model
 
@@ -226,6 +227,42 @@ Indexes:
 Lifecycle note:
 
 - admin `delete_user` and `delete_all_push_subscriptions` remove these records deterministically by `owner_user_id`.
+
+### `admin_runtime_settings`
+
+Purpose: store admin-managed overrides for safe operational settings that remain layered on top of `.env` defaults.
+
+Typical document:
+
+```json
+{
+  "_id": "ObjectId(...)",
+  "key": "saved_search_poll_interval_minutes",
+  "value": 10,
+  "value_type": "integer",
+  "updated_by": "user-id",
+  "updated_at": "2026-04-01T16:40:00Z"
+}
+```
+
+Key fields:
+
+- `key`: allowlisted runtime setting identifier
+- `value`: override payload (`integer` or `integer_list`)
+- `value_type`: stored shape for the override payload
+- `updated_by`: admin user id that last changed the override
+- `updated_at`: timestamp of the last update
+
+Indexes:
+
+- unique: `key`
+- `updated_at`
+
+Lifecycle notes:
+
+- absence of a document means the effective value falls back to `.env` / `Settings`
+- current phase-1 allowlist covers polling intervals, stale window, auction reminder offsets, worker retry backoff, and invite TTL
+- both web requests and worker cycles resolve effective values from this collection at runtime, so changing an override does not require a deploy
 
 ### `provider_connections`
 

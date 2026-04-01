@@ -40,6 +40,7 @@ class WatchlistService:
         provider_factories: Optional[dict[str, Callable[[], object]]] = None,
         default_poll_interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
         provider_connection_service: ProviderConnectionService | None = None,
+        system_status_service: SystemStatusService | None = None,
     ) -> None:
         self.repository = WatchlistRepository(database)
         self.repository.ensure_indexes()
@@ -50,7 +51,7 @@ class WatchlistService:
         if provider_factories:
             self._provider_factories.update(provider_factories)
         self._default_poll_interval_minutes = default_poll_interval_minutes
-        self._system_status_service = SystemStatusService(database)
+        self._system_status_service = system_status_service or SystemStatusService(database)
         self._provider_connection_service = provider_connection_service
 
     def add_tracked_lot(

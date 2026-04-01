@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useHashRoute } from "./app/router";
 import { useSession } from "./app/useSession";
 import { AdminOverviewPanel } from "./features/admin/AdminOverviewPanel";
+import { AdminRuntimeSettingsPanel } from "./features/admin/AdminRuntimeSettingsPanel";
 import { AdminUserDetailSurface } from "./features/admin/AdminUserDetailSurface";
 import { AdminUserDirectoryPanel } from "./features/admin/AdminUserDirectoryPanel";
 import { AdminInvitesPanel } from "./features/admin/AdminInvitesPanel";
@@ -28,6 +29,7 @@ import {
   disconnectCopartConnection,
   disconnectIaaiConnection,
   getAdminOverview,
+  getAdminRuntimeSettings,
   getAdminSystemHealth,
   getAdminUserDetail,
   getPushSubscriptionConfig,
@@ -46,6 +48,7 @@ import {
   refreshWatchlistLotLive,
   refreshSavedSearchLive,
   refreshSearchCatalog,
+  resetAdminRuntimeSettings,
   removeWatchlistItem,
   runAdminUserAction,
   saveSearch,
@@ -53,10 +56,13 @@ import {
   sendPushTest,
   subscribeToPush,
   unsubscribeFromPush,
+  updateAdminRuntimeSettings,
   viewSavedSearch,
 } from "./lib/api";
 import type {
   AdminOverview,
+  AdminRuntimeSettingsGroup,
+  AdminRuntimeSettingUpdate,
   AdminSystemHealth,
   AdminUserActionResponse,
   AdminUserDetail,
@@ -100,7 +106,7 @@ type DashboardResourceKey = "watchlist" | "savedSearches" | "subscriptions" | "s
 type DashboardState<T> = Record<DashboardResourceKey, T>;
 type PushRefreshTarget = DashboardResourceKey;
 type PullToRefreshPhase = "idle" | "pulling" | "armed" | "refreshing";
-type AdminResourceKey = "overview" | "systemHealth" | "users" | "detail" | "invites";
+type AdminResourceKey = "overview" | "systemHealth" | "users" | "detail" | "invites" | "runtimeSettings";
 type AdminState<T> = Record<AdminResourceKey, T>;
 
 type ActionState = {
@@ -119,6 +125,7 @@ type ActionState = {
   isSendingPushTest: boolean;
   isCreatingInvite: boolean;
   isRefreshingCatalog: boolean;
+  isSavingRuntimeSettings: boolean;
 };
 
 const INITIAL_DASHBOARD_LOADING: DashboardState<boolean> = {
@@ -153,6 +160,7 @@ const INITIAL_ACTION_STATE: ActionState = {
   isSendingPushTest: false,
   isCreatingInvite: false,
   isRefreshingCatalog: false,
+  isSavingRuntimeSettings: false,
 };
 
 const INITIAL_ADMIN_LOADING: AdminState<boolean> = {
@@ -161,6 +169,7 @@ const INITIAL_ADMIN_LOADING: AdminState<boolean> = {
   users: false,
   detail: false,
   invites: false,
+  runtimeSettings: false,
 };
 
 const INITIAL_ADMIN_ERRORS: AdminState<string | null> = {
@@ -169,6 +178,7 @@ const INITIAL_ADMIN_ERRORS: AdminState<string | null> = {
   users: null,
   detail: null,
   invites: null,
+  runtimeSettings: null,
 };
 
 const INITIAL_ADMIN_FILTERS: AdminUserFilters = {
@@ -566,6 +576,7 @@ export function App() {
   const [selectedAdminUserId, setSelectedAdminUserId] = useState<string | null>(null);
   const [adminUserDetail, setAdminUserDetail] = useState<AdminUserDetail | null>(null);
   const [adminInvites, setAdminInvites] = useState<Invite[]>([]);
+  const [adminRuntimeSettings, setAdminRuntimeSettings] = useState<AdminRuntimeSettingsGroup[]>([]);
   const [adminLoading, setAdminLoading] = useState<AdminState<boolean>>(INITIAL_ADMIN_LOADING);
   const [adminErrors, setAdminErrors] = useState<AdminState<string | null>>(INITIAL_ADMIN_ERRORS);
   const [isAdminUserDetailOpen, setIsAdminUserDetailOpen] = useState(false);
@@ -694,6 +705,7 @@ export function App() {
     setSelectedAdminUserId(null);
     setAdminUserDetail(null);
     setAdminInvites([]);
+    setAdminRuntimeSettings([]);
     setAdminLoading(INITIAL_ADMIN_LOADING);
     setAdminErrors(INITIAL_ADMIN_ERRORS);
     setIsAdminUserDetailOpen(false);
@@ -789,6 +801,14 @@ export function App() {
     return runAdminLoader("invites", "Could not load admin invites.", async () => {
       const response = await listAdminInvites(token);
       setAdminInvites(response);
+      return response;
+    });
+  }
+
+  async function loadAdminRuntimeSettingsResource(token: string) {
+    return runAdminLoader("runtimeSettings", "Could not load runtime settings.", async () => {
+      const response = await getAdminRuntimeSettings(token);
+      setAdminRuntimeSettings(response);
       return response;
     });
   }
@@ -953,6 +973,7 @@ export function App() {
       loadAdminSystemHealthResource(token),
       loadAdminUsersResource(token, filters),
       loadAdminInvitesResource(token),
+      loadAdminRuntimeSettingsResource(token),
     ]);
   }
 
@@ -1635,6 +1656,7 @@ export function App() {
       loadAdminSystemHealthResource(token),
       loadAdminUsersResource(token, adminFilters),
       loadAdminInvitesResource(token),
+      loadAdminRuntimeSettingsResource(token),
       options.includeDetail && selectedAdminUserId && isAdminUserDetailOpen
         ? loadAdminUserDetailResource(token, selectedAdminUserId)
         : Promise.resolve(null),
@@ -1662,6 +1684,42 @@ export function App() {
       throw caught;
     } finally {
       setIsRunningAdminAction(false);
+    }
+  }
+
+  async function handleSaveRuntimeSettings(updates: AdminRuntimeSettingUpdate[]) {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    setActionState((current) => ({ ...current, isSavingRuntimeSettings: true }));
+    try {
+      const response = await updateAdminRuntimeSettings(updates, session.accessToken);
+      setAdminRuntimeSettings(response);
+      await Promise.allSettled([
+        loadAdminOverviewResource(session.accessToken),
+        loadAdminSystemHealthResource(session.accessToken),
+        loadLiveSyncStatusResource(session.accessToken, { silent: true }),
+      ]);
+    } finally {
+      setActionState((current) => ({ ...current, isSavingRuntimeSettings: false }));
+    }
+  }
+
+  async function handleResetRuntimeSettings(keys: string[]) {
+    if (!session.accessToken) {
+      throw new Error("Missing session");
+    }
+    setActionState((current) => ({ ...current, isSavingRuntimeSettings: true }));
+    try {
+      const response = await resetAdminRuntimeSettings(keys, session.accessToken);
+      setAdminRuntimeSettings(response);
+      await Promise.allSettled([
+        loadAdminOverviewResource(session.accessToken),
+        loadAdminSystemHealthResource(session.accessToken),
+        loadLiveSyncStatusResource(session.accessToken, { silent: true }),
+      ]);
+    } finally {
+      setActionState((current) => ({ ...current, isSavingRuntimeSettings: false }));
     }
   }
 
@@ -1947,6 +2005,17 @@ export function App() {
               onFiltersChange={handleAdminFiltersChange}
             />
             <div className="dashboard-grid__support" aria-label="Admin support panels">
+              <AdminRuntimeSettingsPanel
+                groups={adminRuntimeSettings}
+                isLoading={adminLoading.runtimeSettings}
+                isSaving={actionState.isSavingRuntimeSettings}
+                error={adminErrors.runtimeSettings}
+                onRetry={() =>
+                  session.accessToken ? loadAdminRuntimeSettingsResource(session.accessToken).then(() => undefined) : Promise.resolve()
+                }
+                onSave={handleSaveRuntimeSettings}
+                onReset={handleResetRuntimeSettings}
+              />
               <AdminInvitesPanel
                 inviteLink={inviteLink}
                 latestInvite={latestInvite ?? adminInvites[0] ?? null}

@@ -46,8 +46,10 @@ class MonitoringService:
         default_poll_interval_minutes: int = DEFAULT_INTERVAL_MINUTES,
         near_auction_poll_interval_minutes: int = NEAR_AUCTION_INTERVAL_MINUTES,
         near_auction_window_minutes: int = NEAR_AUCTION_WINDOW_MINUTES,
+        reminder_offsets_minutes: tuple[int, ...] | list[int] | None = None,
         refresh_job_runtime: JobRuntimeService | None = None,
         provider_connection_service: ProviderConnectionService | None = None,
+        system_status_service: SystemStatusService | None = None,
     ) -> None:
         self.repository = WatchlistRepository(database)
         self.repository.ensure_indexes()
@@ -58,10 +60,13 @@ class MonitoringService:
         if provider_factories:
             self._provider_factories.update(provider_factories)
         self._notification_service = notification_service
-        self._system_status_service = SystemStatusService(database)
+        self._system_status_service = system_status_service or SystemStatusService(database)
         self._default_poll_interval_minutes = default_poll_interval_minutes
         self._near_auction_poll_interval_minutes = near_auction_poll_interval_minutes
         self._near_auction_window_minutes = near_auction_window_minutes
+        self._auction_reminder_offsets_minutes = tuple(
+            reminder_offsets_minutes or self.AUCTION_REMINDER_OFFSETS_MINUTES
+        )
         self._refresh_job_runtime = refresh_job_runtime or JobRuntimeService(database)
         self._provider_connection_service = provider_connection_service
 
@@ -455,7 +460,7 @@ class MonitoringService:
             sent_minutes = set()
 
         due_offsets: list[int] = []
-        for offset_minutes in self.AUCTION_REMINDER_OFFSETS_MINUTES:
+        for offset_minutes in self._auction_reminder_offsets_minutes:
             if offset_minutes in sent_minutes:
                 continue
             if self._is_auction_reminder_due(normalized_sale_date, now, offset_minutes):
@@ -477,7 +482,7 @@ class MonitoringService:
         reminder_state_payload = {
             "auction_reminder_sale_date": normalized_sale_date,
             "auction_reminder_sent_minutes": [
-                offset_minutes for offset_minutes in self.AUCTION_REMINDER_OFFSETS_MINUTES if offset_minutes in sent_minutes
+                offset_minutes for offset_minutes in self._auction_reminder_offsets_minutes if offset_minutes in sent_minutes
             ],
         }
         return reminder_events, reminder_state_payload
@@ -493,7 +498,7 @@ class MonitoringService:
         if stored_sale_date != sale_date:
             sent_minutes = set()
 
-        for offset_minutes in self.AUCTION_REMINDER_OFFSETS_MINUTES:
+        for offset_minutes in self._auction_reminder_offsets_minutes:
             if offset_minutes in sent_minutes:
                 continue
             trigger_at = sale_date - timedelta(minutes=offset_minutes)

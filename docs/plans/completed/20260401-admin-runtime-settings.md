@@ -104,12 +104,12 @@
 - Create: `backend/tests/runtime_settings/test_runtime_settings_service.py`
 - Modify: `backend/tests/test_config.py`
 
-- [ ] define allowlisted runtime setting keys, categories, labels, descriptions, value types, defaults, bounds, and `restart_required` metadata in a dedicated runtime settings domain
-- [ ] implement Mongo-backed persistence for overrides and effective-value resolution with fallback to `.env` defaults
-- [ ] include audit fields on each override (`updated_by`, `updated_at`) and reset-to-default semantics
-- [ ] write tests for metadata resolution, default fallback, valid override persistence, and reset flow
-- [ ] write tests for invalid values, out-of-range bounds, and disallowed keys
-- [ ] run targeted runtime-settings backend tests - must pass before task 2
+- [x] define allowlisted runtime setting keys, categories, labels, descriptions, value types, defaults, bounds, and `restart_required` metadata in a dedicated runtime settings domain
+- [x] implement Mongo-backed persistence for overrides and effective-value resolution with fallback to `.env` defaults
+- [x] include audit fields on each override (`updated_by`, `updated_at`) and reset-to-default semantics
+- [x] write tests for metadata resolution, default fallback, valid override persistence, and reset flow
+- [x] write tests for invalid values, out-of-range bounds, and disallowed keys
+- [x] run targeted runtime-settings backend tests - must pass before task 2
 
 ### Task 2: Wire effective runtime settings into API and worker execution paths
 
@@ -130,15 +130,15 @@
 - Modify: `backend/tests/test_system_status.py`
 - Modify: `backend/tests/test_worker_main.py`
 
-- [ ] add a runtime settings resolver/service to app state so request-scoped services can read effective values instead of raw startup env only
-- [ ] wire `AuthService` and app dependencies so `invite_ttl_hours` is resolved from effective runtime settings when creating new invites
-- [ ] update `worker` polling loop so each cycle uses current effective polling settings and does not require process restart for changed runtime overrides
-- [ ] replace hardcoded freshness/reminder/backoff reads in affected services with runtime settings resolution where the setting is in the allowlist, including `JobRuntimeService` construction in search/monitoring flows
-- [ ] make `/api/system/status` and admin health/overview surfaces report effective values instead of static env-only values
-- [ ] write tests for app boot and dependency wiring so web runtime settings resolution cannot silently regress
-- [ ] write tests for system-status freshness policy output with overrides applied
-- [ ] write tests for worker cycle behavior when runtime settings change between cycles
-- [ ] run targeted API/worker tests - must pass before task 3
+- [x] add a runtime settings resolver/service to app state so request-scoped services can read effective values instead of raw startup env only
+- [x] wire `AuthService` and app dependencies so `invite_ttl_hours` is resolved from effective runtime settings when creating new invites
+- [x] update `worker` polling loop so each cycle uses current effective polling settings and does not require process restart for changed runtime overrides
+- [x] replace hardcoded freshness/reminder/backoff reads in affected services with runtime settings resolution where the setting is in the allowlist, including `JobRuntimeService` construction in search/monitoring flows
+- [x] make `/api/system/status` and admin health/overview surfaces report effective values instead of static env-only values
+- [x] write tests for app boot and dependency wiring so web runtime settings resolution cannot silently regress
+- [x] write tests for system-status freshness policy output with overrides applied
+- [x] write tests for worker cycle behavior when runtime settings change between cycles
+- [x] run targeted API/worker tests - must pass before task 3
 
 ### Task 3: Add admin runtime settings read/update/reset APIs
 
@@ -147,13 +147,13 @@
 - Create: `backend/tests/admin/test_admin_runtime_settings_api.py`
 - Modify: `backend/tests/admin/conftest.py`
 
-- [ ] implement `GET /api/admin/runtime-settings` returning grouped setting metadata, default values, effective values, override state, and audit fields
-- [ ] implement admin-only bulk update endpoint for safe settings with server-side validation and partial-failure-safe behavior
-- [ ] implement reset-to-default endpoint for one setting or a defined set of keys without exposing non-allowlisted config
-- [ ] verify invite-related admin flows consume the effective `invite_ttl_hours` value after runtime settings updates
-- [ ] ensure responses distinguish `default`, `override`, and `effective` values so the UI can show what is actually active
-- [ ] write backend tests for admin-only access control, successful update flow, reset flow, and validation failures
-- [ ] run targeted admin runtime-settings API tests - must pass before task 4
+- [x] implement `GET /api/admin/runtime-settings` returning grouped setting metadata, default values, effective values, override state, and audit fields
+- [x] implement admin-only bulk update endpoint for safe settings with server-side validation and partial-failure-safe behavior
+- [x] implement reset-to-default endpoint for one setting or a defined set of keys without exposing non-allowlisted config
+- [x] verify invite-related admin flows consume the effective `invite_ttl_hours` value after runtime settings updates
+- [x] ensure responses distinguish `default`, `override`, and `effective` values so the UI can show what is actually active
+- [x] write backend tests for admin-only access control, successful update flow, reset flow, and validation failures
+- [x] run targeted admin runtime-settings API tests - must pass before task 4
 
 ### Task 4: Build admin runtime settings panel in the command center
 
@@ -165,28 +165,28 @@
 - Modify: `frontend/src/styles.css`
 - Modify: `frontend/tests/app.test.tsx`
 
-- [ ] add frontend types and API clients for runtime settings list, update, and reset contracts
-- [ ] integrate a `Runtime Settings` panel into the existing admin workspace with clear separation between polling/freshness/invite settings and any future advanced knobs
-- [ ] render editable controls with labels, help text, bounds hints, effective/default display, dirty-state handling, and reset actions
-- [ ] add save/reload/error states that do not regress the rest of the admin command center and keep non-admin flows unchanged
-- [ ] write frontend tests for panel render, edit/save/reset flows, validation/error states, and admin-only visibility
-- [ ] verify non-admin bootstrap still performs no runtime-settings API calls
-- [ ] run frontend tests for runtime settings UI - must pass before task 5
+- [x] add frontend types and API clients for runtime settings list, update, and reset contracts
+- [x] integrate a `Runtime Settings` panel into the existing admin workspace with clear separation between polling/freshness/invite settings and any future advanced knobs
+- [x] render editable controls with labels, help text, bounds hints, effective/default display, dirty-state handling, and reset actions
+- [x] add save/reload/error states that do not regress the rest of the admin command center and keep non-admin flows unchanged
+- [x] write frontend tests for panel render, edit/save/reset flows, validation/error states, and admin-only visibility
+- [x] verify non-admin bootstrap still performs no runtime-settings API calls
+- [x] run frontend tests for runtime settings UI - must pass before task 5
 
 ### Task 5: Verify acceptance criteria
-- [ ] verify admin can view and modify safe operational settings from the existing admin workspace
-- [ ] verify changed settings affect `system/status` and worker behavior without deploy-time env edits
-- [ ] verify reset-to-default restores env-backed fallback behavior
-- [ ] verify secrets and non-allowlisted infra settings are not exposed in any admin API or UI
-- [ ] verify non-admin users cannot access runtime settings APIs or panels
-- [ ] run full verification: `./.venv/bin/pytest backend/tests`, `npm --prefix frontend test`, `npm --prefix frontend run build`
+- [x] verify admin can view and modify safe operational settings from the existing admin workspace
+- [x] verify changed settings affect `system/status` and worker behavior without deploy-time env edits
+- [x] verify reset-to-default restores env-backed fallback behavior
+- [x] verify secrets and non-allowlisted infra settings are not exposed in any admin API or UI
+- [x] verify non-admin users cannot access runtime settings APIs or panels
+- [x] run full verification: `./.venv/bin/pytest backend/tests`, `npm --prefix frontend test`, `npm --prefix frontend run build`
 
 ### Task 6: [Final] Update documentation
-- [ ] update `README.md` with runtime settings behavior and admin-only scope
-- [ ] update `docs/backend-api.md` with new admin runtime settings endpoints
-- [ ] update `docs/database-schema.md` with runtime settings storage and audit fields
-- [ ] update `ChangeLog.md` for each implementation cycle
-- [ ] move this plan to `docs/plans/completed/` when implementation is finished
+- [x] update `README.md` with runtime settings behavior and admin-only scope
+- [x] update `docs/backend-api.md` with new admin runtime settings endpoints
+- [x] update `docs/database-schema.md` with runtime settings storage and audit fields
+- [x] update `ChangeLog.md` for each implementation cycle
+- [x] move this plan to `docs/plans/completed/` when implementation is finished
 
 ## Technical Details
 - initial allowlisted settings for phase 1:

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from cartrap.modules.auth.schemas import AdminManagedUserResponse, InviteResponse
 from cartrap.modules.notifications.schemas import PushSubscriptionResponse
 from cartrap.modules.provider_connections.schemas import ProviderConnectionResponse
+from cartrap.modules.runtime_settings.schemas import RuntimeSettingResponse, RuntimeSettingUpdatePayload
 from cartrap.modules.system_status.schemas import FreshnessEnvelopeResponse, RefreshStateResponse
 
 
@@ -205,3 +206,21 @@ class AdminActionResponse(BaseModel):
 
 class AdminInviteListResponse(BaseModel):
     items: list[InviteResponse] = Field(default_factory=list)
+
+
+class AdminRuntimeSettingsResponse(BaseModel):
+    groups: list["AdminRuntimeSettingsGroupResponse"] = Field(default_factory=list)
+
+
+class AdminRuntimeSettingsGroupResponse(BaseModel):
+    key: str
+    label: str
+    items: list[RuntimeSettingResponse] = Field(default_factory=list)
+
+
+class AdminRuntimeSettingsUpdateRequest(BaseModel):
+    updates: list[RuntimeSettingUpdatePayload] = Field(default_factory=list, min_length=1)
+
+
+class AdminRuntimeSettingsResetRequest(BaseModel):
+    keys: list[str] = Field(default_factory=list, min_length=1)

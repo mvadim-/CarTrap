@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Request, status
 
 from cartrap.api.dependencies import get_current_user
 from cartrap.modules.provider_connections.service import ProviderConnectionService
+from cartrap.modules.system_status.service import SystemStatusService
 from cartrap.modules.watchlist.schemas import (
     WatchlistAcknowledgeResponse,
     WatchlistCreateRequest,
@@ -36,6 +37,13 @@ def get_watchlist_service(request: Request) -> WatchlistService:
     if iaai_connector_client_factory is not None:
         connector_client_factories["iaai"] = iaai_connector_client_factory
     settings = request.app.state.settings
+    runtime_settings_service = request.app.state.runtime_settings_service
+    runtime_values = runtime_settings_service.get_effective_values(
+        [
+            "watchlist_default_poll_interval_minutes",
+            "live_sync_stale_after_minutes",
+        ]
+    )
     return WatchlistService(
         request.app.state.mongo.database,
         provider_factory=provider_factory,
@@ -45,7 +53,11 @@ def get_watchlist_service(request: Request) -> WatchlistService:
             settings=settings,
             connector_client_factories=connector_client_factories,
         ),
-        default_poll_interval_minutes=settings.watchlist_default_poll_interval_minutes,
+        default_poll_interval_minutes=int(runtime_values["watchlist_default_poll_interval_minutes"]),
+        system_status_service=SystemStatusService(
+            request.app.state.mongo.database,
+            live_sync_stale_after_minutes=int(runtime_values["live_sync_stale_after_minutes"]),
+        ),
     )
 
 
