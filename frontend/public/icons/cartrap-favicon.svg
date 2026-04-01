@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">CarTrap favicon</title>
+  <desc id="desc">Simplified Open Capture Ring symbol for small sizes.</desc>
+  <rect x="52" y="52" width="408" height="408" rx="112" fill="#122630" />
+  <circle
+    cx="236"
+    cy="256"
+    r="146"
+    fill="none"
+    stroke="#f5ead7"
+    stroke-linecap="round"
+    stroke-width="92"
+    stroke-dasharray="760 180"
+    transform="rotate(-34 236 256)"
+  />
+  <circle
+    cx="236"
+    cy="256"
+    r="116"
+    fill="none"
+    stroke="#d26f34"
+    stroke-linecap="round"
+    stroke-width="28"
+    stroke-dasharray="110 619"
+    transform="rotate(-34 236 256)"
+  />
+  <rect x="208" y="224" width="84" height="84" rx="28" fill="#d26f34" />
+</svg>

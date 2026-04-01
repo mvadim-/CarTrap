@@ -996,5 +996,11 @@
 - Це звужує live-debug scope: якщо UI все ще показує `—`, проблема найімовірніше не у фронтенді й не в поточному backend коді репозиторію, а в stale Mongo document, відсутньому deploy або відмінності реального runtime payload від уже покритого shape.
 
 ## [2026-03-31 14:39] Map IAAI buy-now from production minimum-bid payload
+## [2026-04-01 14:00] Redesign frontend app icons with Open Capture Ring
+- Оновлено `frontend/public/icons/cartrap-icon.svg` і `frontend/public/icons/cartrap-icon-maskable.svg`: замість старого `CT` monogram додано новий бренд-символ `Open Capture Ring` з простішим силуетом, сильнішим контрастом і окремою full-bleed maskable версією для PWA/home-screen контекстів.
+- Додано `frontend/public/icons/cartrap-favicon.svg` і перегенеровано `frontend/public/{favicon-16x16.png,favicon-32x32.png,favicon.ico,apple-touch-icon.png}` та `frontend/public/icons/{icon-192.png,icon-512.png,icon-maskable-192.png,icon-maskable-512.png}`: favicon тепер рендериться з окремого small-size master, а `apple-touch-icon` більше не використовує прозору desktop-версію.
+- Оновлено `scripts/generate_frontend_icons.py`: генератор тепер має окремий source для favicon, віддає `apple-touch-icon` з maskable/full-bleed asset і стабільніше чекає готовий PNG перед завершенням headless Chrome.
+- Verification: `python3 scripts/generate_frontend_icons.py`; візуально перевірено локальні PNG (`apple-touch-icon.png`, `icon-192.png`, `icon-maskable-192.png`, `favicon-32x32.png`) — поламаний iPhone touch icon зник, favicon став читабельнішим.
+
 - Оновлено `backend/src/cartrap/modules/iaai_provider/normalizer.py`: для IAAI lot-details додано ще один production fallback, який трактує `attributes.MinimumBidAmount` як `buy_now_price`, якщо payload одночасно містить `BuyNowCloseDateTime`; саме такий live `inventoryResult` зараз повертає AWS backend для lot `45107325~US`.
 - Оновлено `backend/tests/iaai/test_normalizer.py`: додано regression coverage для `inventoryResult.attributes.MinimumBidAmount + BuyNowCloseDateTime`, щоб цей production shape більше не випадав у `buy_now_price = null`.
