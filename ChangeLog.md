@@ -1,5 +1,9 @@
 # Change Log
 
+## [2026-04-01 14:51] Add implementation plan for admin command center expansion
+- Додано `docs/plans/20260401-admin-command-center-expansion.md`: зафіксовано architecture/UX/backend contract plan для розширення поточної адмінки до desktop-optimized `admin command center` з user analytics, aggregated user detail, root-mode admin actions і cross-platform support surfaces.
+- План прив'язано до наявних модулів `admin`, `auth`, `search`, `watchlist`, `provider_connections`, `notifications`, `system_status` та поточного frontend dashboard/admin shell, щоб наступний execution цикл починався з конкретного file map і testing strategy, а не з повторного discovery.
+
 ## [2026-03-27 17:55] Make mobile dashboard headers less bulky and safer
 - Оновлено `frontend/src/styles.css`: mobile `dashboard-header` став компактнішим за padding, radius і typography, а `Menu` button більше не виглядає як великий окремий блок у шапці.
 - Ті самі стилі перебудували mobile headers для `Saved Searches` і `Tracked Lots`: текстовий блок тепер має повну ширину, action buttons йдуть окремим compact row під ним, тому lede не зжимається і кнопки не вилазять за межі панелей.
