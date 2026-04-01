@@ -1,5 +1,9 @@
 # Change Log
 
+## [2026-04-01 14:56] Tighten admin command center plan around non-admin isolation
+- Оновлено `docs/plans/20260401-admin-command-center-expansion.md`: план посилено явним інваріантом, що `role != admin` не повинен викликати нові `/api/admin/*` endpoints, чекати admin resources у bootstrap або отримувати нові loading/error states через admin feature set.
+- Додано окремі checklist/acceptance criteria для `App.tsx` і frontend integration coverage, які фіксують незмінність ordinary dashboard composition/request behavior для неадмінських акаунтів після інтеграції admin workspace.
+
 ## [2026-04-01 14:51] Add implementation plan for admin command center expansion
 - Додано `docs/plans/20260401-admin-command-center-expansion.md`: зафіксовано architecture/UX/backend contract plan для розширення поточної адмінки до desktop-optimized `admin command center` з user analytics, aggregated user detail, root-mode admin actions і cross-platform support surfaces.
 - План прив'язано до наявних модулів `admin`, `auth`, `search`, `watchlist`, `provider_connections`, `notifications`, `system_status` та поточного frontend dashboard/admin shell, щоб наступний execution цикл починався з конкретного file map і testing strategy, а не з повторного discovery.

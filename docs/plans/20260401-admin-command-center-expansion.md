@@ -63,6 +63,10 @@
 - **CRITICAL: all tests must pass before starting next task**
 - **CRITICAL: update this plan file when scope changes during implementation**
 - підтримувати backward compatibility для non-admin dashboard flows; user-facing сценарії не повинні змінити поведінку через появу admin workspace
+- `role != admin` є жорстким інваріантом цього плану:
+  - non-admin session не повинна викликати жодного нового `/api/admin/*` endpoint
+  - non-admin dashboard bootstrap не повинен чекати admin resources і не повинен отримати нові loading/error states через admin feature set
+  - layout, composition і interaction model звичайного dashboard мають лишитися еквівалентними поточній поведінці, окрім окремо погоджених shared bugfixes
 
 ## Testing Strategy
 - **backend unit/integration tests**:
@@ -72,6 +76,7 @@
 - **frontend integration tests**:
   - розширити `frontend/tests/app.test.tsx` для admin overview, directory filters, detail surface і destructive flows
   - перевірити, що non-admin не бачить admin workspace і не може викликати admin actions
+  - перевірити, що non-admin login/dashboard flow не робить admin API requests і не отримує додаткових bootstrap delays або admin-derived errors
 - **manual verification**:
   - login як admin і як user
   - review user directory з різними filters/search
@@ -175,6 +180,7 @@
 - [ ] add frontend types for admin overview, system health, directory rows, detail payload, filters, and action responses
 - [ ] add `lib/api.ts` methods for admin overview, system health, users list/detail, and root actions with consistent error handling
 - [ ] introduce admin-specific state management in `App.tsx` without regressing non-admin dashboard bootstrap and refresh flows
+- [ ] keep admin resources out of shared bootstrap/loading orchestration for regular users so `role != admin` never waits on admin network calls
 - [ ] write frontend tests for admin data loading states, retry paths, and API integration boundaries
 - [ ] run frontend tests covering new admin state scaffolding - must pass before task 6
 
@@ -192,7 +198,7 @@
 - [ ] add an admin workspace zone to the existing dashboard shell with clear visual separation from ordinary user panels
 - [ ] render top-level admin overview metrics and system health summary as desktop-first operational panels
 - [ ] implement searchable/filterable user directory with high-density row layout and selected-user state handoff
-- [ ] keep the admin workspace available only for `admin` role while preserving current layout behavior for regular users
+- [ ] keep the admin workspace available only for `admin` role while preserving current layout behavior and panel composition for regular users
 - [ ] write frontend tests for overview rendering, directory interactions, filter/search behavior, and non-admin invisibility
 - [ ] run frontend tests for admin panel rendering - must pass before task 7
 
@@ -226,6 +232,7 @@
 - [ ] integrate existing invite generation and search-catalog refresh panels into the new admin workspace information architecture
 - [ ] document new admin endpoints, user lifecycle statuses, and root-action semantics in repository docs
 - [ ] verify existing admin-only diagnostics/settings interactions still coexist with the expanded admin workspace
+- [ ] verify non-admin dashboard/request behavior remains unchanged after admin workspace integration
 - [ ] write/update frontend tests for legacy admin panels inside the new composition
 - [ ] run full verification: `./.venv/bin/pytest backend/tests`, `npm --prefix frontend run test`, `npm --prefix frontend run build`
 
@@ -234,6 +241,7 @@
 - [ ] verify admin can search/filter users and inspect one aggregated user detail surface
 - [ ] verify root actions work with expected confirms and deterministic cascade effects
 - [ ] verify blocked/non-admin users cannot access admin workspace or admin APIs
+- [ ] verify non-admin login and dashboard bootstrap perform no admin endpoint calls and surface no new admin-related loading or error states
 - [ ] verify admin workspace remains usable across desktop, tablet, and narrow-width viewport contexts
 
 ### Task 10: [Final] Update documentation
@@ -251,6 +259,10 @@
   - existing `POST /api/admin/invites`
   - existing `DELETE /api/admin/invites/{invite_id}`
   - existing `POST /api/admin/search-catalog/refresh`
+- Frontend bootstrap invariant:
+  - admin resources must be loaded only after `isAdmin === true` is known
+  - non-admin sessions must not subscribe to admin loading/error state or admin retry flows
+  - ordinary dashboard resources (`saved searches`, `watchlist`, `provider connections`, `subscriptions`, `search catalog` as currently used) remain the only shared bootstrap contract
 - Proposed overview domains:
   - users: total, admins, regular users, active last 24h/7d, blocked
   - invites: pending, accepted, revoked, expired
