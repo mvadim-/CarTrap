@@ -1,5 +1,9 @@
 # Change Log
 
+## [2026-04-01 17:05] Fix auction reminder push payload datetime serialization
+- Оновлено `backend/src/cartrap/modules/notifications/service.py`: перед викликом `pywebpush` payload тепер рекурсивно нормалізується у JSON-safe структуру, тому `datetime` поля на кшталт `sale_date` у `auction_reminder` і nested `changes.sale_date` більше не валять `json.dumps()` та не зрізають push delivery.
+- Оновлено `backend/tests/notifications/test_push_delivery.py`: додано regression test на реальний `WebPushSender` serialization path, який перевіряє ISO-serialization для top-level і nested `datetime` значень у push payload.
+
 ## [2026-04-01 15:40] Replace search catalog source with curated US market makes/models
 - Оновлено `backend/src/cartrap/modules/search/{catalog_builder.py,catalog_refresh.py,service.py}`: каталог марок/моделей тепер може будуватися напряму з локального curated source `us_market_cars.json`, а admin refresh більше не залежить від live Copart keywords/NHTSA matching для цього сценарію.
 - Додано `backend/src/cartrap/modules/search/data/us_market_cars.json` як canonical source списку марок/моделей та перегенеровано `backend/src/cartrap/modules/search/data/copart_make_model_catalog.json` у сумісний runtime seed з `64` марками, `852` унікальними моделями, year range `2010-2026` і zero `unassigned_models`.

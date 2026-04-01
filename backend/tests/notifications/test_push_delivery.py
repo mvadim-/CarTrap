@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import sys
 
@@ -348,3 +349,39 @@ def test_web_push_sender_serializes_payload_and_vapid_claims(monkeypatch: pytest
     assert captured["vapid_private_key"] == "private-key"
     assert captured["vapid_claims"] == {"sub": "mailto:admin@example.com"}
     assert "Lot updated" in captured["data"]
+
+
+def test_web_push_sender_serializes_datetime_payloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict = {}
+
+    def fake_webpush(**kwargs):
+        captured.update(kwargs)
+        return None
+
+    monkeypatch.setattr("cartrap.modules.notifications.service.webpush", fake_webpush)
+
+    sender = WebPushSender(
+        vapid_private_key="private-key",
+        vapid_subject="mailto:admin@example.com",
+    )
+    sender.send(
+        {
+            "endpoint": "https://push.example.test/subscriptions/real",
+            "keys": {"p256dh": "abc", "auth": "def"},
+        },
+        {
+            "title": "Reminder",
+            "sale_date": datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+            "changes": {
+                "sale_date": {
+                    "before": datetime(2026, 3, 20, 16, 0, tzinfo=timezone.utc),
+                    "after": datetime(2026, 3, 20, 17, 0, tzinfo=timezone.utc),
+                }
+            },
+        },
+    )
+
+    payload = json.loads(captured["data"])
+    assert payload["sale_date"] == "2026-03-20T17:00:00Z"
+    assert payload["changes"]["sale_date"]["before"] == "2026-03-20T16:00:00Z"
+    assert payload["changes"]["sale_date"]["after"] == "2026-03-20T17:00:00Z"

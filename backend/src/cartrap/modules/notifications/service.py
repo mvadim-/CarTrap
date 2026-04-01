@@ -51,7 +51,7 @@ class WebPushSender:
                     "endpoint": subscription["endpoint"],
                     "keys": subscription["keys"],
                 },
-                data=json.dumps(payload),
+                data=json.dumps(_normalize_payload_for_json(payload)),
                 vapid_private_key=self._vapid_private_key,
                 vapid_claims={"sub": self._vapid_subject},
             )
@@ -122,6 +122,21 @@ def _invalid_vapid_private_key_reason(vapid_private_key: str | None) -> str | No
 
 def _looks_like_vapid_private_key_path(value: str) -> bool:
     return value.endswith(".pem") or "/" in value or "\\" in value or value.startswith(".") or value.startswith("~")
+
+
+def _normalize_payload_for_json(value):
+    if isinstance(value, datetime):
+        normalized = value.astimezone(timezone.utc) if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        return normalized.isoformat().replace("+00:00", "Z")
+    if isinstance(value, dict):
+        return {str(key): _normalize_payload_for_json(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_payload_for_json(item) for item in value]
+    if isinstance(value, tuple):
+        return [_normalize_payload_for_json(item) for item in value]
+    if isinstance(value, set):
+        return [_normalize_payload_for_json(item) for item in value]
+    return value
 
 
 def build_subscription_config(
