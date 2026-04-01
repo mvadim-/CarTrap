@@ -13,14 +13,24 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PUBLIC_DIR = REPO_ROOT / "frontend" / "public"
 ICONS_DIR = PUBLIC_DIR / "icons"
-STANDARD_SOURCE = ICONS_DIR / "cartrap-icon.svg"
-FAVICON_SOURCE = ICONS_DIR / "cartrap-favicon.svg"
-MASKABLE_SOURCE = ICONS_DIR / "cartrap-icon-maskable.svg"
+STANDARD_SOURCE = ICONS_DIR / "cartrap-icon-source.png"
+FAVICON_SOURCE = ICONS_DIR / "cartrap-icon-source.png"
+MASKABLE_SOURCE = ICONS_DIR / "cartrap-icon-source.png"
 CHROME_BINARY = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 
 
 def build_render_page(source: Path, size: int, page_path: Path) -> None:
-    svg_base64 = base64.b64encode(source.read_bytes()).decode("ascii")
+    encoded_image = base64.b64encode(source.read_bytes()).decode("ascii")
+    mime_type = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".svg": "image/svg+xml",
+        ".webp": "image/webp",
+    }.get(source.suffix.lower())
+    if mime_type is None:
+        raise ValueError(f"Unsupported icon source type: {source.suffix}")
+
     html = textwrap.dedent(
         f"""\
         <!doctype html>
@@ -55,10 +65,12 @@ def build_render_page(source: Path, size: int, page_path: Path) -> None:
               window.addEventListener("load", async () => {{
                 const image = new Image();
                 image.decoding = "sync";
-                image.src = "data:image/svg+xml;base64,{svg_base64}";
+                image.src = "data:{mime_type};base64,{encoded_image}";
                 await image.decode();
                 const canvas = document.getElementById("icon");
                 const context = canvas.getContext("2d");
+                context.imageSmoothingEnabled = true;
+                context.imageSmoothingQuality = "high";
                 context.clearRect(0, 0, canvas.width, canvas.height);
                 context.drawImage(image, 0, 0, canvas.width, canvas.height);
                 document.body.dataset.ready = "1";
@@ -71,11 +83,42 @@ def build_render_page(source: Path, size: int, page_path: Path) -> None:
     page_path.write_text(html, encoding="utf-8")
 
 
+def render_raster_png(source: Path, destination: Path, size: int) -> None:
+    completed = subprocess.run(
+        [
+            "sips",
+            "-z",
+            str(size),
+            str(size),
+            str(source),
+            "--out",
+            str(destination),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise subprocess.CalledProcessError(
+            completed.returncode,
+            completed.args,
+            output=completed.stdout,
+            stderr=completed.stderr,
+        )
+    if not destination.exists() or destination.stat().st_size <= 0:
+        raise RuntimeError(f"sips did not produce {destination.name}")
+
+
 def render_png(source: Path, destination: Path, size: int, profile_dir: Path, temp_root: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     profile_dir.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         destination.unlink()
+
+    if source.suffix.lower() in {".png", ".jpg", ".jpeg"}:
+        render_raster_png(source, destination, size)
+        return
 
     page_path = temp_root / f"render-{destination.stem}.html"
     build_render_page(source, size, page_path)
@@ -179,6 +222,9 @@ def build_ico(icon_sizes: list[tuple[int, Path]], destination: Path) -> None:
 def main() -> None:
     if not CHROME_BINARY.exists():
         raise SystemExit(f"Missing required tool: {CHROME_BINARY}")
+    for source in (STANDARD_SOURCE, FAVICON_SOURCE, MASKABLE_SOURCE):
+        if not source.exists():
+            raise SystemExit(f"Missing required icon source: {source}")
 
     favicon_outputs = {
         PUBLIC_DIR / "favicon-16x16.png": 16,

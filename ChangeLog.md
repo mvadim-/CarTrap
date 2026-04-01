@@ -996,6 +996,13 @@
 - Це звужує live-debug scope: якщо UI все ще показує `—`, проблема найімовірніше не у фронтенді й не в поточному backend коді репозиторію, а в stale Mongo document, відсутньому deploy або відмінності реального runtime payload від уже покритого shape.
 
 ## [2026-03-31 14:39] Map IAAI buy-now from production minimum-bid payload
+## [2026-04-01 14:10] Replace frontend icon set with approved generated artwork
+- Додано `frontend/public/icons/cartrap-icon-source.png` як canonical raster source для нового approved icon artwork від користувача й прибрано старі SVG masters `frontend/public/icons/{cartrap-icon.svg,cartrap-icon-maskable.svg,cartrap-favicon.svg}`, щоб у репозиторії лишився один узгоджений icon source.
+- Оновлено `scripts/generate_frontend_icons.py`: генератор тепер вміє працювати з raster source напряму, для PNG/JPEG використовує `sips` замість headless Chrome, а тому стабільно збирає `favicon`, `apple-touch-icon` і PWA icons з одного й того ж арту без чорних або пошкоджених файлів.
+- Оновлено `frontend/index.html`: прибрано посилання на застарілий SVG favicon і замінено його на PNG source, який відповідає новому icon set.
+- Перегенеровано `frontend/public/{apple-touch-icon.png,favicon-16x16.png,favicon-32x32.png,favicon.ico}` і `frontend/public/icons/{icon-192.png,icon-512.png,icon-maskable-192.png,icon-maskable-512.png}` з нового user-approved зображення.
+- Verification: `python3 scripts/generate_frontend_icons.py`; візуально перевірено локальні `apple-touch-icon.png`, `favicon-32x32.png`, `icon-192.png`, `icon-maskable-512.png` — сет збирається коректно й відповідає наданому PNG.
+
 ## [2026-04-01 14:00] Redesign frontend app icons with Open Capture Ring
 - Оновлено `frontend/public/icons/cartrap-icon.svg` і `frontend/public/icons/cartrap-icon-maskable.svg`: замість старого `CT` monogram додано новий бренд-символ `Open Capture Ring` з простішим силуетом, сильнішим контрастом і окремою full-bleed maskable версією для PWA/home-screen контекстів.
 - Додано `frontend/public/icons/cartrap-favicon.svg` і перегенеровано `frontend/public/{favicon-16x16.png,favicon-32x32.png,favicon.ico,apple-touch-icon.png}` та `frontend/public/icons/{icon-192.png,icon-512.png,icon-maskable-192.png,icon-maskable-512.png}`: favicon тепер рендериться з окремого small-size master, а `apple-touch-icon` більше не використовує прозору desktop-версію.
