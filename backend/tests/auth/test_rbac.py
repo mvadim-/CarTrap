@@ -86,3 +86,24 @@ def test_admin_route_rejects_regular_user(client: TestClient) -> None:
         )
 
     assert response.status_code == 403
+
+
+def test_admin_route_rejects_blocked_admin_with_existing_token(client: TestClient) -> None:
+    with client:
+        admin_token = client.post(
+            "/api/auth/login",
+            json={"email": "admin@example.com", "password": "AdminPass123"},
+        ).json()["access_token"]
+        client.app.state.mongo.database["users"].update_one(
+            {"email": "admin@example.com"},
+            {"$set": {"status": "blocked"}},
+        )
+
+        response = client.post(
+            "/api/admin/invites",
+            json={"email": "buyer@example.com"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "User account is blocked."

@@ -16,12 +16,16 @@ from pymongo.database import Database
 
 from cartrap.config import Settings
 from cartrap.modules.auth.models import (
+    ACTIVE_USER_STATUSES,
     INVITE_ACCEPTED,
     INVITE_PENDING,
     INVITE_REVOKED,
+    INACTIVE_USER_STATUSES,
     ROLE_ADMIN,
     ROLE_USER,
     USER_STATUS_ACTIVE,
+    USER_STATUS_BLOCKED,
+    USER_STATUS_DISABLED,
 )
 from cartrap.modules.auth.repository import AuthRepository
 
@@ -113,6 +117,7 @@ class AuthService:
         user = self.repository.find_user_by_email(email.lower())
         if user is None or not self.verify_password(password, user["password_hash"]):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials.")
+        self.ensure_user_is_active(user, status_code=status.HTTP_403_FORBIDDEN)
 
         now = self._now()
         self.repository.update_user_last_login(str(user["_id"]), now)
@@ -124,6 +129,7 @@ class AuthService:
         user = self.repository.find_user_by_id(payload["sub"])
         if user is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token.")
+        self.ensure_user_is_active(user)
         return self.issue_tokens(user)
 
     def get_current_user(self, access_token: str) -> dict:
@@ -131,6 +137,7 @@ class AuthService:
         user = self.repository.find_user_by_id(payload["sub"])
         if user is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access token.")
+        self.ensure_user_is_active(user)
         return self.serialize_user(user)
 
     def issue_tokens(self, user: dict) -> dict:
@@ -197,6 +204,10 @@ class AuthService:
             "status": invite["status"],
             "token": invite["token"],
             "expires_at": invite["expires_at"],
+            "accepted_at": invite.get("accepted_at"),
+            "revoked_at": invite.get("revoked_at"),
+            "created_at": invite.get("created_at"),
+            "created_by": invite.get("created_by"),
         }
 
     @staticmethod
@@ -207,6 +218,30 @@ class AuthService:
             "role": user["role"],
             "status": user["status"],
         }
+
+    @staticmethod
+    def serialize_user_for_admin(user: dict) -> dict:
+        return {
+            **AuthService.serialize_user(user),
+            "created_at": user["created_at"],
+            "updated_at": user["updated_at"],
+            "last_login_at": user.get("last_login_at"),
+        }
+
+    @staticmethod
+    def ensure_user_is_active(user: dict, *, status_code: int = status.HTTP_401_UNAUTHORIZED) -> None:
+        user_status = user.get("status", USER_STATUS_ACTIVE)
+        if user_status in ACTIVE_USER_STATUSES:
+            return
+        if user_status == USER_STATUS_BLOCKED:
+            detail = "User account is blocked."
+        elif user_status == USER_STATUS_DISABLED:
+            detail = "User account is disabled."
+        elif user_status in INACTIVE_USER_STATUSES:
+            detail = "User account is inactive."
+        else:
+            detail = "User account is inactive."
+        raise HTTPException(status_code=status_code, detail=detail)
 
     @staticmethod
     def _now() -> datetime:

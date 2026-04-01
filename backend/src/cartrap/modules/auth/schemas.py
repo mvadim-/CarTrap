@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -37,6 +38,10 @@ class InviteResponse(BaseModel):
     status: str
     token: str
     expires_at: datetime
+    accepted_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    created_by: Optional[str] = None
 
 
 class UserResponse(BaseModel):
@@ -44,6 +49,12 @@ class UserResponse(BaseModel):
     email: EmailStr
     role: str
     status: str
+
+
+class AdminManagedUserResponse(UserResponse):
+    created_at: datetime
+    updated_at: datetime
+    last_login_at: Optional[datetime] = None
 
 
 class InviteAcceptedResponse(BaseModel):

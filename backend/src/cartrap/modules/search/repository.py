@@ -58,6 +58,9 @@ class SavedSearchRepository:
     def list_saved_searches_for_owner(self, owner_user_id: str) -> list[dict]:
         return list(self.saved_searches.find({"owner_user_id": owner_user_id}).sort("created_at", -1))
 
+    def list_all_saved_searches(self) -> list[dict]:
+        return list(self.saved_searches.find().sort("created_at", -1))
+
     def find_saved_search_by_owner_and_key(self, owner_user_id: str, criteria_key: str) -> Optional[dict]:
         return self.saved_searches.find_one({"owner_user_id": owner_user_id, "criteria_key": criteria_key})
 
@@ -135,6 +138,9 @@ class SavedSearchRepository:
             query["saved_search_id"] = {"$in": object_ids}
         return list(self.saved_search_results_cache.find(query))
 
+    def list_all_saved_search_caches(self) -> list[dict]:
+        return list(self.saved_search_results_cache.find())
+
     def upsert_saved_search_cache(
         self,
         saved_search_id: str,
@@ -200,3 +206,16 @@ class SavedSearchRepository:
             },
             return_document=ReturnDocument.BEFORE,
         )
+
+    def delete_saved_searches_for_owner(self, owner_user_id: str) -> dict[str, int]:
+        saved_searches = self.list_saved_searches_for_owner(owner_user_id)
+        saved_search_object_ids = [document["_id"] for document in saved_searches]
+        deleted_saved_searches = self.saved_searches.delete_many({"owner_user_id": owner_user_id}).deleted_count
+        cache_query: dict = {"owner_user_id": owner_user_id}
+        if saved_search_object_ids:
+            cache_query["saved_search_id"] = {"$in": saved_search_object_ids}
+        deleted_caches = self.saved_search_results_cache.delete_many(cache_query).deleted_count
+        return {
+            "saved_searches": deleted_saved_searches,
+            "saved_search_caches": deleted_caches,
+        }

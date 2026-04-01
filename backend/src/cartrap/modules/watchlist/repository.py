@@ -92,6 +92,9 @@ class WatchlistRepository:
     def list_tracked_lots_for_owner(self, owner_user_id: str) -> list[dict]:
         return list(self.tracked_lots.find({"owner_user_id": owner_user_id}))
 
+    def list_all_tracked_lots(self) -> list[dict]:
+        return list(self.tracked_lots.find())
+
     def list_active_tracked_lots(self) -> list[dict]:
         return list(self.tracked_lots.find({"active": True}).sort("last_checked_at", 1))
 
@@ -111,6 +114,29 @@ class WatchlistRepository:
 
     def count_snapshots_for_tracked_lot(self, tracked_lot_id: str) -> int:
         return self.lot_snapshots.count_documents({"tracked_lot_id": tracked_lot_id})
+
+    def purge_snapshots_for_tracked_lot(self, tracked_lot_id: str) -> int:
+        result = self.lot_snapshots.delete_many({"tracked_lot_id": tracked_lot_id})
+        return result.deleted_count
+
+    def purge_snapshots_for_owner(self, owner_user_id: str) -> int:
+        tracked_lot_ids = [str(document["_id"]) for document in self.list_tracked_lots_for_owner(owner_user_id)]
+        if not tracked_lot_ids:
+            return 0
+        result = self.lot_snapshots.delete_many({"tracked_lot_id": {"$in": tracked_lot_ids}})
+        return result.deleted_count
+
+    def delete_tracked_lots_for_owner(self, owner_user_id: str) -> dict[str, int]:
+        tracked_lots = self.list_tracked_lots_for_owner(owner_user_id)
+        tracked_lot_ids = [str(document["_id"]) for document in tracked_lots]
+        deleted_snapshots = 0
+        if tracked_lot_ids:
+            deleted_snapshots = self.lot_snapshots.delete_many({"tracked_lot_id": {"$in": tracked_lot_ids}}).deleted_count
+        deleted_tracked_lots = self.tracked_lots.delete_many({"owner_user_id": owner_user_id}).deleted_count
+        return {
+            "tracked_lots": deleted_tracked_lots,
+            "lot_snapshots": deleted_snapshots,
+        }
 
     def update_tracked_lot_state(self, tracked_lot_id: str, payload: dict, updated_at: datetime) -> None:
         self.tracked_lots.update_one(

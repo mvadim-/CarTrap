@@ -26,6 +26,9 @@ class ProviderConnectionRepository:
     def list_for_owner(self, owner_user_id: str) -> list[dict]:
         return list(self.provider_connections.find({"owner_user_id": owner_user_id}).sort("updated_at", -1))
 
+    def list_all(self) -> list[dict]:
+        return list(self.provider_connections.find().sort("updated_at", -1))
+
     def find_by_user_and_provider(self, owner_user_id: str, provider: str) -> Optional[dict]:
         return self.provider_connections.find_one({"owner_user_id": owner_user_id, "provider": provider})
 
@@ -79,6 +82,10 @@ class ProviderConnectionRepository:
             },
             return_document=ReturnDocument.AFTER,
         )
+
+    def delete_for_owner(self, owner_user_id: str) -> int:
+        result = self.provider_connections.delete_many({"owner_user_id": owner_user_id})
+        return result.deleted_count
 
     def compare_and_swap_bundle(
         self,

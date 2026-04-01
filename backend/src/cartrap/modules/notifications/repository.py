@@ -35,12 +35,19 @@ class NotificationRepository:
     def list_subscriptions_for_owner(self, owner_user_id: str) -> list[dict]:
         return list(self.push_subscriptions.find({"owner_user_id": owner_user_id}).sort("created_at", -1))
 
+    def list_all_subscriptions(self) -> list[dict]:
+        return list(self.push_subscriptions.find().sort("created_at", -1))
+
     def delete_subscription(self, owner_user_id: str, endpoint: str) -> int:
         result = self.push_subscriptions.delete_one({"owner_user_id": owner_user_id, "endpoint": endpoint})
         return result.deleted_count
 
     def delete_subscription_by_id(self, subscription_id: str) -> None:
         self.push_subscriptions.delete_one({"_id": ObjectId(subscription_id)})
+
+    def delete_subscriptions_for_owner(self, owner_user_id: str) -> int:
+        result = self.push_subscriptions.delete_many({"owner_user_id": owner_user_id})
+        return result.deleted_count
 
     def get_subscriptions_for_owner(self, owner_user_id: str) -> list[dict]:
         return list(self.push_subscriptions.find({"owner_user_id": owner_user_id}))

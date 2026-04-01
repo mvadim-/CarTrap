@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 
@@ -15,6 +16,8 @@ if str(ROOT) not in sys.path:
 
 import cartrap.app as app_module
 from cartrap.config import Settings
+from cartrap.modules.auth.models import ROLE_USER, USER_STATUS_ACTIVE
+from cartrap.modules.auth.service import AuthService
 
 
 class FakeMongoManager:
@@ -45,46 +48,47 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         bootstrap_admin_email="admin@example.com",
         bootstrap_admin_password="AdminPass123",
     )
-    app = app_module.create_app(settings)
-    return TestClient(app)
+    return TestClient(app_module.create_app(settings))
 
 
-def test_login_and_refresh_flow(client: TestClient) -> None:
-    with client:
-        login_response = client.post(
+@pytest.fixture
+def admin_headers(client: TestClient):
+    def _admin_headers() -> dict[str, str]:
+        response = client.post(
             "/api/auth/login",
             json={"email": "admin@example.com", "password": "AdminPass123"},
         )
-        assert login_response.status_code == 200
+        token = response.json()["access_token"]
+        return {"Authorization": f"Bearer {token}"}
 
-        refresh_response = client.post(
-            "/api/auth/refresh",
-            json={"refresh_token": login_response.json()["refresh_token"]},
-        )
-
-    assert refresh_response.status_code == 200
-    assert refresh_response.json()["token_type"] == "bearer"
-    assert refresh_response.json()["access_token"]
+    return _admin_headers
 
 
-def test_login_rejects_invalid_password(client: TestClient) -> None:
-    with client:
-        response = client.post(
-            "/api/auth/login",
-            json={"email": "admin@example.com", "password": "WrongPass123"},
-        )
-
-    assert response.status_code == 401
-
-
-def test_login_rejects_blocked_user(client: TestClient) -> None:
-    with client:
+@pytest.fixture
+def create_user(client: TestClient):
+    def _create_user(
+        *,
+        email: str,
+        password: str = "UserPass123",
+        role: str = ROLE_USER,
+        status: str = USER_STATUS_ACTIVE,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
+        last_login_at: datetime | None = None,
+    ) -> str:
+        now = created_at or datetime.now(timezone.utc)
         database = client.app.state.mongo.database
-        database["users"].update_one({"email": "admin@example.com"}, {"$set": {"status": "blocked"}})
-        response = client.post(
-            "/api/auth/login",
-            json={"email": "admin@example.com", "password": "AdminPass123"},
+        result = database["users"].insert_one(
+            {
+                "email": email.lower(),
+                "password_hash": AuthService.hash_password(password),
+                "role": role,
+                "status": status,
+                "created_at": now,
+                "updated_at": updated_at or now,
+                "last_login_at": last_login_at,
+            }
         )
+        return str(result.inserted_id)
 
-    assert response.status_code == 403
-    assert response.json()["detail"] == "User account is blocked."
+    return _create_user
