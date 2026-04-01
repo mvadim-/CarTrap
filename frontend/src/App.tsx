@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { useHashRoute } from "./app/router";
 import { useSession } from "./app/useSession";
+import { AdminOverviewPanel } from "./features/admin/AdminOverviewPanel";
+import { AdminUserDetailSurface } from "./features/admin/AdminUserDetailSurface";
+import { AdminUserDirectoryPanel } from "./features/admin/AdminUserDirectoryPanel";
 import { AdminInvitesPanel } from "./features/admin/AdminInvitesPanel";
 import { AdminSearchCatalogPanel } from "./features/admin/AdminSearchCatalogPanel";
 import { InviteAcceptScreen } from "./features/auth/InviteAcceptScreen";
@@ -24,10 +27,15 @@ import {
   deleteSavedSearch,
   disconnectCopartConnection,
   disconnectIaaiConnection,
+  getAdminOverview,
+  getAdminSystemHealth,
+  getAdminUserDetail,
   getPushSubscriptionConfig,
   getWatchlistLotHistory,
   getSearchCatalog,
   getSystemStatus,
+  listAdminInvites,
+  listAdminUsers,
   listProviderConnections,
   listPushSubscriptions,
   listSavedSearches,
@@ -39,6 +47,7 @@ import {
   refreshSavedSearchLive,
   refreshSearchCatalog,
   removeWatchlistItem,
+  runAdminUserAction,
   saveSearch,
   searchLots,
   sendPushTest,
@@ -47,6 +56,12 @@ import {
   viewSavedSearch,
 } from "./lib/api";
 import type {
+  AdminOverview,
+  AdminSystemHealth,
+  AdminUserActionResponse,
+  AdminUserDetail,
+  AdminUserFilters,
+  AdminUsersResponse,
   AuctionProvider,
   Invite,
   LiveSyncStatus,
@@ -85,6 +100,8 @@ type DashboardResourceKey = "watchlist" | "savedSearches" | "subscriptions" | "s
 type DashboardState<T> = Record<DashboardResourceKey, T>;
 type PushRefreshTarget = DashboardResourceKey;
 type PullToRefreshPhase = "idle" | "pulling" | "armed" | "refreshing";
+type AdminResourceKey = "overview" | "systemHealth" | "users" | "detail" | "invites";
+type AdminState<T> = Record<AdminResourceKey, T>;
 
 type ActionState = {
   isSearching: boolean;
@@ -136,6 +153,36 @@ const INITIAL_ACTION_STATE: ActionState = {
   isSendingPushTest: false,
   isCreatingInvite: false,
   isRefreshingCatalog: false,
+};
+
+const INITIAL_ADMIN_LOADING: AdminState<boolean> = {
+  overview: false,
+  systemHealth: false,
+  users: false,
+  detail: false,
+  invites: false,
+};
+
+const INITIAL_ADMIN_ERRORS: AdminState<string | null> = {
+  overview: null,
+  systemHealth: null,
+  users: null,
+  detail: null,
+  invites: null,
+};
+
+const INITIAL_ADMIN_FILTERS: AdminUserFilters = {
+  query: "",
+  role: "any",
+  status: "any",
+  provider_state: "any",
+  push_state: "any",
+  saved_search_state: "any",
+  watchlist_state: "any",
+  last_login: "any",
+  sort: "created_at_desc",
+  page: 1,
+  page_size: 25,
 };
 
 const PUSH_MESSAGE_TYPE = "cartrap:push-received";
@@ -512,6 +559,19 @@ export function App() {
   const [pullToRefreshOffset, setPullToRefreshOffset] = useState(0);
   const [pullToRefreshPhase, setPullToRefreshPhase] = useState<PullToRefreshPhase>("idle");
   const [isMobileLayout, setIsMobileLayout] = useState(isMobileDashboardLayout());
+  const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
+  const [adminSystemHealth, setAdminSystemHealth] = useState<AdminSystemHealth | null>(null);
+  const [adminUsers, setAdminUsers] = useState<AdminUsersResponse | null>(null);
+  const [adminFilters, setAdminFilters] = useState<AdminUserFilters>(INITIAL_ADMIN_FILTERS);
+  const [selectedAdminUserId, setSelectedAdminUserId] = useState<string | null>(null);
+  const [adminUserDetail, setAdminUserDetail] = useState<AdminUserDetail | null>(null);
+  const [adminInvites, setAdminInvites] = useState<Invite[]>([]);
+  const [adminLoading, setAdminLoading] = useState<AdminState<boolean>>(INITIAL_ADMIN_LOADING);
+  const [adminErrors, setAdminErrors] = useState<AdminState<string | null>>(INITIAL_ADMIN_ERRORS);
+  const [isAdminUserDetailOpen, setIsAdminUserDetailOpen] = useState(false);
+  const [isRunningAdminAction, setIsRunningAdminAction] = useState(false);
+  const [adminActionResult, setAdminActionResult] = useState<AdminUserActionResponse | null>(null);
+  const [adminActionError, setAdminActionError] = useState<string | null>(null);
   const pushRefreshTimeoutRef = useRef<number | null>(null);
   const pendingPushRefreshTargetsRef = useRef<Set<PushRefreshTarget>>(new Set());
   const watchlistRef = useRef<WatchlistItem[]>([]);
@@ -627,6 +687,19 @@ export function App() {
     setActionState(INITIAL_ACTION_STATE);
     setIsLoadingProviderConnections(false);
     setProviderConnectionsError(null);
+    setAdminOverview(null);
+    setAdminSystemHealth(null);
+    setAdminUsers(null);
+    setAdminFilters(INITIAL_ADMIN_FILTERS);
+    setSelectedAdminUserId(null);
+    setAdminUserDetail(null);
+    setAdminInvites([]);
+    setAdminLoading(INITIAL_ADMIN_LOADING);
+    setAdminErrors(INITIAL_ADMIN_ERRORS);
+    setIsAdminUserDetailOpen(false);
+    setIsRunningAdminAction(false);
+    setAdminActionResult(null);
+    setAdminActionError(null);
     setIsAccountMenuOpen(false);
     setIsSettingsOpen(false);
     setIsManualSearchOpen(false);
@@ -641,6 +714,14 @@ export function App() {
 
   function setDashboardErrorState(key: DashboardResourceKey, value: string | null) {
     setDashboardErrors((current) => ({ ...current, [key]: value }));
+  }
+
+  function setAdminLoadingState(key: AdminResourceKey, value: boolean) {
+    setAdminLoading((current) => ({ ...current, [key]: value }));
+  }
+
+  function setAdminErrorState(key: AdminResourceKey, value: string | null) {
+    setAdminErrors((current) => ({ ...current, [key]: value }));
   }
 
   async function runDashboardLoader<T>(
@@ -664,6 +745,60 @@ export function App() {
         setDashboardLoadingState(key, false);
       }
     }
+  }
+
+  async function runAdminLoader<T>(key: AdminResourceKey, fallbackMessage: string, loader: () => Promise<T>): Promise<T | null> {
+    setAdminLoadingState(key, true);
+    try {
+      const result = await loader();
+      setAdminErrorState(key, null);
+      return result;
+    } catch (caught) {
+      setAdminErrorState(key, toErrorMessage(caught, fallbackMessage));
+      return null;
+    } finally {
+      setAdminLoadingState(key, false);
+    }
+  }
+
+  async function loadAdminOverviewResource(token: string) {
+    return runAdminLoader("overview", "Could not load admin overview.", async () => {
+      const response = await getAdminOverview(token);
+      setAdminOverview(response);
+      return response;
+    });
+  }
+
+  async function loadAdminSystemHealthResource(token: string) {
+    return runAdminLoader("systemHealth", "Could not load admin system health.", async () => {
+      const response = await getAdminSystemHealth(token);
+      setAdminSystemHealth(response);
+      return response;
+    });
+  }
+
+  async function loadAdminUsersResource(token: string, filters: AdminUserFilters) {
+    return runAdminLoader("users", "Could not load admin user directory.", async () => {
+      const response = await listAdminUsers(filters, token);
+      setAdminUsers(response);
+      return response;
+    });
+  }
+
+  async function loadAdminInvitesResource(token: string) {
+    return runAdminLoader("invites", "Could not load admin invites.", async () => {
+      const response = await listAdminInvites(token);
+      setAdminInvites(response);
+      return response;
+    });
+  }
+
+  async function loadAdminUserDetailResource(token: string, userId: string) {
+    return runAdminLoader("detail", "Could not load user detail.", async () => {
+      const response = await getAdminUserDetail(userId, token);
+      setAdminUserDetail(response);
+      return response;
+    });
   }
 
   async function loadWatchlistResource(token: string, options: DashboardLoaderOptions = {}) {
@@ -812,6 +947,15 @@ export function App() {
     ]);
   }
 
+  async function loadAdminResources(token: string, filters: AdminUserFilters) {
+    await Promise.allSettled([
+      loadAdminOverviewResource(token),
+      loadAdminSystemHealthResource(token),
+      loadAdminUsersResource(token, filters),
+      loadAdminInvitesResource(token),
+    ]);
+  }
+
   async function refreshDashboardFromPull(token: string) {
     setPullToRefreshPhase("refreshing");
     setPullToRefreshOffset(PULL_TO_REFRESH_THRESHOLD);
@@ -842,6 +986,29 @@ export function App() {
     }
     void loadDashboardResources(accessToken);
   }, [session.accessToken]);
+
+  useEffect(() => {
+    if (!session.accessToken || !isAdmin) {
+      setAdminOverview(null);
+      setAdminSystemHealth(null);
+      setAdminUsers(null);
+      setAdminInvites([]);
+      setAdminUserDetail(null);
+      setSelectedAdminUserId(null);
+      setIsAdminUserDetailOpen(false);
+      setAdminErrors(INITIAL_ADMIN_ERRORS);
+      setAdminLoading(INITIAL_ADMIN_LOADING);
+      return;
+    }
+    void loadAdminResources(session.accessToken, adminFilters);
+  }, [adminFilters, isAdmin, session.accessToken]);
+
+  useEffect(() => {
+    if (!session.accessToken || !isAdmin || !selectedAdminUserId || !isAdminUserDetailOpen) {
+      return;
+    }
+    void loadAdminUserDetailResource(session.accessToken, selectedAdminUserId);
+  }, [isAdmin, isAdminUserDetailOpen, selectedAdminUserId, session.accessToken]);
 
   useEffect(() => {
     const accessToken = session.accessToken;
@@ -1415,6 +1582,9 @@ export function App() {
       const invite = await createInvite(email, session.accessToken);
       setLatestInvite(invite);
       setInviteLink(`${window.location.origin}${window.location.pathname}#/invite?token=${invite.token}`);
+      if (isAdmin) {
+        void loadAdminInvitesResource(session.accessToken);
+      }
       return invite;
     } catch (caught) {
       throw new Error(toErrorMessage(caught, "Could not create invite"));
@@ -1445,6 +1615,53 @@ export function App() {
       );
     } finally {
       setActionState((current) => ({ ...current, isRefreshingCatalog: false }));
+    }
+  }
+
+  function handleAdminFiltersChange(patch: Partial<AdminUserFilters>) {
+    setAdminFilters((current) => ({ ...current, ...patch }));
+  }
+
+  function handleSelectAdminUser(userId: string) {
+    setSelectedAdminUserId(userId);
+    setAdminActionError(null);
+    setAdminActionResult(null);
+    setIsAdminUserDetailOpen(true);
+  }
+
+  async function refreshAdminWorkspace(token: string, options: { includeDetail?: boolean } = {}) {
+    await Promise.allSettled([
+      loadAdminOverviewResource(token),
+      loadAdminSystemHealthResource(token),
+      loadAdminUsersResource(token, adminFilters),
+      loadAdminInvitesResource(token),
+      options.includeDetail && selectedAdminUserId && isAdminUserDetailOpen
+        ? loadAdminUserDetailResource(token, selectedAdminUserId)
+        : Promise.resolve(null),
+    ]);
+  }
+
+  async function handleRunAdminAction(action: string, payload: { provider?: AuctionProvider; resource_id?: string }) {
+    if (!session.accessToken || !selectedAdminUserId) {
+      throw new Error("Missing session");
+    }
+    setIsRunningAdminAction(true);
+    setAdminActionError(null);
+    setAdminActionResult(null);
+    try {
+      const response = await runAdminUserAction(selectedAdminUserId, action, payload, session.accessToken);
+      setAdminActionResult(response);
+      if (action === "delete_user") {
+        setIsAdminUserDetailOpen(false);
+        setSelectedAdminUserId(null);
+        setAdminUserDetail(null);
+      }
+      await refreshAdminWorkspace(session.accessToken, { includeDetail: action !== "delete_user" });
+    } catch (caught) {
+      setAdminActionError(toErrorMessage(caught, "Could not run admin action."));
+      throw caught;
+    } finally {
+      setIsRunningAdminAction(false);
     }
   }
 
@@ -1706,22 +1923,46 @@ export function App() {
           onRemove={handleRemoveWatchlistItem}
         />
         {isAdmin ? (
-          <div className="dashboard-grid__support" aria-label="Support panels">
-            <AdminInvitesPanel
-              inviteLink={inviteLink}
-              latestInvite={latestInvite}
-              isCreatingInvite={actionState.isCreatingInvite}
-              onCreateInvite={handleCreateInvite}
+          <section className="dashboard-grid__admin" aria-label="Admin workspace">
+            <AdminOverviewPanel
+              overview={adminOverview}
+              systemHealth={adminSystemHealth}
+              isLoading={adminLoading.overview || adminLoading.systemHealth}
+              error={adminErrors.overview ?? adminErrors.systemHealth}
+              onRetry={() =>
+                session.accessToken ? refreshAdminWorkspace(session.accessToken, { includeDetail: false }).then(() => undefined) : Promise.resolve()
+              }
             />
-            <AdminSearchCatalogPanel
-              catalog={searchCatalog}
-              loadError={dashboardErrors.searchCatalog}
-              isLoading={dashboardLoading.searchCatalog}
-              isRefreshing={actionState.isRefreshingCatalog}
-              onRefresh={handleRefreshSearchCatalog}
-              onRetryLoad={() => (session.accessToken ? loadSearchCatalogResource(session.accessToken) : Promise.resolve())}
+            <AdminUserDirectoryPanel
+              rows={adminUsers?.items ?? []}
+              total={adminUsers?.total ?? 0}
+              selectedUserId={selectedAdminUserId}
+              filters={adminFilters}
+              isLoading={adminLoading.users}
+              error={adminErrors.users}
+              onRetry={() =>
+                session.accessToken ? loadAdminUsersResource(session.accessToken, adminFilters).then(() => undefined) : Promise.resolve()
+              }
+              onSelectUser={handleSelectAdminUser}
+              onFiltersChange={handleAdminFiltersChange}
             />
-          </div>
+            <div className="dashboard-grid__support" aria-label="Admin support panels">
+              <AdminInvitesPanel
+                inviteLink={inviteLink}
+                latestInvite={latestInvite ?? adminInvites[0] ?? null}
+                isCreatingInvite={actionState.isCreatingInvite}
+                onCreateInvite={handleCreateInvite}
+              />
+              <AdminSearchCatalogPanel
+                catalog={searchCatalog}
+                loadError={dashboardErrors.searchCatalog}
+                isLoading={dashboardLoading.searchCatalog}
+                isRefreshing={actionState.isRefreshingCatalog}
+                onRefresh={handleRefreshSearchCatalog}
+                onRetryLoad={() => (session.accessToken ? loadSearchCatalogResource(session.accessToken) : Promise.resolve())}
+              />
+            </div>
+          </section>
         ) : null}
       </DashboardShell>
       <AccountMenuSheet
@@ -1775,6 +2016,22 @@ export function App() {
         onUnsubscribe={handleUnsubscribePush}
         onSendTestPush={handleSendPushTest}
         onClose={() => setIsSettingsOpen(false)}
+      />
+      <AdminUserDetailSurface
+        isOpen={isAdmin && isAdminUserDetailOpen}
+        detail={adminUserDetail}
+        isLoading={adminLoading.detail}
+        error={adminErrors.detail}
+        isRunningAction={isRunningAdminAction}
+        actionResult={adminActionResult}
+        actionError={adminActionError}
+        onClose={() => setIsAdminUserDetailOpen(false)}
+        onRetry={() =>
+          session.accessToken && selectedAdminUserId
+            ? loadAdminUserDetailResource(session.accessToken, selectedAdminUserId).then(() => undefined)
+            : Promise.resolve()
+        }
+        onRunAction={handleRunAdminAction}
       />
     </>
   );

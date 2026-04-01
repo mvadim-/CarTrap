@@ -1026,3 +1026,17 @@
 - Оновлено `backend/src/cartrap/modules/{provider_connections,search,watchlist,notifications}/repository.py`: додано cross-user read/delete helpers для platform-wide analytics, admin filters і deterministic cascade cleanup.
 - Додано `backend/tests/admin/{conftest.py,test_admin_overview_api.py,test_admin_users_api.py,test_admin_actions_api.py}`: покрито admin-only access control, overview/system-health aggregates, directory filtering/pagination, detail aggregate shape, account/provider/resource actions і cascade delete semantics.
 - Verification: `./.venv/bin/pytest backend/tests/auth/test_login.py backend/tests/auth/test_rbac.py backend/tests/admin/test_admin_overview_api.py backend/tests/admin/test_admin_users_api.py backend/tests/admin/test_admin_actions_api.py -q` -> `13 passed` (локально лишається лише `urllib3` `LibreSSL` warning).
+
+## [2026-04-01 15:22] Build frontend admin command center workspace
+- Додано `frontend/src/features/admin/{AdminOverviewPanel.tsx,AdminUserDirectoryPanel.tsx,AdminUserDetailSurface.tsx,AdminActionConfirmDialog.tsx,adminFormatting.ts}`: у dashboard з'явився desktop-optimized admin workspace з overview metrics, system health, searchable user directory, portal-based detail inspector і confirm flow для root actions.
+- Оновлено `frontend/src/{App.tsx,lib/api.ts,types.ts,styles.css}`: додано admin contracts/state layer, lazy admin bootstrap тільки для `role=admin`, інтеграцію існуючих `Generate Invites` / `Search Catalog` panels у нову admin IA та post-action refresh overview/directory/detail без регресії для regular users.
+- Оновлено `frontend/tests/app.test.tsx`: додано mock-contract для `/api/admin/*` і regression coverage на admin workspace render, user detail drilldown, confirmed admin action і гарантію, що non-admin bootstrap не викликає admin endpoints.
+- Оновлено `README.md`, `docs/backend-api.md`, `docs/database-schema.md`: задокументовано admin command center, нові `/api/admin/*` endpoints, lifecycle statuses і cascade semantics для root actions.
+- Verification: `npm --prefix frontend test -- app.test.tsx` -> `62 passed`; `npm --prefix frontend run build` -> успішно.
+
+## [2026-04-01 15:27] Finalize admin command center rollout and regression compatibility
+- Оновлено `backend/src/cartrap/modules/search/{service.py,repository.py}`: повернуто backward compatibility для legacy викликів `SearchService.search(payload)` і `upsert_saved_search_cache(..., new_lot_numbers=...)`, щоб нові admin/security зміни не ламали існуючі backend сценарії та тестові фікстури.
+- Оновлено `backend/src/cartrap/modules/monitoring/service.py`: для старих Copart tracked-lot документів detail refresh знову пріоритезує `url`, тому repair/backfill flow коректно працює з legacy watchlist записами без `provider_lot_id`.
+- Додано `backend/tests/{copart,iaai,provider_connections,watchlist}/__init__.py`: прибрано pytest import mismatch між однойменними test-модулями в різних каталогах, що дозволяє стабільно проганяти весь backend suite цілком.
+- Завершено інтеграцію документації та frontend admin workspace в поточний цикл; план `docs/plans/20260401-admin-command-center-expansion.md` позначено завершеним і перенесено в `docs/plans/completed/`.
+- Verification: `./.venv/bin/pytest backend/tests` -> `228 passed`; `npm --prefix frontend test` -> `62 passed`; `npm --prefix frontend run build` -> успішно. Локально лишається тільки відомий `urllib3` `LibreSSL` warning.

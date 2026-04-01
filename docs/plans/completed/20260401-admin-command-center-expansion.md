@@ -107,11 +107,11 @@
 - Modify: `backend/src/cartrap/api/dependencies.py`
 - Modify: `backend/tests/auth/{test_login.py,test_rbac.py}`
 
-- [ ] add explicit user-status model for admin-managed lifecycle, including blocked/disabled semantics used by login and token-backed access checks
-- [ ] add admin-safe user serialization payloads for directory/detail responses without exposing credential material
-- [ ] make auth flows reject blocked users consistently for login and current-user resolution
-- [ ] write backend tests for blocked-user login/access behavior and unchanged admin/user RBAC
-- [ ] run targeted auth tests - must pass before task 2
+- [x] add explicit user-status model for admin-managed lifecycle, including blocked/disabled semantics used by login and token-backed access checks
+- [x] add admin-safe user serialization payloads for directory/detail responses without exposing credential material
+- [x] make auth flows reject blocked users consistently for login and current-user resolution
+- [x] write backend tests for blocked-user login/access behavior and unchanged admin/user RBAC
+- [x] run targeted auth tests - must pass before task 2
 
 ### Task 2: Add admin service layer and aggregate read contracts
 
@@ -127,12 +127,12 @@
 - Modify: `backend/src/cartrap/modules/notifications/repository.py`
 - Create: `backend/tests/admin/test_admin_overview_api.py`
 
-- [ ] introduce `AdminService` as orchestration layer over auth, invites, provider connections, saved searches, watchlist, notifications, and system status repositories
-- [ ] implement `GET /api/admin/overview` with top-level user, invite, provider, search, watchlist, push, and live-sync metrics
-- [ ] implement `GET /api/admin/system-health` for operator-facing health signals kept separate from overview counters
-- [ ] add repository support for cross-user counts and aggregate reads needed by overview/system-health without leaking admin logic into unrelated routers
-- [ ] write backend tests for overview/system-health success cases, empty-state behavior, and admin-only access control
-- [ ] run targeted admin aggregate tests - must pass before task 3
+- [x] introduce `AdminService` as orchestration layer over auth, invites, provider connections, saved searches, watchlist, notifications, and system status repositories
+- [x] implement `GET /api/admin/overview` with top-level user, invite, provider, search, watchlist, push, and live-sync metrics
+- [x] implement `GET /api/admin/system-health` for operator-facing health signals kept separate from overview counters
+- [x] add repository support for cross-user counts and aggregate reads needed by overview/system-health without leaking admin logic into unrelated routers
+- [x] write backend tests for overview/system-health success cases, empty-state behavior, and admin-only access control
+- [x] run targeted admin aggregate tests - must pass before task 3
 
 ### Task 3: Add admin user directory and detail aggregate endpoints
 
@@ -145,11 +145,11 @@
 - Modify: `backend/src/cartrap/modules/notifications/repository.py`
 - Create: `backend/tests/admin/test_admin_users_api.py`
 
-- [ ] implement `GET /api/admin/users` with search, filters, sorting, pagination, and directory-row counters for providers, saved searches, tracked lots, and push devices
-- [ ] implement `GET /api/admin/users/{user_id}` returning one aggregate payload for account summary, invites, provider connections, saved searches, watchlist snapshot, push subscriptions, and recent activity hints
-- [ ] define stable filter vocabulary for role, status, provider state, push presence, saved-search presence, watchlist presence, and last-login recency
-- [ ] write backend tests for directory filtering/sorting/pagination and detail aggregate shape across representative user states
-- [ ] run targeted admin users tests - must pass before task 4
+- [x] implement `GET /api/admin/users` with search, filters, sorting, pagination, and directory-row counters for providers, saved searches, tracked lots, and push devices
+- [x] implement `GET /api/admin/users/{user_id}` returning one aggregate payload for account summary, invites, provider connections, saved searches, watchlist snapshot, push subscriptions, and recent activity hints
+- [x] define stable filter vocabulary for role, status, provider state, push presence, saved-search presence, watchlist presence, and last-login recency
+- [x] write backend tests for directory filtering/sorting/pagination and detail aggregate shape across representative user states
+- [x] run targeted admin users tests - must pass before task 4
 
 ### Task 4: Implement root-mode admin actions with safe cascading behavior
 
@@ -162,12 +162,12 @@
 - Modify: `backend/src/cartrap/modules/notifications/repository.py`
 - Create: `backend/tests/admin/test_admin_actions_api.py`
 
-- [ ] implement account actions: block/unblock user, promote/demote role, regenerate/reset auth entrypoints as agreed for current auth model
-- [ ] implement provider actions: disconnect provider, disconnect all providers, force diagnostics refresh/revalidation hooks where feasible
-- [ ] implement resource actions: delete single/all saved searches, single/all tracked lots, single/all push subscriptions, snapshot purge flows
-- [ ] implement `delete user and all related data` with deterministic cascading cleanup across all owned collections and clear not-found/conflict responses
-- [ ] write backend tests for success cases, forbidden cases, invalid targets, and cascade-delete integrity across related collections
-- [ ] run targeted admin actions tests - must pass before task 5
+- [x] implement account actions: block/unblock user, promote/demote role, regenerate/reset auth entrypoints as agreed for current auth model
+- [x] implement provider actions: disconnect provider, disconnect all providers, force diagnostics refresh/revalidation hooks where feasible
+- [x] implement resource actions: delete single/all saved searches, single/all tracked lots, single/all push subscriptions, snapshot purge flows
+- [x] implement `delete user and all related data` with deterministic cascading cleanup across all owned collections and clear not-found/conflict responses
+- [x] write backend tests for success cases, forbidden cases, invalid targets, and cascade-delete integrity across related collections
+- [x] run targeted admin actions tests - must pass before task 5
 
 ### Task 5: Extend frontend types/api layer for admin workspace contracts
 
@@ -177,12 +177,12 @@
 - Modify: `frontend/src/App.tsx`
 - Modify: `frontend/tests/app.test.tsx`
 
-- [ ] add frontend types for admin overview, system health, directory rows, detail payload, filters, and action responses
-- [ ] add `lib/api.ts` methods for admin overview, system health, users list/detail, and root actions with consistent error handling
-- [ ] introduce admin-specific state management in `App.tsx` without regressing non-admin dashboard bootstrap and refresh flows
-- [ ] keep admin resources out of shared bootstrap/loading orchestration for regular users so `role != admin` never waits on admin network calls
-- [ ] write frontend tests for admin data loading states, retry paths, and API integration boundaries
-- [ ] run frontend tests covering new admin state scaffolding - must pass before task 6
+- [x] add frontend types for admin overview, system health, directory rows, detail payload, filters, and action responses
+- [x] add `lib/api.ts` methods for admin overview, system health, users list/detail, and root actions with consistent error handling
+- [x] introduce admin-specific state management in `App.tsx` without regressing non-admin dashboard bootstrap and refresh flows
+- [x] keep admin resources out of shared bootstrap/loading orchestration for regular users so `role != admin` never waits on admin network calls
+- [x] write frontend tests for admin data loading states, retry paths, and API integration boundaries
+- [x] run frontend tests covering new admin state scaffolding - must pass before task 6
 
 ### Task 6: Build desktop-optimized admin overview and directory panels
 
@@ -195,12 +195,12 @@
 - Modify: `frontend/src/styles.css`
 - Modify: `frontend/tests/app.test.tsx`
 
-- [ ] add an admin workspace zone to the existing dashboard shell with clear visual separation from ordinary user panels
-- [ ] render top-level admin overview metrics and system health summary as desktop-first operational panels
-- [ ] implement searchable/filterable user directory with high-density row layout and selected-user state handoff
-- [ ] keep the admin workspace available only for `admin` role while preserving current layout behavior and panel composition for regular users
-- [ ] write frontend tests for overview rendering, directory interactions, filter/search behavior, and non-admin invisibility
-- [ ] run frontend tests for admin panel rendering - must pass before task 7
+- [x] add an admin workspace zone to the existing dashboard shell with clear visual separation from ordinary user panels
+- [x] render top-level admin overview metrics and system health summary as desktop-first operational panels
+- [x] implement searchable/filterable user directory with high-density row layout and selected-user state handoff
+- [x] keep the admin workspace available only for `admin` role while preserving current layout behavior and panel composition for regular users
+- [x] write frontend tests for overview rendering, directory interactions, filter/search behavior, and non-admin invisibility
+- [x] run frontend tests for admin panel rendering - must pass before task 7
 
 ### Task 7: Build admin user detail surface and danger-zone UX
 
@@ -211,12 +211,12 @@
 - Modify: `frontend/src/styles.css`
 - Modify: `frontend/tests/app.test.tsx`
 
-- [ ] implement a right-side inspector on desktop and overlay fallback on narrow widths for user detail drilldown
-- [ ] render account, invites, provider connections, saved searches, watchlist, push subscriptions, and danger-zone sections from the aggregate detail payload
-- [ ] add explicit confirm dialogs for destructive/root actions without reason logging, including clear copy of target user/action scope
-- [ ] wire post-action refresh so overview, directory, and open detail data stay consistent after each operation
-- [ ] write frontend tests for detail loading, destructive confirms, action success/error states, and cross-panel refresh behavior
-- [ ] run frontend tests for detail surface flows - must pass before task 8
+- [x] implement a right-side inspector on desktop and overlay fallback on narrow widths for user detail drilldown
+- [x] render account, invites, provider connections, saved searches, watchlist, push subscriptions, and danger-zone sections from the aggregate detail payload
+- [x] add explicit confirm dialogs for destructive/root actions without reason logging, including clear copy of target user/action scope
+- [x] wire post-action refresh so overview, directory, and open detail data stay consistent after each operation
+- [x] write frontend tests for detail loading, destructive confirms, action success/error states, and cross-panel refresh behavior
+- [x] run frontend tests for detail surface flows - must pass before task 8
 
 ### Task 8: Fold existing admin panels into the new workspace and finish documentation
 
@@ -229,24 +229,24 @@
 - Modify: `ChangeLog.md`
 - Modify: `frontend/tests/app.test.tsx`
 
-- [ ] integrate existing invite generation and search-catalog refresh panels into the new admin workspace information architecture
-- [ ] document new admin endpoints, user lifecycle statuses, and root-action semantics in repository docs
-- [ ] verify existing admin-only diagnostics/settings interactions still coexist with the expanded admin workspace
-- [ ] verify non-admin dashboard/request behavior remains unchanged after admin workspace integration
-- [ ] write/update frontend tests for legacy admin panels inside the new composition
-- [ ] run full verification: `./.venv/bin/pytest backend/tests`, `npm --prefix frontend run test`, `npm --prefix frontend run build`
+- [x] integrate existing invite generation and search-catalog refresh panels into the new admin workspace information architecture
+- [x] document new admin endpoints, user lifecycle statuses, and root-action semantics in repository docs
+- [x] verify existing admin-only diagnostics/settings interactions still coexist with the expanded admin workspace
+- [x] verify non-admin dashboard/request behavior remains unchanged after admin workspace integration
+- [x] write/update frontend tests for legacy admin panels inside the new composition
+- [x] run full verification: `./.venv/bin/pytest backend/tests`, `npm --prefix frontend run test`, `npm --prefix frontend run build`
 
 ### Task 9: Verify acceptance criteria
-- [ ] verify admin users can see platform-wide statistics sourced from current Mongo-backed system data
-- [ ] verify admin can search/filter users and inspect one aggregated user detail surface
-- [ ] verify root actions work with expected confirms and deterministic cascade effects
-- [ ] verify blocked/non-admin users cannot access admin workspace or admin APIs
-- [ ] verify non-admin login and dashboard bootstrap perform no admin endpoint calls and surface no new admin-related loading or error states
-- [ ] verify admin workspace remains usable across desktop, tablet, and narrow-width viewport contexts
+- [x] verify admin users can see platform-wide statistics sourced from current Mongo-backed system data
+- [x] verify admin can search/filter users and inspect one aggregated user detail surface
+- [x] verify root actions work with expected confirms and deterministic cascade effects
+- [x] verify blocked/non-admin users cannot access admin workspace or admin APIs
+- [x] verify non-admin login and dashboard bootstrap perform no admin endpoint calls and surface no new admin-related loading or error states
+- [x] verify admin workspace remains usable across desktop, tablet, and narrow-width viewport contexts
 
 ### Task 10: [Final] Update documentation
-- [ ] update `ChangeLog.md` for each implementation cycle during execution
-- [ ] move this plan to `docs/plans/completed/` when implementation is finished
+- [x] update `ChangeLog.md` for each implementation cycle during execution
+- [x] move this plan to `docs/plans/completed/` when implementation is finished
 
 ## Technical Details
 - Proposed admin API surface:

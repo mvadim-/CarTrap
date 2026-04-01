@@ -11,6 +11,7 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo import ReturnDocument
 
+from cartrap.modules.auction_domain.models import build_lot_key
 from cartrap.modules.search.models import (
     SAVED_SEARCHES_COLLECTION,
     SAVED_SEARCH_RESULTS_CACHE_COLLECTION,
@@ -148,17 +149,28 @@ class SavedSearchRepository:
         *,
         results: list[dict],
         result_count: int,
-        new_lot_keys: list[str],
+        new_lot_keys: Optional[list[str]] = None,
+        new_lot_numbers: Optional[list[str]] = None,
         last_synced_at: datetime,
         seen_at: datetime | None = None,
         updated_at: datetime | None = None,
     ) -> dict:
         object_id = ObjectId(saved_search_id)
         write_time = updated_at or last_synced_at
-        new_lot_numbers = [
+        normalized_new_lot_keys = self._normalize_new_lot_keys(
+            results,
+            new_lot_keys=new_lot_keys,
+            new_lot_numbers=new_lot_numbers,
+        )
+        normalized_new_lot_numbers = [
             item.get("lot_number")
             for item in results
-            if item.get("lot_key") in set(new_lot_keys) and item.get("lot_number")
+            if (
+                item.get("lot_key")
+                or build_lot_key(item.get("provider"), item.get("provider_lot_id"), item.get("lot_number"))
+            )
+            in set(normalized_new_lot_keys)
+            and item.get("lot_number")
         ]
         return self.saved_search_results_cache.find_one_and_update(
             {"saved_search_id": object_id, "owner_user_id": owner_user_id},
@@ -167,8 +179,8 @@ class SavedSearchRepository:
                     "owner_user_id": owner_user_id,
                     "results": list(results),
                     "result_count": result_count,
-                    "new_lot_keys": list(dict.fromkeys(new_lot_keys)),
-                    "new_lot_numbers": list(dict.fromkeys(new_lot_numbers)),
+                    "new_lot_keys": list(dict.fromkeys(normalized_new_lot_keys)),
+                    "new_lot_numbers": list(dict.fromkeys(normalized_new_lot_numbers)),
                     "last_synced_at": last_synced_at,
                     "seen_at": seen_at,
                     "updated_at": write_time,
@@ -181,6 +193,29 @@ class SavedSearchRepository:
             upsert=True,
             return_document=ReturnDocument.AFTER,
         )
+
+    @staticmethod
+    def _normalize_new_lot_keys(
+        results: list[dict],
+        *,
+        new_lot_keys: Optional[list[str]],
+        new_lot_numbers: Optional[list[str]],
+    ) -> list[str]:
+        if new_lot_keys:
+            return [str(item) for item in new_lot_keys if item]
+        if not new_lot_numbers:
+            return []
+        requested_numbers = {str(item) for item in new_lot_numbers if item}
+        normalized: list[str] = []
+        for item in results:
+            lot_number = item.get("lot_number")
+            if lot_number not in requested_numbers:
+                continue
+            normalized.append(
+                item.get("lot_key")
+                or build_lot_key(item.get("provider"), item.get("provider_lot_id"), lot_number)
+            )
+        return normalized
 
     def mark_saved_search_cache_viewed(
         self,

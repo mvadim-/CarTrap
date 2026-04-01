@@ -94,6 +94,196 @@ export type User = {
   status: string;
 };
 
+export type AdminOverview = {
+  generated_at: string;
+  users: {
+    total: number;
+    admins: number;
+    regular_users: number;
+    active_last_24h: number;
+    active_last_7d: number;
+    blocked: number;
+    disabled: number;
+  };
+  invites: {
+    pending: number;
+    accepted: number;
+    revoked: number;
+    expired: number;
+  };
+  providers: {
+    total_connections: number;
+    connected: number;
+    expiring: number;
+    reconnect_required: number;
+    disconnected: number;
+    error: number;
+    connected_users: number;
+    reconnect_required_users: number;
+    disconnected_users: number;
+  };
+  searches: {
+    total_saved_searches: number;
+    users_with_saved_searches: number;
+    stale_or_problem: number;
+    searches_with_new_matches: number;
+  };
+  watchlist: {
+    total_tracked_lots: number;
+    users_with_tracked_lots: number;
+    unseen_updates: number;
+    stale_or_problem: number;
+  };
+  push: {
+    total_subscriptions: number;
+    users_with_push: number;
+    users_without_push: number;
+  };
+  system: {
+    live_sync_status: string;
+    stale: boolean;
+    last_success_at: string | null;
+    last_failure_at: string | null;
+    last_error_message: string | null;
+  };
+};
+
+export type AdminSystemHealth = {
+  generated_at: string;
+  app_name: string;
+  environment: string;
+  live_sync: LiveSyncStatus;
+  blocked_users: number;
+  expired_pending_invites: number;
+  provider_reconnect_required: number;
+  saved_search_attention: number;
+  watchlist_attention: number;
+};
+
+export type AdminUserDirectoryRow = {
+  id: string;
+  email: string;
+  role: UserRole;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
+  provider_state: string;
+  counts: {
+    provider_connections: number;
+    saved_searches: number;
+    tracked_lots: number;
+    push_subscriptions: number;
+  };
+  flags: {
+    has_pending_invite: boolean;
+    has_reconnect_required_provider: boolean;
+    has_unseen_watchlist_updates: boolean;
+  };
+};
+
+export type AdminUsersResponse = {
+  items: AdminUserDirectoryRow[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+export type AdminSavedSearchSummary = {
+  id: string;
+  label: string;
+  providers: AuctionProvider[];
+  result_count: number | null;
+  cached_result_count: number | null;
+  new_count: number;
+  last_synced_at: string | null;
+  freshness: FreshnessEnvelope;
+  refresh_state: RefreshState;
+  created_at: string;
+};
+
+export type AdminTrackedLotSummary = {
+  id: string;
+  provider: AuctionProvider;
+  lot_key: string;
+  lot_number: string;
+  title: string;
+  status: string;
+  raw_status: string;
+  current_bid: number | null;
+  buy_now_price: number | null;
+  currency: string;
+  sale_date: string | null;
+  last_checked_at: string | null;
+  freshness: FreshnessEnvelope;
+  refresh_state: RefreshState;
+  has_unseen_update: boolean;
+  latest_change_at: string | null;
+  created_at: string;
+};
+
+export type AdminRecentActivity = {
+  last_login_at: string | null;
+  last_saved_search_at: string | null;
+  last_tracked_lot_at: string | null;
+  last_push_subscription_at: string | null;
+  last_provider_activity_at: string | null;
+  has_unseen_watchlist_updates: boolean;
+};
+
+export type AdminDangerZoneSummary = {
+  provider_connections: number;
+  saved_searches: number;
+  tracked_lots: number;
+  push_subscriptions: number;
+  lot_snapshots: number;
+  invites: number;
+};
+
+export type AdminUserDetail = {
+  account: User & {
+    created_at: string;
+    updated_at: string;
+    last_login_at: string | null;
+  };
+  counts: AdminUserDirectoryRow["counts"];
+  invites: Invite[];
+  provider_connections: ProviderConnection[];
+  saved_searches: AdminSavedSearchSummary[];
+  tracked_lots: AdminTrackedLotSummary[];
+  push_subscriptions: PushSubscriptionItem[];
+  recent_activity: AdminRecentActivity;
+  danger_zone: AdminDangerZoneSummary;
+};
+
+export type AdminUserFilters = {
+  query: string;
+  role: "any" | UserRole;
+  status: "any" | "active" | "blocked" | "disabled";
+  provider_state: "any" | "none" | "connected" | "reconnect_required" | "disconnected" | "error";
+  push_state: "any" | "has_push" | "no_push";
+  saved_search_state: "any" | "has_saved_searches" | "no_saved_searches";
+  watchlist_state: "any" | "has_tracked_lots" | "no_tracked_lots" | "unseen_updates";
+  last_login: "any" | "24h" | "7d" | "stale" | "never";
+  sort: "created_at_desc" | "created_at_asc" | "last_login_desc" | "last_login_asc" | "email_asc" | "email_desc";
+  page: number;
+  page_size: number;
+};
+
+export type AdminUserActionPayload = {
+  provider?: AuctionProvider;
+  resource_id?: string;
+};
+
+export type AdminUserActionResponse = {
+  action: string;
+  message: string;
+  scope: "account" | "provider" | "resource" | "danger";
+  user: AdminUserDetail["account"] | null;
+  generated_password: string | null;
+  counts: Record<string, number>;
+};
+
 export type TokenPair = {
   access_token: string;
   refresh_token: string;

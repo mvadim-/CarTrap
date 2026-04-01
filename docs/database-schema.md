@@ -56,7 +56,7 @@ Key fields:
 - `email`: normalized to lowercase
 - `password_hash`: PBKDF2-HMAC-SHA256 with random salt
 - `role`: `admin` or `user`
-- `status`: currently `active`
+- `status`: `active`, `blocked`, `disabled`
 - timestamps: `created_at`, `updated_at`, `last_login_at`
 
 Indexes:
@@ -187,6 +187,7 @@ Indexes:
 Lifecycle note:
 
 - deleting a tracked lot also deletes its snapshots.
+- admin `purge_snapshots` removes historical documents while keeping the parent tracked lot.
 
 ### `push_subscriptions`
 
@@ -221,6 +222,10 @@ Indexes:
 
 - unique compound: `owner_user_id + endpoint`
 - `owner_user_id`
+
+Lifecycle note:
+
+- admin `delete_user` and `delete_all_push_subscriptions` remove these records deterministically by `owner_user_id`.
 
 ### `provider_connections`
 
@@ -263,6 +268,10 @@ Indexes:
 
 - unique compound: `owner_user_id + provider`
 - `owner_user_id`
+
+Lifecycle note:
+
+- admin provider actions can mark one or all connections as `disconnected` without deleting the document.
 
 ### `search_catalog`
 

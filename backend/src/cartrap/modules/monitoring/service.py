@@ -313,16 +313,15 @@ class MonitoringService:
             near_auction_window_minutes=self._near_auction_window_minutes,
         )
         try:
+            fetch_reference = self._build_detail_fetch_reference(tracked_lot)
             if hasattr(provider, "fetch_lot_conditional"):
                 fetch_result = provider.fetch_lot_conditional(
-                    tracked_lot.get("provider_lot_id") or tracked_lot.get("url") or tracked_lot["lot_number"],
+                    fetch_reference,
                     etag=tracked_lot.get("detail_etag"),
                 )
             else:
                 fetch_result = None
-                fresh_snapshot = provider.fetch_lot(
-                    tracked_lot.get("provider_lot_id") or tracked_lot.get("url") or tracked_lot["lot_number"]
-                )
+                fresh_snapshot = provider.fetch_lot(fetch_reference)
         finally:
             provider.close()
 
@@ -416,6 +415,13 @@ class MonitoringService:
             },
             "reminder_events": reminder_events,
         }
+
+    @staticmethod
+    def _build_detail_fetch_reference(tracked_lot: dict) -> str:
+        provider = str(tracked_lot.get("provider") or PROVIDER_COPART).strip().lower()
+        if provider == PROVIDER_COPART and tracked_lot.get("url"):
+            return str(tracked_lot["url"])
+        return str(tracked_lot.get("provider_lot_id") or tracked_lot.get("url") or tracked_lot["lot_number"])
 
     def _build_live_provider(self, owner_user_id: str | None, provider: str = PROVIDER_COPART):
         if self._provider_connection_service is not None and owner_user_id is not None:

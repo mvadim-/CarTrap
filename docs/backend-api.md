@@ -27,8 +27,12 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 - `access_token` is required for all protected endpoints.
 - `refresh_token` is used only by `POST /auth/refresh`.
 - Roles:
-  - `admin`: can create/revoke invites and refresh the search catalog.
+  - `admin`: can create/revoke invites, refresh the search catalog, read platform-wide admin aggregates, and execute root-mode user/resource actions.
   - `user`: can use search, watchlist, and notification endpoints.
+- User statuses:
+  - `active`: normal access
+  - `blocked`: login and token-backed requests are rejected
+  - `disabled`: login and token-backed requests are rejected
 
 ## Common Error Semantics
 
@@ -72,8 +76,14 @@ This document describes the current HTTP API exposed by the FastAPI backend.
 | `POST` | `/auth/login` | public | Login by email/password |
 | `POST` | `/auth/refresh` | public | Refresh access token |
 | `POST` | `/auth/invites/accept` | public | Accept invite and create user |
+| `GET` | `/admin/overview` | admin | Read platform-wide admin metrics |
+| `GET` | `/admin/system-health` | admin | Read operator-facing health signals |
+| `GET` | `/admin/invites` | admin | List invite records |
 | `POST` | `/admin/invites` | admin | Create invite |
 | `DELETE` | `/admin/invites/{invite_id}` | admin | Revoke pending invite |
+| `GET` | `/admin/users` | admin | Search/filter/paginate admin user directory |
+| `GET` | `/admin/users/{user_id}` | admin | Read aggregate admin user detail payload |
+| `POST` | `/admin/users/{user_id}/actions/{action}` | admin | Execute root-mode account/provider/resource action |
 | `POST` | `/admin/search-catalog/refresh` | admin | Refresh Mongo-backed search catalog |
 | `GET` | `/provider-connections` | user/admin | List current user's provider connections |
 | `POST` | `/provider-connections/copart/connect` | user/admin | Create or replace current user's Copart connection |
@@ -235,6 +245,132 @@ Response:
   "expires_at": "2026-03-16T10:00:00Z"
 }
 ```
+
+#### `GET /api/admin/invites`
+
+Returns invite records ordered by newest first.
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "id": "mongo-object-id",
+      "email": "buyer@example.com",
+      "status": "pending",
+      "token": "<invite-token>",
+      "expires_at": "2026-03-16T10:00:00Z",
+      "accepted_at": null,
+      "revoked_at": null,
+      "created_at": "2026-03-13T10:00:00Z",
+      "created_by": "admin-user-id"
+    }
+  ]
+}
+```
+
+#### `GET /api/admin/overview`
+
+Returns platform-wide metrics used by the admin command center.
+
+Top-level response domains:
+
+- `users`
+- `invites`
+- `providers`
+- `searches`
+- `watchlist`
+- `push`
+- `system`
+
+#### `GET /api/admin/system-health`
+
+Returns operator-facing health counters kept separate from overview cards.
+
+Key fields:
+
+- `live_sync`
+- `blocked_users`
+- `expired_pending_invites`
+- `provider_reconnect_required`
+- `saved_search_attention`
+- `watchlist_attention`
+
+#### `GET /api/admin/users`
+
+Returns the admin user directory.
+
+Query params:
+
+- `q`
+- `role`
+- `status`
+- `provider_state`
+- `push_state`
+- `saved_search_state`
+- `watchlist_state`
+- `last_login`
+- `sort`
+- `page`
+- `page_size`
+
+Directory row shape:
+
+- `id`, `email`, `role`, `status`
+- `created_at`, `updated_at`, `last_login_at`
+- `provider_state`
+- `counts.provider_connections`
+- `counts.saved_searches`
+- `counts.tracked_lots`
+- `counts.push_subscriptions`
+- `flags.has_pending_invite`
+- `flags.has_reconnect_required_provider`
+- `flags.has_unseen_watchlist_updates`
+
+#### `GET /api/admin/users/{user_id}`
+
+Returns one aggregate payload for the selected user.
+
+Sections:
+
+- `account`
+- `counts`
+- `invites`
+- `provider_connections`
+- `saved_searches`
+- `tracked_lots`
+- `push_subscriptions`
+- `recent_activity`
+- `danger_zone`
+
+#### `POST /api/admin/users/{user_id}/actions/{action}`
+
+Executes a root-mode action.
+
+Supported actions:
+
+- account: `block`, `unblock`, `promote`, `demote`, `reset_password`
+- provider: `disconnect_provider`, `disconnect_all_providers`
+- resource: `delete_saved_search`, `delete_all_saved_searches`, `delete_tracked_lot`, `delete_all_tracked_lots`, `delete_push_subscription`, `delete_all_push_subscriptions`, `purge_snapshots`
+- danger: `delete_user`
+
+Action request body:
+
+```json
+{
+  "provider": "iaai",
+  "resource_id": "mongo-object-id"
+}
+```
+
+Both fields are optional and only used by actions that need them.
+
+Important semantics:
+
+- `demote`, `block`, and `delete_user` reject attempts to remove the last active admin account.
+- `delete_user` also deletes owned provider connections, saved searches, saved-search caches, tracked lots, lot snapshots, push subscriptions, and invite records for the user email.
+- `reset_password` returns a temporary generated password in the action response.
 
 #### `DELETE /api/admin/invites/{invite_id}`
 

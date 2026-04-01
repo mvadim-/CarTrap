@@ -1,4 +1,12 @@
 import type {
+  AdminOverview,
+  AdminSystemHealth,
+  AdminUserActionPayload,
+  AdminUserActionResponse,
+  AdminUserDetail,
+  AdminUserFilters,
+  AdminUserDirectoryRow,
+  AdminUsersResponse,
   AuctionProvider,
   FreshnessEnvelope,
   Invite,
@@ -202,6 +210,31 @@ function normalizeSystemStatus(response: SystemStatus): SystemStatus {
   };
 }
 
+function normalizeAdminSavedSearch(item: AdminUserDetail["saved_searches"][number]): AdminUserDetail["saved_searches"][number] {
+  return {
+    ...item,
+    freshness: normalizeFreshness(item.freshness, item.last_synced_at, DEFAULT_SAVED_SEARCH_STALE_AFTER_SECONDS),
+    refresh_state: normalizeRefreshState(item.refresh_state, item.last_synced_at),
+  };
+}
+
+function normalizeAdminTrackedLot(item: AdminUserDetail["tracked_lots"][number]): AdminUserDetail["tracked_lots"][number] {
+  return {
+    ...item,
+    freshness: normalizeFreshness(item.freshness, item.last_checked_at, DEFAULT_WATCHLIST_STALE_AFTER_SECONDS),
+    refresh_state: normalizeRefreshState(item.refresh_state, item.last_checked_at),
+  };
+}
+
+function normalizeAdminUserDetail(response: AdminUserDetail): AdminUserDetail {
+  return {
+    ...response,
+    provider_connections: response.provider_connections.map((item) => item),
+    saved_searches: response.saved_searches.map(normalizeAdminSavedSearch),
+    tracked_lots: response.tracked_lots.map(normalizeAdminTrackedLot),
+  };
+}
+
 async function refreshTokens(): Promise<TokenPair | null> {
   const stored = loadTokens();
   if (!stored?.refresh_token) {
@@ -293,6 +326,58 @@ export async function acceptInvite(token: string, password: string): Promise<Use
 
 export async function createInvite(email: string, token: string): Promise<Invite> {
   return request<Invite>("/admin/invites", { method: "POST", body: { email }, token });
+}
+
+export async function listAdminInvites(token: string): Promise<Invite[]> {
+  const response = await request<{ items: Invite[] }>("/admin/invites", { token });
+  return Array.isArray(response.items) ? response.items : [];
+}
+
+export async function getAdminOverview(token: string): Promise<AdminOverview> {
+  return request<AdminOverview>("/admin/overview", { token });
+}
+
+export async function getAdminSystemHealth(token: string): Promise<AdminSystemHealth> {
+  return request<AdminSystemHealth>("/admin/system-health", { token });
+}
+
+export async function listAdminUsers(filters: AdminUserFilters, token: string): Promise<AdminUsersResponse> {
+  const params = new URLSearchParams();
+  if (filters.query.trim()) {
+    params.set("q", filters.query.trim());
+  }
+  params.set("role", filters.role);
+  params.set("status", filters.status);
+  params.set("provider_state", filters.provider_state);
+  params.set("push_state", filters.push_state);
+  params.set("saved_search_state", filters.saved_search_state);
+  params.set("watchlist_state", filters.watchlist_state);
+  params.set("last_login", filters.last_login);
+  params.set("sort", filters.sort);
+  params.set("page", String(filters.page));
+  params.set("page_size", String(filters.page_size));
+  const response = await request<AdminUsersResponse>(`/admin/users?${params.toString()}`, { token });
+  return {
+    ...response,
+    items: Array.isArray(response.items) ? response.items : ([] as AdminUserDirectoryRow[]),
+  };
+}
+
+export async function getAdminUserDetail(userId: string, token: string): Promise<AdminUserDetail> {
+  return normalizeAdminUserDetail(await request<AdminUserDetail>(`/admin/users/${userId}`, { token }));
+}
+
+export async function runAdminUserAction(
+  userId: string,
+  action: string,
+  payload: AdminUserActionPayload,
+  token: string,
+): Promise<AdminUserActionResponse> {
+  return request<AdminUserActionResponse>(`/admin/users/${userId}/actions/${action}`, {
+    method: "POST",
+    body: payload,
+    token,
+  });
 }
 
 export async function searchLots(

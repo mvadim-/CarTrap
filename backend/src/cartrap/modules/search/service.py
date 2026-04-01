@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from fastapi import HTTPException, status
 from pymongo.database import Database
@@ -71,8 +71,20 @@ class SearchService:
             lambda: SearchCatalogRefreshJob(provider_factory=self._provider_factories[PROVIDER_COPART], overrides_path=CATALOG_OVERRIDES_PATH)
         )
 
-    def search(self, owner_user: dict, payload: SearchRequest) -> dict:
-        return self._execute_search(payload, live_sync_source="manual_search", owner_user_id=owner_user["id"])
+    def search(self, owner_user: dict | SearchRequest | None, payload: SearchRequest | None = None) -> dict:
+        resolved_owner_user_id: str | None = None
+        resolved_payload: SearchRequest | None = payload
+        if isinstance(owner_user, SearchRequest):
+            resolved_payload = owner_user
+        elif owner_user is not None:
+            resolved_owner_user_id = str(owner_user["id"])
+        if resolved_payload is None:
+            raise TypeError("search() missing required SearchRequest payload")
+        return self._execute_search(
+            resolved_payload,
+            live_sync_source="manual_search",
+            owner_user_id=resolved_owner_user_id,
+        )
 
     def _execute_search(self, payload: SearchRequest, *, live_sync_source: str, owner_user_id: str | None = None) -> dict:
         correlation_id = new_correlation_id(live_sync_source)

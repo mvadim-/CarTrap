@@ -222,6 +222,223 @@ function buildConnectionDiagnostic(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function buildAdminOverview(overrides: Record<string, unknown> = {}) {
+  return {
+    generated_at: "2026-04-01T12:00:00Z",
+    users: {
+      total: 3,
+      admins: 1,
+      regular_users: 2,
+      active_last_24h: 1,
+      active_last_7d: 2,
+      blocked: 0,
+      disabled: 0,
+    },
+    invites: {
+      pending: 1,
+      accepted: 2,
+      revoked: 0,
+      expired: 0,
+    },
+    providers: {
+      total_connections: 2,
+      connected: 1,
+      expiring: 0,
+      reconnect_required: 1,
+      disconnected: 0,
+      error: 0,
+      connected_users: 1,
+      reconnect_required_users: 1,
+      disconnected_users: 0,
+    },
+    searches: {
+      total_saved_searches: 2,
+      users_with_saved_searches: 2,
+      stale_or_problem: 1,
+      searches_with_new_matches: 1,
+    },
+    watchlist: {
+      total_tracked_lots: 1,
+      users_with_tracked_lots: 1,
+      unseen_updates: 1,
+      stale_or_problem: 1,
+    },
+    push: {
+      total_subscriptions: 1,
+      users_with_push: 1,
+      users_without_push: 2,
+    },
+    system: {
+      live_sync_status: "degraded",
+      stale: false,
+      last_success_at: "2026-04-01T11:45:00Z",
+      last_failure_at: "2026-04-01T11:58:00Z",
+      last_error_message: "Gateway timeout",
+    },
+    ...overrides,
+  };
+}
+
+function buildAdminSystemHealth(overrides: Record<string, unknown> = {}) {
+  return {
+    generated_at: "2026-04-01T12:00:00Z",
+    app_name: "CarTrap API",
+    environment: "test",
+    live_sync: buildLiveSyncStatus({
+      status: "degraded",
+      last_failure_at: "2026-04-01T11:58:00Z",
+      last_error_message: "Gateway timeout",
+    }),
+    blocked_users: 0,
+    expired_pending_invites: 0,
+    provider_reconnect_required: 1,
+    saved_search_attention: 1,
+    watchlist_attention: 1,
+    ...overrides,
+  };
+}
+
+function buildAdminUserRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "managed-user-1",
+    email: "managed-user@example.com",
+    role: "user",
+    status: "active",
+    created_at: "2026-03-28T09:00:00Z",
+    updated_at: "2026-04-01T11:58:00Z",
+    last_login_at: "2026-04-01T10:00:00Z",
+    provider_state: "reconnect_required",
+    counts: {
+      provider_connections: 1,
+      saved_searches: 1,
+      tracked_lots: 1,
+      push_subscriptions: 1,
+    },
+    flags: {
+      has_pending_invite: false,
+      has_reconnect_required_provider: true,
+      has_unseen_watchlist_updates: true,
+    },
+    ...overrides,
+  };
+}
+
+function buildAdminUserDetail(overrides: Record<string, unknown> = {}) {
+  return {
+    account: {
+      id: "managed-user-1",
+      email: "managed-user@example.com",
+      role: "user",
+      status: "active",
+      created_at: "2026-03-28T09:00:00Z",
+      updated_at: "2026-04-01T11:58:00Z",
+      last_login_at: "2026-04-01T10:00:00Z",
+    },
+    counts: {
+      provider_connections: 1,
+      saved_searches: 1,
+      tracked_lots: 1,
+      push_subscriptions: 1,
+    },
+    invites: [
+      {
+        id: "invite-1",
+        email: "managed-user@example.com",
+        status: "accepted",
+        token: "invite-token-1",
+        expires_at: "2026-03-27T12:00:00Z",
+        accepted_at: "2026-03-27T10:00:00Z",
+        revoked_at: null,
+        created_at: "2026-03-26T10:00:00Z",
+        created_by: "user-1",
+      },
+    ],
+    provider_connections: [
+      buildProviderConnection({
+        id: "provider-managed-1",
+        provider: "iaai",
+        provider_label: "IAAI",
+        status: "reconnect_required",
+        account_label: "managed-user@iaai.test",
+        reconnect_required: true,
+        usable: false,
+      }),
+    ],
+    saved_searches: [
+      {
+        id: "admin-saved-1",
+        label: "Managed Search",
+        providers: ["iaai"],
+        result_count: 4,
+        cached_result_count: 4,
+        new_count: 1,
+        last_synced_at: "2026-04-01T11:20:00Z",
+        freshness: buildFreshness({
+          status: "cached",
+          last_synced_at: "2026-04-01T11:20:00Z",
+          stale_after: "2026-04-01T11:35:00Z",
+        }),
+        refresh_state: buildRefreshState({
+          status: "retryable_failure",
+          error_message: "gateway timeout",
+          retryable: true,
+        }),
+        created_at: "2026-03-28T09:30:00Z",
+      },
+    ],
+    tracked_lots: [
+      {
+        id: "admin-tracked-1",
+        provider: "iaai",
+        lot_key: "iaai:STK-44",
+        lot_number: "STK-44",
+        title: "2025 FORD MUSTANG MACH-E PREMIUM",
+        status: "live",
+        raw_status: "Live",
+        current_bid: 9100,
+        buy_now_price: null,
+        currency: "USD",
+        sale_date: null,
+        last_checked_at: "2026-04-01T11:10:00Z",
+        freshness: buildFreshness({
+          last_synced_at: "2026-04-01T11:10:00Z",
+          stale_after: "2026-04-01T11:25:00Z",
+        }),
+        refresh_state: buildRefreshState(),
+        has_unseen_update: true,
+        latest_change_at: "2026-04-01T11:15:00Z",
+        created_at: "2026-03-28T09:40:00Z",
+      },
+    ],
+    push_subscriptions: [
+      {
+        id: "admin-push-1",
+        endpoint: "https://push.example.test/managed",
+        user_agent: "Managed Browser",
+        created_at: "2026-03-30T10:00:00Z",
+        updated_at: "2026-04-01T09:00:00Z",
+      },
+    ],
+    recent_activity: {
+      last_login_at: "2026-04-01T10:00:00Z",
+      last_saved_search_at: "2026-03-28T09:30:00Z",
+      last_tracked_lot_at: "2026-03-28T09:40:00Z",
+      last_push_subscription_at: "2026-04-01T09:00:00Z",
+      last_provider_activity_at: "2026-04-01T11:00:00Z",
+      has_unseen_watchlist_updates: true,
+    },
+    danger_zone: {
+      provider_connections: 1,
+      saved_searches: 1,
+      tracked_lots: 1,
+      push_subscriptions: 1,
+      lot_snapshots: 3,
+      invites: 1,
+    },
+    ...overrides,
+  };
+}
+
 function submitLoginForm() {
   fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "admin@example.com" } });
   fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "secret123" } });
@@ -323,6 +540,13 @@ describe("CarTrap app", () => {
   let savedSearches: Array<ReturnType<typeof buildSavedSearch>>;
   let providerConnections: Array<ReturnType<typeof buildProviderConnection>>;
   let serviceWorkerMessageListener: ((event: MessageEvent) => void) | null;
+  let adminOverviewCallCount: number;
+  let adminUsersCallCount: number;
+  let adminUserDetailCallCount: number;
+  let adminOverviewData: ReturnType<typeof buildAdminOverview>;
+  let adminSystemHealthData: ReturnType<typeof buildAdminSystemHealth>;
+  let adminUsersData: ReturnType<typeof buildAdminUserRow>[];
+  let adminUserDetailsById: Record<string, ReturnType<typeof buildAdminUserDetail>>;
 
   beforeEach(() => {
     const storage = new Map<string, string>();
@@ -346,6 +570,15 @@ describe("CarTrap app", () => {
     watchlistHistoryById = {};
     providerConnections = [buildProviderConnection()];
     serviceWorkerMessageListener = null;
+    adminOverviewCallCount = 0;
+    adminUsersCallCount = 0;
+    adminUserDetailCallCount = 0;
+    adminOverviewData = buildAdminOverview();
+    adminSystemHealthData = buildAdminSystemHealth();
+    adminUsersData = [buildAdminUserRow()];
+    adminUserDetailsById = {
+      "managed-user-1": buildAdminUserDetail(),
+    };
     savedSearchesShouldFail = false;
     savedSearchRefreshShouldFail = false;
     pushTestShouldFail = false;
@@ -404,6 +637,75 @@ describe("CarTrap app", () => {
               access_token: buildToken({ sub: "user-1", role: loginRole, refreshed: true }),
               refresh_token: "refresh-token-next",
               token_type: "bearer",
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/admin/overview")) {
+          adminOverviewCallCount += 1;
+          return new Response(JSON.stringify(adminOverviewData), { status: 200 });
+        }
+        if (url.includes("/admin/system-health")) {
+          return new Response(JSON.stringify(adminSystemHealthData), { status: 200 });
+        }
+        if (url.includes("/admin/users/") && url.includes("/actions/")) {
+          const action = url.split("/actions/")[1] ?? "";
+          const userId = url.split("/admin/users/")[1]?.split("/actions/")[0] ?? "";
+          const detail = adminUserDetailsById[userId];
+          if (!detail) {
+            return new Response(JSON.stringify({ detail: "User not found." }), { status: 404 });
+          }
+          if (action === "block") {
+            detail.account.status = "blocked";
+            const row = adminUsersData.find((item) => item.id === userId);
+            if (row) {
+              row.status = "blocked";
+            }
+            adminOverviewData = buildAdminOverview({
+              users: { ...adminOverviewData.users, blocked: 1 },
+            });
+            adminSystemHealthData = buildAdminSystemHealth({ blocked_users: 1 });
+            return new Response(
+              JSON.stringify({
+                action: "block",
+                message: `Blocked ${detail.account.email}.`,
+                scope: "account",
+                user: detail.account,
+                generated_password: null,
+                counts: {},
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              action,
+              message: `Ran ${action}.`,
+              scope: "resource",
+              user: detail.account,
+              generated_password: null,
+              counts: {},
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/admin/users/") && !url.includes("/actions/")) {
+          adminUserDetailCallCount += 1;
+          const userId = url.split("/admin/users/")[1] ?? "";
+          const detail = adminUserDetailsById[userId];
+          if (!detail) {
+            return new Response(JSON.stringify({ detail: "User not found." }), { status: 404 });
+          }
+          return new Response(JSON.stringify(detail), { status: 200 });
+        }
+        if (url.includes("/admin/users")) {
+          adminUsersCallCount += 1;
+          return new Response(
+            JSON.stringify({
+              items: adminUsersData,
+              total: adminUsersData.length,
+              page: 1,
+              page_size: 25,
             }),
             { status: 200 },
           );
@@ -1010,13 +1312,29 @@ describe("CarTrap app", () => {
           return new Response(JSON.stringify({ tracked_lot: trackedLot }), { status: 201 });
         }
         if (url.includes("/admin/invites")) {
+          if ((init?.method ?? "GET") === "POST") {
+            return new Response(
+              JSON.stringify({
+                id: "invite-1",
+                email: "buyer@example.com",
+                status: "pending",
+                token: "invite-token",
+                expires_at: "2026-03-14T12:00:00Z",
+              }),
+              { status: 200 },
+            );
+          }
           return new Response(
             JSON.stringify({
-              id: "invite-1",
-              email: "buyer@example.com",
-              status: "pending",
-              token: "invite-token",
-              expires_at: "2026-03-14T12:00:00Z",
+              items: [
+                {
+                  id: "invite-1",
+                  email: "buyer@example.com",
+                  status: "pending",
+                  token: "invite-token",
+                  expires_at: "2026-03-14T12:00:00Z",
+                },
+              ],
             }),
             { status: 200 },
           );
@@ -1063,7 +1381,6 @@ describe("CarTrap app", () => {
     expect(screen.queryByLabelText(/user summary/i)).toBeNull();
     expect(screen.getByRole("button", { name: /open account menu/i })).toBeTruthy();
     expect(screen.getByAltText(/cartrap for copart and iaai/i)).toBeTruthy();
-    expect(screen.queryByText(/^user$/i)).toBeNull();
     const searchHeading = screen.getByRole("heading", { name: /saved searches/i });
     const watchlistHeading = screen.getByRole("heading", { name: /tracked lots/i });
     const invitesHeading = screen.getByRole("heading", { name: /generate invites/i });
@@ -1071,6 +1388,53 @@ describe("CarTrap app", () => {
     expect(searchHeading.compareDocumentPosition(invitesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(watchlistHeading.compareDocumentPosition(invitesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText(/you don't have any saved searches yet/i)).toBeTruthy();
+  });
+
+  it("loads admin command center for admin sessions", async () => {
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/command center/i);
+    expect(screen.getByText(/user directory/i)).toBeTruthy();
+    expect(screen.getByText(/managed-user@example\.com/i)).toBeTruthy();
+    expect(screen.getByText(/live sync degraded/i)).toBeTruthy();
+    expect(adminOverviewCallCount).toBeGreaterThan(0);
+    expect(adminUsersCallCount).toBeGreaterThan(0);
+  });
+
+  it("opens admin user detail and runs a confirmed root action", async () => {
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/managed-user@example\.com/i);
+    fireEvent.click(screen.getByRole("button", { name: /managed-user@example\.com/i }));
+
+    await screen.findByRole("complementary", { name: /admin user detail/i }).catch(() => null);
+    expect(await screen.findByText(/invite history/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /^block user$/i }));
+    const confirmDialog = await screen.findByRole("dialog", { name: /block user/i });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: /^block user$/i }));
+
+    expect(await screen.findByText(/blocked managed-user@example\.com\./i)).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getAllByText(/^blocked$/i).length).toBeGreaterThan(0);
+    });
+    expect(adminUserDetailCallCount).toBeGreaterThan(0);
+  });
+
+  it("keeps admin workspace out of non-admin bootstrap", async () => {
+    loginRole = "user";
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    expect(screen.queryByText(/command center/i)).toBeNull();
+    expect(screen.queryByText(/user directory/i)).toBeNull();
+    expect(adminOverviewCallCount).toBe(0);
+    expect(adminUsersCallCount).toBe(0);
+    expect(adminUserDetailCallCount).toBe(0);
   });
 
   it("renders invite acceptance screen from hash route", () => {

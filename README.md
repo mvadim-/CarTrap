@@ -4,6 +4,7 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart and IAAI lo
 
 ## MVP Scope
 - Invite-based onboarding with `admin` and `user` roles
+- Admin command center inside the main dashboard with platform metrics, searchable user directory, and root-mode user/resource controls
 - Manual multi-auction search from the app across Copart and IAAI, with modal result review
 - Backend-served search catalog reused by provider-aware manual search flows
 - Saved manual searches with one-click rerun from the dashboard and provider-aware result merging
@@ -33,6 +34,13 @@ CarTrap is a Docker-based PWA and Python backend for tracking Copart and IAAI lo
 - `/api/system/status` remains the global backend/gateway health surface and now also returns `freshness_policies` so the frontend can interpret stale windows without hardcoded thresholds.
 - Worker refresh execution uses per-resource runtime metadata with lease/backoff semantics to avoid duplicate concurrent refreshes and to preserve single-delivery push/reminder behavior.
 - Structured JSON logs are emitted across request, refresh, worker, and gateway flows with `event` + `correlation_id`, which makes it practical to separate upstream NAS failures from primary-backend logic failures.
+
+## Admin Command Center
+- Admin sessions load extra dashboard-only resources from `/api/admin/*` after role resolution; regular users do not wait on or call those endpoints during bootstrap.
+- Admin operators can review platform-wide counters, live-sync health, invite inventory, and a searchable user directory without leaving the main dashboard shell.
+- User detail inspector surfaces account summary, invite history, provider connections, saved searches, tracked lots, push devices, and a danger zone for root actions.
+- Managed user lifecycle now supports `active`, `blocked`, and `disabled` statuses. `blocked`/`disabled` users cannot log in and existing token-backed access is rejected on the next authenticated request.
+- Root actions cover block/unblock, promote/demote, password reset, provider disconnects, resource cleanup, snapshot purge, and full user deletion with deterministic cascading cleanup across owned Mongo collections.
 
 ## Local Development
 1. Copy `.env.example` to `.env`.
@@ -140,11 +148,12 @@ Set the printed `Application Server Key` value as `VAPID_PUBLIC_KEY`, point `VAP
 - `COPART_GATEWAY_ENABLE_GZIP=true` tells AWS-side gateway transport to advertise `Accept-Encoding: gzip`; actual compression should be terminated by the NAS gateway/reverse proxy layer.
 - Static make/model catalog generation lives in `scripts/generate_copart_make_model_catalog.py`, with manual fixes in `backend/src/cartrap/modules/search/data/copart_make_model_overrides.json`.
 - At runtime, the current make/model catalog is served from Mongo through `/api/search/catalog`, and admins can force a refresh via `/api/admin/search-catalog/refresh`.
+- Admin command-center APIs additionally expose `/api/admin/overview`, `/api/admin/system-health`, `/api/admin/users`, `/api/admin/users/{user_id}`, `/api/admin/users/{user_id}/actions/{action}`, and `/api/admin/invites`.
 - Structured operator log families include `search.execute.*`, `saved_search.refresh.*`, `saved_search.poll.*`, `watchlist.refresh.*`, `worker.poll_cycle.*`, `live_sync.*`, `copart_gateway.proxy.*`, and `copart_client.request.*`.
 
 ## Current Status
-- MVP backend flows are implemented: invite auth, roles, Copart API integration, watchlist, search, monitoring, and push subscription management.
-- MVP frontend flows are implemented: login, invite acceptance, admin invite creation, backend-backed manual search catalog, per-user Copart connector management, modal search results, saved-search rerun, watchlist thumbnails with gallery modal, client-side push registration UX, and degraded/offline live-sync messaging backed by `/api/system/status`.
+- MVP backend flows are implemented: invite auth, managed admin/user lifecycle, admin command-center APIs, Copart API integration, watchlist, search, monitoring, and push subscription management.
+- MVP frontend flows are implemented: login, invite acceptance, admin command center, admin invite creation, backend-backed manual search catalog, per-user Copart/IAAI connector management, modal search results, saved-search rerun, watchlist thumbnails with gallery modal, client-side push registration UX, and degraded/offline live-sync messaging backed by `/api/system/status`.
 - Docker images for `backend`, `worker`, and `frontend` are buildable and the compose stack passes a basic smoke check.
 
 ## Latest Verification
