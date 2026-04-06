@@ -1067,3 +1067,9 @@
 - Додано/оновлено `backend/tests/runtime_settings/test_runtime_settings_service.py`, `backend/tests/admin/test_admin_runtime_settings_api.py`, `backend/tests/{test_config.py,test_app_boot.py,test_system_status.py,test_worker_main.py}` і `frontend/tests/app.test.tsx`: покрито metadata/default fallback, invalid/disallowed updates, app-state wiring, system-status overrides, worker re-resolution між циклами, invite TTL runtime effect, admin UI save/reset/validation flows і non-admin API guardrails.
 - Оновлено `README.md`, `docs/backend-api.md`, `docs/database-schema.md`; завершений план перенесено в `docs/plans/completed/20260401-admin-runtime-settings.md`.
 - Verification: `./.venv/bin/pytest backend/tests -q` -> `242 passed`; `npm --prefix frontend test` -> `64 passed`; `npm --prefix frontend run build` -> успішно. Локально лишається лише відомий `urllib3` `LibreSSL` warning.
+
+## [2026-04-06 17:05] Add native-style iOS push badge indicator
+- Додано `frontend/src/lib/appBadge.ts`: винесено safe wrapper для `clearAppBadge` / `setAppBadge(0)` і reset-повідомлення в service worker, щоб app міг очищати badge state без прив’язки до конкретного браузера.
+- Оновлено `frontend/public/sw.js`: push service worker тепер зберігає unread badge counter у IndexedDB, інкрементує його на кожен `push`, ставить badge на іконку PWA та вміє скидати лічильник по повідомленню `cartrap:badge-clear`.
+- Оновлено `frontend/src/App.tsx`: при foreground push, відкритті застосунку, поверненні у `focus` або `visible` state app очищає badge на іконці й синхронно reset-ить service-worker counter, щоб індикатор поводився як у native iOS apps.
+- Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для reset badge state після foreground push і після повернення фокусу у вікно.

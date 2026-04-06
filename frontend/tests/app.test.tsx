@@ -2793,6 +2793,54 @@ describe("CarTrap app", () => {
     expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
   });
 
+  it("clears the app badge and resets service-worker badge state when a push arrives in the foreground", async () => {
+    const clearAppBadge = vi.fn(async () => undefined);
+    const postMessage = vi.fn();
+
+    Object.defineProperty(window.navigator, "clearAppBadge", {
+      configurable: true,
+      value: clearAppBadge,
+    });
+    Object.defineProperty(window.navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        addEventListener: vi.fn((type: string, listener: (event: MessageEvent) => void) => {
+          if (type === "message") {
+            serviceWorkerMessageListener = listener;
+          }
+        }),
+        removeEventListener: vi.fn((type: string, listener: (event: MessageEvent) => void) => {
+          if (type === "message" && serviceWorkerMessageListener === listener) {
+            serviceWorkerMessageListener = null;
+          }
+        }),
+        controller: null,
+        getRegistration: vi.fn(async () => ({ active: { postMessage } })),
+        register: vi.fn(async () => undefined),
+        ready: Promise.resolve(undefined),
+      },
+    });
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    clearAppBadge.mockClear();
+    postMessage.mockClear();
+
+    serviceWorkerMessageListener?.({
+      data: {
+        type: "cartrap:push-received",
+        payload: { refresh_targets: ["watchlist"], badge_count: 2 },
+      },
+    } as MessageEvent);
+
+    await waitFor(() => {
+      expect(clearAppBadge).toHaveBeenCalled();
+    });
+    expect(postMessage).toHaveBeenCalledWith({ type: "cartrap:badge-clear" });
+  });
+
   it("refreshes operational resources when the window regains focus", async () => {
     render(<App />);
     submitLoginForm();
@@ -2820,6 +2868,49 @@ describe("CarTrap app", () => {
       expect(systemStatusCallCount).toBeGreaterThan(initialSystemStatusLoads);
     });
     expect(screen.getByText(/Bid: 4,200 USD -> 5,100 USD/i)).toBeTruthy();
+  });
+
+  it("clears the app badge when the window regains focus", async () => {
+    const clearAppBadge = vi.fn(async () => undefined);
+    const postMessage = vi.fn();
+
+    Object.defineProperty(window.navigator, "clearAppBadge", {
+      configurable: true,
+      value: clearAppBadge,
+    });
+    Object.defineProperty(window.navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        addEventListener: vi.fn((type: string, listener: (event: MessageEvent) => void) => {
+          if (type === "message") {
+            serviceWorkerMessageListener = listener;
+          }
+        }),
+        removeEventListener: vi.fn((type: string, listener: (event: MessageEvent) => void) => {
+          if (type === "message" && serviceWorkerMessageListener === listener) {
+            serviceWorkerMessageListener = null;
+          }
+        }),
+        controller: null,
+        getRegistration: vi.fn(async () => ({ active: { postMessage } })),
+        register: vi.fn(async () => undefined),
+        ready: Promise.resolve(undefined),
+      },
+    });
+
+    render(<App />);
+    submitLoginForm();
+
+    await screen.findByText(/cartrap dispatch board/i);
+    clearAppBadge.mockClear();
+    postMessage.mockClear();
+
+    fireEvent(window, new Event("focus"));
+
+    await waitFor(() => {
+      expect(clearAppBadge).toHaveBeenCalled();
+    });
+    expect(postMessage).toHaveBeenCalledWith({ type: "cartrap:badge-clear" });
   });
 
   it("polls for hidden-tab updates and blinks the document title until the tab becomes visible", async () => {

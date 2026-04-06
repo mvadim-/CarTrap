@@ -16,6 +16,7 @@ import { PushSettingsModal } from "./features/push/PushSettingsModal";
 import { SearchPanel } from "./features/search/SearchPanel";
 import { AsyncStatus } from "./features/shared/AsyncStatus";
 import { WatchlistPanel } from "./features/watchlist/WatchlistPanel";
+import { clearPushBadgeState } from "./lib/appBadge";
 import {
   acceptInvite,
   acknowledgeWatchlistLotUpdate,
@@ -1055,6 +1056,7 @@ export function App() {
 
     function handleWindowFocus() {
       setTabAttentionMessage(null);
+      void clearPushBadgeState();
       if (isBrowserOffline) {
         return;
       }
@@ -1066,6 +1068,7 @@ export function App() {
         return;
       }
       setTabAttentionMessage(null);
+      void clearPushBadgeState();
       if (isBrowserOffline) {
         return;
       }
@@ -1079,6 +1082,13 @@ export function App() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [isBrowserOffline, session.accessToken]);
+
+  useEffect(() => {
+    if (!session.accessToken || isDocumentHidden()) {
+      return;
+    }
+    void clearPushBadgeState();
+  }, [session.accessToken]);
 
   useEffect(() => {
     pullToRefreshPhaseRef.current = pullToRefreshPhase;
@@ -1233,6 +1243,10 @@ export function App() {
       const data = event.data as { type?: string; payload?: { refresh_targets?: unknown } } | null;
       if (data?.type !== PUSH_MESSAGE_TYPE) {
         return;
+      }
+
+      if (!isDocumentHidden()) {
+        void clearPushBadgeState();
       }
 
       const targets = normalizePushRefreshTargets(data.payload?.refresh_targets);

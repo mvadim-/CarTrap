@@ -1,7 +1,14 @@
 const DEFAULT_TITLE = "CarTrap";
 const DEFAULT_BODY = "Lot updated";
 const PUSH_MESSAGE_TYPE = "cartrap:push-received";
+const PUSH_BADGE_CLEAR_MESSAGE_TYPE = "cartrap:badge-clear";
 const APP_PATH = "/#/dashboard";
+const BADGE_DB_NAME = "cartrap-push-state";
+const BADGE_STORE_NAME = "meta";
+const BADGE_COUNT_KEY = "push-badge-count";
+
+let badgeDbPromise = null;
+let inMemoryBadgeCount = 0;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
@@ -10,6 +17,113 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
+
+function openBadgeDb() {
+  if (!("indexedDB" in self)) {
+    return Promise.resolve(null);
+  }
+  if (badgeDbPromise) {
+    return badgeDbPromise;
+  }
+
+  badgeDbPromise = new Promise((resolve) => {
+    try {
+      const request = indexedDB.open(BADGE_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(BADGE_STORE_NAME)) {
+          database.createObjectStore(BADGE_STORE_NAME);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+
+  return badgeDbPromise;
+}
+
+async function readStoredBadgeCount() {
+  const database = await openBadgeDb();
+  if (!database) {
+    return inMemoryBadgeCount;
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const transaction = database.transaction(BADGE_STORE_NAME, "readonly");
+      const request = transaction.objectStore(BADGE_STORE_NAME).get(BADGE_COUNT_KEY);
+      request.onsuccess = () => {
+        const value = Number(request.result);
+        resolve(Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0);
+      };
+      request.onerror = () => resolve(inMemoryBadgeCount);
+    } catch {
+      resolve(inMemoryBadgeCount);
+    }
+  });
+}
+
+async function writeStoredBadgeCount(value) {
+  const nextValue = Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+  inMemoryBadgeCount = nextValue;
+
+  const database = await openBadgeDb();
+  if (!database) {
+    return nextValue;
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const transaction = database.transaction(BADGE_STORE_NAME, "readwrite");
+      transaction.objectStore(BADGE_STORE_NAME).put(nextValue, BADGE_COUNT_KEY);
+      transaction.oncomplete = () => resolve(nextValue);
+      transaction.onerror = () => resolve(nextValue);
+    } catch {
+      resolve(nextValue);
+    }
+  });
+}
+
+async function incrementBadgeCount() {
+  const currentValue = await readStoredBadgeCount();
+  return writeStoredBadgeCount(currentValue + 1);
+}
+
+async function clearBadgeCount() {
+  await writeStoredBadgeCount(0);
+}
+
+async function setApplicationBadge(count) {
+  if (self.navigator && typeof self.navigator.setAppBadge === "function") {
+    try {
+      await self.navigator.setAppBadge(count);
+    } catch {
+      // Ignore unsupported or transient badging failures.
+    }
+  }
+}
+
+async function clearApplicationBadge() {
+  if (self.navigator && typeof self.navigator.clearAppBadge === "function") {
+    try {
+      await self.navigator.clearAppBadge();
+      return;
+    } catch {
+      // Ignore unsupported or transient badging failures.
+    }
+  }
+
+  if (self.navigator && typeof self.navigator.setAppBadge === "function") {
+    try {
+      await self.navigator.setAppBadge(0);
+    } catch {
+      // Ignore unsupported or transient badging failures.
+    }
+  }
+}
 
 function parsePushPayload(event) {
   if (!event.data) {
@@ -80,23 +194,42 @@ async function focusOrOpenClient() {
 
 self.addEventListener("push", (event) => {
   const payload = parsePushPayload(event);
-  const notificationPayload = {
-    ...payload,
-    refresh_targets: deriveRefreshTargets(payload),
-  };
-
   event.waitUntil(
-    Promise.all([
-      self.registration.showNotification(notificationPayload.title ?? DEFAULT_TITLE, {
-        body: notificationPayload.body ?? DEFAULT_BODY,
-        data: notificationPayload,
-      }),
-      broadcastPushUpdate(notificationPayload),
-    ]),
+    (async () => {
+      const badgeCount = await incrementBadgeCount();
+      const notificationPayload = {
+        ...payload,
+        refresh_targets: deriveRefreshTargets(payload),
+        badge_count: badgeCount,
+      };
+
+      await Promise.all([
+        self.registration.showNotification(notificationPayload.title ?? DEFAULT_TITLE, {
+          body: notificationPayload.body ?? DEFAULT_BODY,
+          data: notificationPayload,
+        }),
+        broadcastPushUpdate(notificationPayload),
+        setApplicationBadge(badgeCount),
+      ]);
+    })(),
   );
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(focusOrOpenClient());
+});
+
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (data?.type !== PUSH_BADGE_CLEAR_MESSAGE_TYPE) {
+    return;
+  }
+
+  event.waitUntil(
+    (async () => {
+      await clearBadgeCount();
+      await clearApplicationBadge();
+    })(),
+  );
 });
