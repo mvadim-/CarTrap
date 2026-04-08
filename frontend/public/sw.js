@@ -9,6 +9,7 @@ const BADGE_COUNT_KEY = "push-badge-count";
 
 let badgeDbPromise = null;
 let inMemoryBadgeCount = 0;
+let badgeMutationQueue = Promise.resolve();
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
@@ -106,6 +107,21 @@ async function setApplicationBadge(count) {
   }
 }
 
+function enqueueBadgeMutation(task) {
+  const runTask = () => Promise.resolve().then(task);
+  const nextOperation = badgeMutationQueue.then(runTask, runTask);
+  badgeMutationQueue = nextOperation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return nextOperation;
+}
+
+async function hasVisibleWindowClient() {
+  const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  return clientList.some((client) => client.visibilityState === "visible" || client.focused === true);
+}
+
 async function clearApplicationBadge() {
   if (self.navigator && typeof self.navigator.clearAppBadge === "function") {
     try {
@@ -196,10 +212,22 @@ self.addEventListener("push", (event) => {
   const payload = parsePushPayload(event);
   event.waitUntil(
     (async () => {
-      const badgeCount = await incrementBadgeCount();
+      const refreshTargets = deriveRefreshTargets(payload);
+      const badgeCount = await enqueueBadgeMutation(async () => {
+        const hasVisibleClient = await hasVisibleWindowClient();
+        if (hasVisibleClient) {
+          await clearBadgeCount();
+          await clearApplicationBadge();
+          return 0;
+        }
+
+        const nextBadgeCount = await incrementBadgeCount();
+        await setApplicationBadge(nextBadgeCount);
+        return nextBadgeCount;
+      });
       const notificationPayload = {
         ...payload,
-        refresh_targets: deriveRefreshTargets(payload),
+        refresh_targets: refreshTargets,
         badge_count: badgeCount,
       };
 
@@ -209,7 +237,6 @@ self.addEventListener("push", (event) => {
           data: notificationPayload,
         }),
         broadcastPushUpdate(notificationPayload),
-        setApplicationBadge(badgeCount),
       ]);
     })(),
   );
@@ -227,9 +254,9 @@ self.addEventListener("message", (event) => {
   }
 
   event.waitUntil(
-    (async () => {
+    enqueueBadgeMutation(async () => {
       await clearBadgeCount();
       await clearApplicationBadge();
-    })(),
+    }),
   );
 });

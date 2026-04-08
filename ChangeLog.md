@@ -1073,3 +1073,7 @@
 - Оновлено `frontend/public/sw.js`: push service worker тепер зберігає unread badge counter у IndexedDB, інкрементує його на кожен `push`, ставить badge на іконку PWA та вміє скидати лічильник по повідомленню `cartrap:badge-clear`.
 - Оновлено `frontend/src/App.tsx`: при foreground push, відкритті застосунку, поверненні у `focus` або `visible` state app очищає badge на іконці й синхронно reset-ить service-worker counter, щоб індикатор поводився як у native iOS apps.
 - Оновлено `frontend/tests/app.test.tsx`: додано regression coverage для reset badge state після foreground push і після повернення фокусу у вікно.
+
+## [2026-04-08 16:55] Fix intermittent push badge reset race
+- Оновлено `frontend/public/sw.js`: badge mutations у service worker тепер серіалізуються через чергу, тому `cartrap:badge-clear` більше не може програти race проти in-flight `setAppBadge(...)`; додатково push у foreground-visible client більше не нарощує badge counter, а одразу скидає stale badge state.
+- Додано `frontend/tests/sw.test.ts`: окремий regression harness для `sw.js`, який перевіряє обидва критичні кейси: visible-client push не лишає badge та clear-message виконується після незавершеного badge write у deterministic order.
